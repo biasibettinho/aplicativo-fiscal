@@ -5,7 +5,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X
+  Plus, History, Loader2, Calendar, CreditCard, Edit3, Send, Paperclip, FileText, Banknote, X
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -46,7 +46,7 @@ const DashboardSolicitante: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<PaymentRequest>>(initialFormData);
 
-  // Sincronização inicial e automática
+  // Sincronização de dados
   const syncData = useCallback(async () => {
     if (!authState.user || !authState.token) return;
     setIsLoading(true);
@@ -64,7 +64,7 @@ const DashboardSolicitante: React.FC = () => {
     syncData();
   }, [syncData]);
 
-  // Filtros de busca na lista lateral
+  // Filtros de busca
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
       const isOwner = req.createdByUserId === authState.user?.id;
@@ -80,7 +80,7 @@ const DashboardSolicitante: React.FC = () => {
   const selectedRequest = requests.find(r => r.id === selectedId);
   const isFormValid = useMemo(() => !!formData.title && !!formData.paymentMethod, [formData]);
 
-  // FUNÇÃO DE SALVAMENTO CORRIGIDA
+  // FUNÇÃO DE SALVAMENTO PRINCIPAL
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
@@ -109,17 +109,20 @@ const DashboardSolicitante: React.FC = () => {
         await sharepointService.uploadAuxiliaryAttachment(authState.token, itemId, file);
       }
 
-      alert("Solicitação enviada com sucesso!");
+      alert("Solicitação processada com sucesso!");
+      
+      // Reset de estados após sucesso
       setIsNew(false);
       setIsEditing(false);
       setFormData(initialFormData);
       setInvoiceFiles([]);
       setTicketFiles([]);
+      setSelectedId(null);
       await syncData();
 
     } catch (e: any) {
       console.error("Erro no salvamento:", e);
-      alert(e.message || "Erro ao processar solicitação");
+      alert(`Erro: ${e.message || "Erro ao processar solicitação"}`);
     } finally {
       setIsLoading(false);
     }
@@ -160,16 +163,16 @@ const DashboardSolicitante: React.FC = () => {
               <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-widest">Minhas Solicitações</h3>
               <button 
                 onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700"
               >
                 <Plus size={16} className="mr-2 inline" /> Nova
               </button>
             </div>
-            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg text-sm" />
+            <input type="text" placeholder="Buscar por título ou ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div className="flex-1 overflow-y-auto divide-y">
             {filteredRequests.map(req => (
-              <div key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`p-4 cursor-pointer hover:bg-gray-50 ${selectedId === req.id ? 'bg-blue-50 border-r-4 border-blue-500' : ''}`}>
+              <div key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${selectedId === req.id ? 'bg-blue-50 border-r-4 border-blue-500' : ''}`}>
                 <div className="flex justify-between mb-1"><span className="text-[10px] font-mono font-bold text-gray-400">#{req.id}</span><Badge status={req.status} /></div>
                 <h4 className="font-semibold text-gray-800 truncate text-sm">{req.title}</h4>
                 <div className="text-[10px] text-gray-500 mt-1 uppercase font-bold text-blue-600">{req.branch}</div>
@@ -178,7 +181,7 @@ const DashboardSolicitante: React.FC = () => {
           </div>
         </div>
 
-        {/* ÁREA DE CONTEÚDO / FORMULÁRIO */}
+        {/* ÁREA DE CONTEÚDO (DARK MODE FORM) */}
         <div className={`flex-1 rounded-2xl shadow-xl overflow-hidden flex flex-col transition-all ${isNew ? 'bg-[#0a0f2b] text-white' : 'bg-white border border-gray-200'}`}>
           {isNew ? (
             <div className="flex-1 overflow-y-auto p-10 space-y-8">
@@ -216,49 +219,39 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* DADOS BANCÁRIOS DINÂMICOS */}
-              {formData.paymentMethod === 'TED/DEPOSITO' && (
+              {/* DADOS PARA TED OU PIX */}
+              {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'PIX') && (
                 <div className="bg-white/5 p-6 rounded-3xl border border-white/10 grid grid-cols-2 gap-4 animate-in fade-in duration-300">
                   <div className="col-span-2">
-                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Favorecido (Nome Completo/Razão Social)</label>
-                    <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
+                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Favorecido (Nome/Razão Social)</label>
+                    <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1 text-white" />
                   </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Banco</label>
-                    <input type="text" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Agência</label>
-                    <input type="text" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Conta</label>
-                    <input type="text" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Tipo de Conta</label>
-                    <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1 text-white bg-slate-800">
-                      <option value="Conta Corrente">Conta Corrente</option>
-                      <option value="Conta Poupança">Conta Poupança</option>
-                    </select>
-                  </div>
+                  {formData.paymentMethod === 'PIX' ? (
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-black uppercase text-blue-300 italic">Chave PIX</label>
+                      <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1 font-mono" />
+                    </div>
+                  ) : (
+                    <>
+                      <input type="text" placeholder="Banco" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="bg-white/10 p-3 rounded-lg outline-none" />
+                      <input type="text" placeholder="Agência" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="bg-white/10 p-3 rounded-lg outline-none" />
+                      <input type="text" placeholder="Conta" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="bg-white/10 p-3 rounded-lg outline-none" />
+                      <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="bg-white/10 p-3 rounded-lg text-white bg-slate-800">
+                        <option value="Conta Corrente">C. Corrente</option>
+                        <option value="Conta Poupança">C. Poupança</option>
+                      </select>
+                    </>
+                  )}
                 </div>
               )}
 
-              {formData.paymentMethod === 'PIX' && (
-                <div className="bg-white/5 p-6 rounded-3xl border border-white/10 animate-in fade-in duration-300">
-                  <label className="text-[10px] font-black uppercase text-blue-300 italic">Chave PIX (E-mail, CPF, CNPJ ou Aleatória)</label>
-                  <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/10 border-none rounded-xl p-4 mt-2 font-mono" />
-                </div>
-              )}
-
-              {/* SEÇÃO DE ANEXOS */}
+              {/* ANEXOS */}
               <div className="grid grid-cols-2 gap-6">
                 <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={16} className="mr-2" /> Notas Fiscais (PDF)</h3>
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 cursor-pointer transition-all">
                     <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">{invoiceFiles.length > 0 ? `${invoiceFiles.length} Arquivo(s)` : 'Selecionar Arquivo'}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{invoiceFiles.length > 0 ? `${invoiceFiles.length} Selecionado(s)` : 'Adicionar NF'}</span>
                     <input type="file" multiple className="hidden" onChange={(e) => setInvoiceFiles(Array.from(e.target.files || []))} />
                   </label>
                   {invoiceFiles.map((f, i) => (
@@ -273,7 +266,7 @@ const DashboardSolicitante: React.FC = () => {
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><CreditCard size={16} className="mr-2" /> Boletos / Comprovantes</h3>
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 cursor-pointer transition-all">
                     <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">{ticketFiles.length > 0 ? `${ticketFiles.length} Arquivo(s)` : 'Selecionar Arquivo'}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{ticketFiles.length > 0 ? `${ticketFiles.length} Selecionado(s)` : 'Adicionar Boleto'}</span>
                     <input type="file" multiple className="hidden" onChange={(e) => setTicketFiles(Array.from(e.target.files || []))} />
                   </label>
                   {ticketFiles.map((f, i) => (
@@ -286,20 +279,20 @@ const DashboardSolicitante: React.FC = () => {
               </div>
 
               <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center">
-                <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
+                <button type="button" onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
                 <button 
                   onClick={handleSave} 
                   disabled={!isFormValid || isLoading} 
-                  className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30 transition-all shadow-lg shadow-blue-900/40"
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30 transition-all shadow-lg"
                 >
                   {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={18} className="mr-3" />}
-                  {isEditing ? 'Atualizar Solicitação' : 'Enviar Solicitação'}
+                  {isEditing ? 'Atualizar Dados' : 'Enviar Solicitação'}
                 </button>
               </div>
             </div>
           ) : selectedRequest ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-               <header className="p-8 border-b border-gray-100 flex justify-between items-center bg-white">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white">
+               <header className="p-8 border-b border-gray-100 flex justify-between items-center">
                 <div>
                   <div className="flex items-center space-x-3 mb-2">
                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest font-mono">ID: #{selectedRequest.id}</span>
@@ -308,8 +301,8 @@ const DashboardSolicitante: React.FC = () => {
                   <h2 className="text-2xl font-black text-gray-900 tracking-tight">{selectedRequest.title}</h2>
                 </div>
                 {(selectedRequest.status === RequestStatus.ERRO_FISCAL || selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) && (
-                  <button onClick={startEdit} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center">
-                    <Edit3 size={18} className="mr-2" /> Corrigir Dados
+                  <button onClick={startEdit} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center hover:bg-blue-700">
+                    <Edit3 size={18} className="mr-2" /> Editar e Reenviar
                   </button>
                 )}
               </header>
@@ -328,18 +321,20 @@ const DashboardSolicitante: React.FC = () => {
                       <p className="text-lg font-black text-blue-600 uppercase italic">{selectedRequest.paymentMethod}</p>
                    </div>
                 </div>
-                <div className="bg-white p-8 rounded-3xl border border-gray-100">
-                   <h4 className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Observações</h4>
-                   <div className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
-                    {selectedRequest.generalObservation || 'Nenhuma observação adicional informada.'}
-                   </div>
-                </div>
+                {selectedRequest.generalObservation && (
+                  <div className="bg-white p-8 rounded-3xl border border-gray-100">
+                    <h4 className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Observações</h4>
+                    <div className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
+                      {selectedRequest.generalObservation}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
               <Banknote size={80} className="opacity-10 mb-6" />
-              <p className="font-black uppercase text-[10px] tracking-widest text-gray-400 italic">Selecione uma solicitação para detalhamento</p>
+              <p className="font-black uppercase text-[10px] tracking-widest text-gray-400 italic">Selecione uma solicitação para visualizar</p>
             </div>
           )}
         </div>
