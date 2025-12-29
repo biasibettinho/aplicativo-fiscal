@@ -40,7 +40,7 @@ const DashboardSolicitante: React.FC = () => {
     
     setIsLoading(true);
     try {
-      // O serviço já deve filtrar, mas reforçamos a lógica no frontend abaixo
+      // O serviço agora já retorna ordenado, mas o useMemo abaixo garante a ordem após filtros
       const data = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(data);
     } catch (error) {
@@ -72,7 +72,7 @@ const DashboardSolicitante: React.FC = () => {
       await requestService.createRequest(payload, authState.token);
       setIsNew(false);
       setFormData(initialFormData);
-      await fetchRequests(); // Atualiza a lista após criar
+      await fetchRequests(); // Atualiza a lista e re-aplica a ordenação
     } catch (error) {
       console.error("Erro ao criar:", error);
       alert("Erro ao criar solicitação. Verifique sua conexão.");
@@ -81,30 +81,29 @@ const DashboardSolicitante: React.FC = () => {
     }
   };
 
-  // Filtros de interface e Ordenação (ID maior primeiro)
+  // Filtros de interface e Ordenação Reforçada
   const filteredRequests = useMemo(() => {
     return requests
       .filter(req => {
-        // REQUISITO: Apenas solicitações que o usuário logado criou
-        const isOwner = req.createdByUserId === authState.user?.id;
-        
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch = 
-          req.title?.toLowerCase().includes(searchLower) || 
-          req.invoiceNumber?.toLowerCase().includes(searchLower) ||
-          req.payee?.toLowerCase().includes(searchLower);
+          (req.title?.toLowerCase() || '').includes(searchLower) || 
+          (req.invoiceNumber?.toLowerCase() || '').includes(searchLower) ||
+          (req.payee?.toLowerCase() || '').includes(searchLower) ||
+          (req.id?.toString() || '').includes(searchLower);
         
         const matchesDate = (!startDate || req.paymentDate >= startDate) && 
                             (!endDate || req.paymentDate <= endDate);
         
-        return isOwner && matchesSearch && matchesDate;
+        return matchesSearch && matchesDate;
       })
       .sort((a, b) => {
-        // REQUISITO: Ordenação por ID maior primeiro (mais recente)
-        // Convertendo para número para garantir ordenação matemática correta
-        return Number(b.id) - Number(a.id);
+        // Ordenação Decrescente: IDs maiores primeiro
+        const idA = Number(a.id) || 0;
+        const idB = Number(b.id) || 0;
+        return idB - idA;
       });
-  }, [requests, searchTerm, startDate, endDate, authState.user]);
+  }, [requests, searchTerm, startDate, endDate]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -127,7 +126,7 @@ const DashboardSolicitante: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
             <input 
               type="text" 
-              placeholder="Pesquisar nota ou fornecedor..." 
+              placeholder="Pesquisar nota, ID ou fornecedor..." 
               className="w-full pl-10 pr-4 py-3 bg-gray-50 border-0 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -156,7 +155,7 @@ const DashboardSolicitante: React.FC = () => {
               <p className="font-bold text-gray-900 text-sm truncate">{req.title}</p>
               <div className="flex items-center mt-2 text-gray-400 space-x-3 text-[10px] font-bold uppercase">
                 <Calendar size={12} /> 
-                <span>{new Date(req.paymentDate).toLocaleDateString()}</span>
+                <span>{req.paymentDate ? new Date(req.paymentDate).toLocaleDateString('pt-BR') : 'Sem data'}</span>
               </div>
             </button>
           ))}
@@ -168,7 +167,7 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Principal de Exibição/Criação */}
+      {/* Área Principal */}
       <div className="flex-1 overflow-y-auto">
         {isNew ? (
           <div className="max-w-3xl mx-auto py-12 px-8">

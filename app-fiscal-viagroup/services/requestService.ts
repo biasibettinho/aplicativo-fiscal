@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, User, UserRole } from '../types';
 import { sharepointService } from './sharepointService';
 
@@ -7,16 +6,15 @@ export const requestService = {
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
-        return all;
-      }
+      let filtered: PaymentRequest[] = [];
 
-      if (user.role === UserRole.SOLICITANTE) {
-        // Agora filtramos para que o solicitante veja apenas o que ele criou
-        return all.filter(r => r.createdByUserId === user.id); 
-      }
-      
-      if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
+      // 1. Aplicamos os filtros de acordo com o papel do usuário
+      if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
+        filtered = all;
+      } else if (user.role === UserRole.SOLICITANTE) {
+        // Filtra para o solicitante ver apenas o que ele criou
+        filtered = all.filter(r => r.createdByUserId === user.id); 
+      } else if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
         const financeAllowed = [
           RequestStatus.APROVADO, 
           RequestStatus.LANCADO, 
@@ -24,10 +22,13 @@ export const requestService = {
           RequestStatus.ERRO_FINANCEIRO, 
           RequestStatus.COMPARTILHADO
         ];
-        return all.filter(r => financeAllowed.includes(r.status) || r.statusManual === 'Compartilhado');
+        filtered = all.filter(r => financeAllowed.includes(r.status) || r.statusManual === 'Compartilhado');
       }
-      
-      return [];
+
+      // 2. ORDENAÇÃO DECRESCENTE (ID maior primeiro)
+      // Usamos Number() para garantir que a comparação seja numérica e não alfabética
+      return filtered.sort((a, b) => Number(b.id) - Number(a.id));
+
     } catch (error) {
       console.error("Erro ao filtrar solicitações do SharePoint:", error);
       return [];
