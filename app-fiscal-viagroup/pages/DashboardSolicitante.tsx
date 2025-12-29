@@ -5,7 +5,7 @@ import { PaymentRequest, RequestStatus } from '../types';
 import { requestService } from '../services/requestService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Hash, Landmark, Info, Edit3, Send, Paperclip, FileText, Banknote
+  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -43,11 +43,12 @@ const DashboardSolicitante: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<PaymentRequest>>(initialFormData);
 
+  // Sincroniza a filial com o Escritório (department) do usuário logado
   useEffect(() => {
     if (authState.user?.department) {
       setFormData(prev => ({ ...prev, branch: authState.user?.department }));
     }
-  }, [authState.user]);
+  }, [authState.user, isNew]);
 
   const syncData = useCallback(async () => {
     if (!authState.user || !authState.token) return;
@@ -56,7 +57,7 @@ const DashboardSolicitante: React.FC = () => {
       const current = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(current);
     } catch (e) {
-      console.error(e);
+      console.error("Erro ao sincronizar solicitações:", e);
     } finally {
       setIsLoading(false);
     }
@@ -161,7 +162,7 @@ const DashboardSolicitante: React.FC = () => {
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest">Solicitações</h3>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-bold shadow-sm"><Plus size={16} className="mr-2" /> Nova</button>
+              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData({ ...initialFormData, branch: authState.user?.department || 'Matriz SP' }); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-bold shadow-sm"><Plus size={16} className="mr-2" /> Nova</button>
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -183,6 +184,9 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
             ))}
+            {filteredRequests.length === 0 && !isLoading && (
+              <div className="p-8 text-center text-gray-400 text-xs italic">Nenhuma solicitação vinculada ao seu usuário.</div>
+            )}
           </div>
         </div>
 
@@ -223,7 +227,7 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Bloco Bancário Condicional (TED/DEPOSITO): banco, favorecido, agencia, conta */}
+                {/* Bloco Bancário Condicional para TED/DEPOSITO */}
                 {formData.paymentMethod === 'TED/DEPOSITO' && (
                   <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6 animate-in slide-in-from-top duration-300">
                     <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={14} className="mr-2" /> Detalhes Bancários para Depósito</h3>

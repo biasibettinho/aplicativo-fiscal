@@ -16,7 +16,7 @@ export const STATUS_COLORS: Record<RequestStatus, string> = {
 };
 
 export const BRANCHES = ['Matriz SP', 'Filial RJ', 'Filial MG', 'Filial RS', 'Filial BA'];
-export const PAYMENT_METHODS = ['Boleto', 'PIX', 'TED/DEPOSITO', 'Transferência', 'Cartão de Crédito'];
+export const PAYMENT_METHODS = ['Boleto', 'PIX', 'TED/DEPOSITO', 'Cartão de Crédito'];
 
 export const getStatusPriorityColor = (req: any, currentUser?: User | null) => {
   if (req.status.includes('Erro')) return STATUS_COLORS[req.status as RequestStatus];

@@ -2,8 +2,7 @@
 import { PaymentRequest, RequestStatus } from '../types';
 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
-// IMPORTANTE: Atualize o ID abaixo com o ID da nova lista que você criou
-let CACHED_LIST_ID = 'NOVA_LISTA_ID_AQUI'; 
+let CACHED_LIST_ID = ''; 
 
 const FIELD_MAP = {
   title: 'Title',
@@ -29,13 +28,22 @@ const FIELD_MAP = {
 
 export const sharepointService = {
   resolveListId: async (accessToken: string) => {
-    if (CACHED_LIST_ID !== 'NOVA_LISTA_ID_AQUI') return CACHED_LIST_ID;
+    if (CACHED_LIST_ID) return CACHED_LIST_ID;
     try {
       const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists`, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const data = await resp.json();
-      const list = data.value.find((l: any) => l.displayName === 'Solicitacoes_SisPag_v2');
+      
+      if (!data.value) return '';
+
+      // Busca mais flexível: tenta nome exato ou qualquer lista que contenha "SisPag"
+      const list = data.value.find((l: any) => 
+        l.displayName.toLowerCase() === 'solicitacoes_sispag_v2' || 
+        l.name.toLowerCase() === 'solicitacoes_sispag_v2' ||
+        l.displayName.includes('SisPag')
+      );
+      
       if (list) {
         CACHED_LIST_ID = list.id;
         return list.id;
@@ -43,15 +51,14 @@ export const sharepointService = {
     } catch (e) {
       console.error("Erro ao resolver ID da lista:", e);
     }
-    return CACHED_LIST_ID;
+    return '';
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     const listId = await sharepointService.resolveListId(accessToken);
-    if (listId === 'NOVA_LISTA_ID_AQUI') return [];
+    if (!listId) return [];
 
     let allItems: any[] = [];
-    // Adicionado $top=999 e loop para seguir o nextLink (paginação)
     let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
 
     try {
@@ -68,9 +75,10 @@ export const sharepointService = {
       }
 
       return allItems.map((item: any) => {
-        const f = item.fields;
-        // Fix: Added mirrorId to match PaymentRequest interface.
-        // We use parseInt on item.id as SharePoint list IDs are numerical strings.
+        const f = item.fields || {};
+        // O ID do criador no Graph é item.createdBy.user.id
+        // No SharePoint fields, costuma ser AuthorLookupId (inteiro)
+        // Usamos o ID do Graph para bater com o ID da sessão MSAL
         return {
           id: item.id,
           mirrorId: parseInt(item.id, 10) || 0,
@@ -107,7 +115,9 @@ export const sharepointService = {
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
     const listId = await sharepointService.resolveListId(accessToken);
+    if (!listId) throw new Error("Lista SharePoint não encontrada.");
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    
     const fields: any = {
       Title: data.title,
       [FIELD_MAP.invoiceNumber]: data.invoiceNumber,
@@ -136,6 +146,7 @@ export const sharepointService = {
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
     const listId = await sharepointService.resolveListId(accessToken);
+    if (!listId) throw new Error("Lista SharePoint não encontrada.");
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/fields`;
     const fields: any = {};
     Object.keys(data).forEach(key => {
