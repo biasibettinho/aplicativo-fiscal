@@ -34,13 +34,13 @@ const DashboardSolicitante: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<PaymentRequest>>(initialFormData);
 
-  // Função para carregar as solicitações
+  // Função para carregar as solicitações via API
   const fetchRequests = useCallback(async () => {
     if (!authState.user || !authState.token) return;
     
     setIsLoading(true);
     try {
-      // O seu requestService já filtra por UserRole.SOLICITANTE retornando apenas as dele
+      // O serviço já deve filtrar, mas reforçamos a lógica no frontend abaixo
       const data = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(data);
     } catch (error) {
@@ -72,7 +72,7 @@ const DashboardSolicitante: React.FC = () => {
       await requestService.createRequest(payload, authState.token);
       setIsNew(false);
       setFormData(initialFormData);
-      await fetchRequests(); // Recarrega a lista
+      await fetchRequests(); // Atualiza a lista após criar
     } catch (error) {
       console.error("Erro ao criar:", error);
       alert("Erro ao criar solicitação. Verifique sua conexão.");
@@ -81,21 +81,30 @@ const DashboardSolicitante: React.FC = () => {
     }
   };
 
-  // Filtros de interface (Pesquisa e Data)
+  // Filtros de interface e Ordenação (ID maior primeiro)
   const filteredRequests = useMemo(() => {
-    return requests.filter(req => {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
-        req.title?.toLowerCase().includes(searchLower) || 
-        req.invoiceNumber?.toLowerCase().includes(searchLower) ||
-        req.payee?.toLowerCase().includes(searchLower);
-      
-      const matchesDate = (!startDate || req.paymentDate >= startDate) && 
-                          (!endDate || req.paymentDate <= endDate);
-      
-      return matchesSearch && matchesDate;
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [requests, searchTerm, startDate, endDate]);
+    return requests
+      .filter(req => {
+        // REQUISITO: Apenas solicitações que o usuário logado criou
+        const isOwner = req.createdByUserId === authState.user?.id;
+        
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch = 
+          req.title?.toLowerCase().includes(searchLower) || 
+          req.invoiceNumber?.toLowerCase().includes(searchLower) ||
+          req.payee?.toLowerCase().includes(searchLower);
+        
+        const matchesDate = (!startDate || req.paymentDate >= startDate) && 
+                            (!endDate || req.paymentDate <= endDate);
+        
+        return isOwner && matchesSearch && matchesDate;
+      })
+      .sort((a, b) => {
+        // REQUISITO: Ordenação por ID maior primeiro (mais recente)
+        // Convertendo para número para garantir ordenação matemática correta
+        return Number(b.id) - Number(a.id);
+      });
+  }, [requests, searchTerm, startDate, endDate, authState.user]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -142,7 +151,7 @@ const DashboardSolicitante: React.FC = () => {
             >
               <div className="flex justify-between items-start mb-2">
                 <Badge status={req.status} request={req} currentUser={authState.user} />
-                <span className="text-[10px] font-bold text-gray-400">#{req.id.slice(-4)}</span>
+                <span className="text-[10px] font-bold text-gray-400">ID: {req.id}</span>
               </div>
               <p className="font-bold text-gray-900 text-sm truncate">{req.title}</p>
               <div className="flex items-center mt-2 text-gray-400 space-x-3 text-[10px] font-bold uppercase">
@@ -159,7 +168,7 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Principal */}
+      {/* Área Principal de Exibição/Criação */}
       <div className="flex-1 overflow-y-auto">
         {isNew ? (
           <div className="max-w-3xl mx-auto py-12 px-8">
@@ -220,7 +229,7 @@ const DashboardSolicitante: React.FC = () => {
               <div className="p-10 border-b border-gray-100">
                 <div className="flex justify-between items-start mb-6">
                   <Badge status={selectedRequest.status} request={selectedRequest} currentUser={authState.user} className="px-6 py-2" />
-                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Detalhes do Protocolo</span>
+                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Detalhes do Protocolo #{selectedRequest.id}</span>
                 </div>
                 <h2 className="text-3xl font-black text-gray-900 leading-tight">{selectedRequest.title}</h2>
               </div>
