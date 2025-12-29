@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { PaymentRequest, RequestStatus, UserRole } from '../types';
+import { PaymentRequest, RequestStatus } from '../types';
 import { requestService } from '../services/requestService';
 import { db } from '../services/db';
 import { BRANCHES } from '../constants';
@@ -56,17 +56,7 @@ const DashboardFiscal: React.FC = () => {
 
   const handleApprove = async () => {
     if (!selectedId || !authState.user || !authState.token) return;
-    
-    // Regra hierárquica de aprovação fiscal
-    const nextStatus = authState.user.role === UserRole.FISCAL_ADMIN || authState.user.role === UserRole.ADMIN_MASTER 
-      ? RequestStatus.APROVADO 
-      : RequestStatus.ANALISE_FISCAL;
-
-    const comment = nextStatus === RequestStatus.APROVADO 
-      ? 'Fiscal Admin validou dados e anexos (Status: APROVADO).' 
-      : 'Fiscal Comum validou dados (Aguardando Análise Fiscal Superior).';
-
-    await requestService.changeStatus(selectedId, nextStatus, authState.token, comment);
+    await requestService.changeStatus(selectedId, RequestStatus.APROVADO, authState.token, 'Fiscal validou dados e anexos.');
     await loadData();
     setSelectedId(null);
   };
@@ -109,9 +99,9 @@ const DashboardFiscal: React.FC = () => {
       
       let matchesStatus = true;
       if (statusFilter === 'pending') {
-        matchesStatus = r.status === RequestStatus.PENDENTE || r.status === RequestStatus.ANALISE_FISCAL;
+        matchesStatus = r.status === RequestStatus.PENDENTE;
       } else if (statusFilter === 'analysis') {
-        matchesStatus = r.status === RequestStatus.ANALISE_FISCAL;
+        matchesStatus = r.status === RequestStatus.ANALISE;
       } else if (statusFilter === 'errors') {
         matchesStatus = r.status === RequestStatus.ERRO_FISCAL;
       } else if (statusFilter === 'approved') {

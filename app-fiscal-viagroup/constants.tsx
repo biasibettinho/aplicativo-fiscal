@@ -4,8 +4,6 @@ import { RequestStatus, User, UserRole } from './types';
 
 export const STATUS_COLORS: Record<RequestStatus, string> = {
   [RequestStatus.PENDENTE]: 'bg-gray-100 text-gray-700 border-gray-200',
-  [RequestStatus.ANALISE_FISCAL]: 'bg-yellow-50 text-yellow-600 border-yellow-100',
-  [RequestStatus.ANALISE_FINANCEIRO]: 'bg-orange-50 text-orange-600 border-orange-100',
   [RequestStatus.ANALISE]: 'bg-yellow-100 text-yellow-700 border-yellow-200',
   [RequestStatus.APROVADO]: 'bg-green-100 text-green-700 border-green-200',
   [RequestStatus.ERRO_FISCAL]: 'bg-red-100 text-red-700 border-red-200',

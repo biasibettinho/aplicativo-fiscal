@@ -14,8 +14,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "recharts": "^3.6.0",
-    "@azure/msal-browser": "^3.28.0",
-    "@supabase/supabase-js": "2.48.1"
+    "@azure/msal-browser": "^3.28.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../App';
 import { UserRole } from '../types';
@@ -10,16 +10,13 @@ import {
   Settings, 
   LogOut, 
   PieChart,
-  UserCircle,
-  ChevronDown,
-  UserPlus
+  UserCircle
 } from 'lucide-react';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { authState, logout } = useAuth();
   const location = useLocation();
   const user = authState.user;
-  const [showUserMenu, setShowUserMenu] = useState(false);
 
   const NavItem = ({ to, icon: Icon, label, roles }: { to: string, icon: any, label: string, roles?: UserRole[] }) => {
     if (roles && user && !roles.includes(user.role)) return null;
@@ -62,35 +59,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </nav>
 
         <div className="p-4 border-t border-gray-100">
-          <button 
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center space-x-3 w-full px-4 py-2 mb-2 hover:bg-gray-50 rounded-xl transition-all text-left group"
-          >
-            <div className="bg-blue-100 p-2 rounded-full text-blue-600 shrink-0">
+          <div className="flex items-center space-x-3 px-4 py-2 mb-2">
+            <div className="bg-blue-100 p-2 rounded-full text-blue-600">
               <UserCircle size={20} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
-              <p className="text-[10px] text-gray-500 truncate font-bold uppercase tracking-tighter">{user?.role}</p>
+              <p className="text-xs text-gray-500 truncate">{user?.role}</p>
             </div>
-            <ChevronDown 
-              size={16} 
-              className={`text-gray-400 transition-transform duration-300 ${showUserMenu ? 'rotate-180' : ''}`} 
-            />
-          </button>
-
-          {showUserMenu && (
-            <div className="px-2 mb-2 space-y-1 animate-in slide-in-from-bottom-2 duration-200">
-              <button 
-                onClick={logout}
-                className="flex items-center space-x-3 w-full px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-100 shadow-sm"
-              >
-                <UserPlus size={16} />
-                <span className="text-[10px] font-black uppercase tracking-widest">Entrar com outra conta</span>
-              </button>
-            </div>
-          )}
-
+          </div>
           <button 
             onClick={logout}
             className="flex items-center space-x-3 w-full px-4 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"

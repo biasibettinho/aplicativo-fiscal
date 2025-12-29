@@ -28,24 +28,16 @@ export const useAuth = () => {
 const App: React.FC = () => {
   const [authState, setAuthState] = useState<AuthState>(() => {
     const saved = localStorage.getItem('sispag_session');
-    const parsed = saved ? JSON.parse(saved) : { user: null, isAuthenticated: false, token: null };
-    
-    // Sincronização em tempo real com o "Banco de Dados" local
-    if (parsed.user) {
-      const latestUsers = db.getUsers();
-      const currentUser = latestUsers.find(u => u.email.toLowerCase() === parsed.user.email.toLowerCase());
-      if (currentUser) {
-        parsed.user = currentUser;
-      }
-    }
-    return parsed;
+    return saved ? JSON.parse(saved) : { user: null, isAuthenticated: false, token: null };
   });
 
   const login = async (email: string, pass: string) => {
+    // Usamos db.getUsers() pois ele garante que INITIAL_USERS existam no localStorage
     const users = db.getUsers();
     const user = users.find((u: User) => u.email.toLowerCase() === email.toLowerCase() && u.isActive);
     
     if (user) {
+      // Simulação de verificação de senha (em produção usaria hash)
       const newState = { user, isAuthenticated: true, token: 'fake-jwt-' + user.id };
       setAuthState(newState);
       localStorage.setItem('sispag_session', JSON.stringify(newState));

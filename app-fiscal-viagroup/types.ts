@@ -10,8 +10,6 @@ export enum UserRole {
 
 export enum RequestStatus {
   PENDENTE = 'Pendente',
-  ANALISE_FISCAL = 'Análise Fiscal',
-  ANALISE_FINANCEIRO = 'Análise Financeira',
   ANALISE = 'Análise',
   APROVADO = 'Aprovado',
   ERRO_FISCAL = 'Erro - Fiscal',
@@ -73,7 +71,7 @@ export interface PaymentRequest {
   orderNumbers: string;
   invoiceNumber: string;
   payee: string;
-  budgetValue?: number;
+  budgetValue?: number; // Agora opcional no formulário inicial
   discountText?: string; 
   paymentMethod: string;
   bank?: string;

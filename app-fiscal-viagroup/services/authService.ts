@@ -10,7 +10,6 @@ export const authService = {
     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.isActive);
     
     if (user) {
-      await db.syncUser(user);
       return { user, isAuthenticated: true, token: 'mock-jwt-' + user.id };
     }
     throw new Error('Credenciais inválidas ou usuário inativo.');
@@ -18,16 +17,10 @@ export const authService = {
 
   loginWithMicrosoft: async (): Promise<AuthState> => {
     try {
-      const loginResponse = await msalInstance.loginPopup({
-        ...loginRequest,
-        prompt: 'select_account'
-      });
+      const loginResponse = await msalInstance.loginPopup(loginRequest);
       const account = loginResponse.account;
       
       if (!account) throw new Error("Falha ao obter conta Microsoft.");
-
-      // Mapeamento do officeLocation (Escritório) vindo do Microsoft Graph
-      const office = (account.idTokenClaims as any)?.officeLocation || (account.idTokenClaims as any)?.department || 'Matriz SP';
 
       const users = db.getUsers();
       let user = users.find(u => u.email.toLowerCase() === account.username.toLowerCase());
@@ -41,22 +34,17 @@ export const authService = {
           name: account.name || account.username.split('@')[0],
           role: isAdmin ? UserRole.ADMIN_MASTER : UserRole.SOLICITANTE,
           isActive: true,
-          department: office,
-          branchDefault: office,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-      } else {
-        user.name = account.name || user.name;
-        user.department = office;
-        user.branchDefault = office;
-        if (isAdmin) user.role = UserRole.ADMIN_MASTER;
+        db.saveUsers([...users, user]);
+      } else if (isAdmin && user.role !== UserRole.ADMIN_MASTER) {
+        // Correção de Role caso o usuário já existisse mas com outra permissão
+        user.role = UserRole.ADMIN_MASTER;
+        db.saveUsers(users.map(u => u.id === user?.id ? user : u));
       }
 
       if (!user.isActive) throw new Error("Sua conta está desativada no sistema.");
-
-      // Sincroniza usuário na tabela 'users' do Supabase
-      await db.syncUser(user);
 
       return {
         user,
@@ -71,10 +59,6 @@ export const authService = {
   
   getCurrentUser: (): User | null => {
     const session = localStorage.getItem('sispag_session');
-    if (!session) return null;
-    
-    const parsed = JSON.parse(session);
-    const latestUsers = db.getUsers();
-    return latestUsers.find(u => u.email.toLowerCase() === parsed.user.email.toLowerCase()) || parsed.user;
+    return session ? JSON.parse(session).user : null;
   }
 };
