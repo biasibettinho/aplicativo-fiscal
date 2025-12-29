@@ -1,19 +1,27 @@
-// sharepointService.ts
+// Substitua pelos seus IDs reais
+const SITE_ID = 'vialacteoscombr.sharepoint.com,guid-do-site,guid-da-web'; 
+const LIST_ID = 'guid-da-lista-principal';
 
-const SITE_ID = 'SEU_SITE_ID'; // Formato: dominio.sharepoint.com,guid,guid
-const LIST_ID = 'SEU_LIST_ID'; // GUID da lista
-const AUX_LIST_ID = 'SEU_ID_DA_LISTA_AUXILIAR'; // GUID da lista de boletos
-
-// Função auxiliar para limpar nomes de arquivos (Resolve o Erro 400)
+/**
+ * Limpa o nome do arquivo para evitar Erro 400 (Bad Request)
+ * Remove acentos, caracteres especiais e limita o tamanho.
+ */
 const sanitizeFileName = (name: string) => {
-  return name
-    .replace(/[#%*:<>?/|]/g, '') // Remove caracteres proibidos pelo SharePoint
-    .replace(/\s+/g, '_')        // Substitui espaços por underline
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Remove acentos
-    .substring(0, 100);          // Limita o tamanho para evitar URLs gigantes
+  const extension = name.split('.').pop();
+  const baseName = name.split('.').slice(0, -1).join('.');
+  
+  return baseName
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+    .replace(/[#%*:<>?/|\\"]/g, '') // Remove caracteres proibidos
+    .replace(/\s+/g, '_')           // Espaços por underline
+    .substring(0, 60)               // Limita tamanho do corpo
+    + '.' + extension;
 };
 
-// Função para converter File em Base64 (Necessário para anexos de Lista no Graph)
+/**
+ * Converte arquivo para Base64 para envio via Microsoft Graph
+ */
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -27,25 +35,36 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export const sharepointService = {
-  // 1. Criar o item de texto (Já estava funcionando)
+  // Busca as solicitações (Garante que o carregamento volte a funcionar)
+  async getRequests(token: string) {
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items?expand=fields`;
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error("Falha ao carregar solicitações.");
+    const data = await response.json();
+    return data.value;
+  },
+
+  // Cria o item de texto
   async createRequest(token: string, data: any) {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items`;
     
     const payload = {
       fields: {
-        Title: data.title,
-        InvoiceNumber: data.invoiceNumber,
-        OrderNumbers: data.orderNumbers,
-        Payee: data.payee,
-        PaymentMethod: data.paymentMethod,
+        Title: data.title || 'Sem Título',
+        InvoiceNumber: data.invoiceNumber || '',
+        OrderNumbers: data.orderNumbers || '',
+        Payee: data.payee || '',
+        PaymentMethod: data.paymentMethod || 'Boleto',
         PaymentDate: data.paymentDate,
-        GeneralObservation: data.generalObservation,
-        Bank: data.bank,
-        Agency: data.agency,
-        Account: data.account,
-        AccountType: data.accountType,
-        PixKey: data.pixKey,
-        Branch: data.branch,
+        GeneralObservation: data.generalObservation || '',
+        Bank: data.bank || '',
+        Agency: data.agency || '',
+        Account: data.account || '',
+        AccountType: data.accountType || 'Conta Corrente',
+        PixKey: data.pixKey || '',
+        Branch: data.branch || 'Matriz SP',
         Status: 'Pendente'
       }
     };
@@ -61,18 +80,23 @@ export const sharepointService = {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(`Erro ao criar item: ${error.error.message}`);
+      // Trata o erro de hostname inválido
+      if (error.error.code === 'invalidHostname') {
+        throw new Error("Configuração de SITE_ID incorreta no servidor.");
+      }
+      throw new Error(error.error.message);
     }
 
     return await response.json();
   },
 
-  // 2. Upload de Anexos Corrigido (Resolve o "Resource not found" e "Bad Request")
-  async uploadAttachment(token: string, listId: string, itemId: string, file: File) {
+  /**
+   * Faz o upload de anexo usando contentBytes (Formato correto para Itens de Lista)
+   * Resolve o erro: Resource not found for the segment 'attachments'
+   */
+  async uploadAttachment(token: string, itemId: string, file: File) {
     const fileName = sanitizeFileName(file.name);
-    
-    // URL específica para anexos de itens de lista (Segmento 'attachments')
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items/${itemId}/attachments`;
 
     try {
       const base64Content = await fileToBase64(file);
@@ -85,45 +109,31 @@ export const sharepointService = {
         },
         body: JSON.stringify({
           name: fileName,
-          contentType: file.type,
-          contentBytes: base64Content // O Graph espera 'contentBytes' para anexos de lista
+          contentBytes: base64Content
         })
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        // Se o erro for que o arquivo já existe, ele apenas ignora ou você pode tratar
-        if (errorData.error.code === 'attachmentExists') return;
-        
-        throw new Error(errorData.error.message || 'Erro desconhecido no upload');
+        throw new Error(errorData.error.message);
       }
+      return true;
     } catch (error: any) {
-      console.error(`Falha no anexo ${file.name}:`, error);
-      throw new Error(`Erro ao anexar ${file.name}: ${error.message}`);
+      throw new Error(`Erro no anexo ${file.name}: ${error.message}`);
     }
   },
 
-  // Funções de atalho para o Dashboard
   async uploadMainAttachment(token: string, itemId: string, file: File) {
-    return this.uploadAttachment(token, LIST_ID, itemId, file);
+    return this.uploadAttachment(token, itemId, file);
   },
 
   async uploadAuxiliaryAttachment(token: string, itemId: string, file: File) {
-    // Se você usa uma lista separada para boletos, mude o AUX_LIST_ID
-    return this.uploadAttachment(token, LIST_ID, itemId, file); 
+    return this.uploadAttachment(token, itemId, file);
   },
 
-  // 3. Atualizar item (Para correções)
   async updateRequest(token: string, itemId: string, data: any) {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items/${itemId}`;
-    
-    const payload = {
-      fields: {
-        ...data,
-        Status: 'Pendente' // Ao editar, volta para pendente
-      }
-    };
-
+    const payload = { fields: data };
     const response = await fetch(url, {
       method: 'PATCH',
       headers: {
@@ -132,11 +142,6 @@ export const sharepointService = {
       },
       body: JSON.stringify(payload)
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error.message);
-    }
-    return await response.json();
+    return response.ok;
   }
 };
