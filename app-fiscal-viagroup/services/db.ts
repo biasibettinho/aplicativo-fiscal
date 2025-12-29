@@ -1,71 +1,75 @@
 
 import { User, UserRole, PaymentRequest, RequestStatus, AuditLog } from '../types';
+import { supabase } from './supabase';
 
 const USERS_KEY = 'sispag_users';
-const REQUESTS_KEY = 'sispag_requests';
-const AUDIT_KEY = 'sispag_audit';
-
-// IDs serão preenchidos dinamicamente no login via Microsoft para bater com o SharePoint
-const INITIAL_USERS: User[] = [
-  {
-    id: 'placeholder_admin',
-    email: 'felipe.gabriel@viagroup.com.br',
-    name: 'Felipe Gabriel',
-    role: UserRole.ADMIN_MASTER,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  }
-];
 
 export const db = {
   getUsers: (): User[] => {
     const data = localStorage.getItem(USERS_KEY);
-    let users: User[] = data ? JSON.parse(data) : INITIAL_USERS;
-    
-    // Garante que o administrador principal sempre tenha o papel correto
-    let updated = false;
-    users = users.map(u => {
-      if (u.email.toLowerCase() === 'felipe.gabriel@viagroup.com.br' && u.role !== UserRole.ADMIN_MASTER) {
-        updated = true;
-        return { ...u, role: UserRole.ADMIN_MASTER };
-      }
-      return u;
-    });
-
-    if (updated || !data) {
-      localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    }
-    
-    return users;
+    return data ? JSON.parse(data) : [];
   },
   
   saveUsers: (users: User[]) => {
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
   },
 
+  fetchRemoteUsers: async (): Promise<User[]> => {
+    const { data, error } = await supabase.from('users').select('*');
+    if (error) return [];
+    
+    const mapped = data.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as UserRole,
+      isActive: u.is_active,
+      department: u.department,
+      branchDefault: u.branch_default,
+      createdAt: u.created_at,
+      updatedAt: u.updated_at
+    }));
+
+    db.saveUsers(mapped);
+    return mapped;
+  },
+
+  syncUser: async (user: User) => {
+    const { error } = await supabase
+      .from('users')
+      .upsert({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        is_active: user.isActive,
+        department: user.department || '',
+        branch_default: user.branchDefault || '',
+        updated_at: new Date().toISOString()
+      });
+    
+    if (!error) {
+      const local = db.getUsers();
+      const exists = local.findIndex(u => u.id === user.id);
+      if (exists !== -1) {
+        local[exists] = user;
+      } else {
+        local.push(user);
+      }
+      db.saveUsers(local);
+    } else {
+      console.error("Erro ao sincronizar usuário no Supabase:", error);
+    }
+  },
+
   getRequests: (): PaymentRequest[] => {
-    const data = localStorage.getItem(REQUESTS_KEY);
+    const data = localStorage.getItem('sispag_requests');
     return data ? JSON.parse(data) : [];
   },
 
-  saveRequests: (requests: PaymentRequest[]) => {
-    localStorage.setItem(REQUESTS_KEY, JSON.stringify(requests));
-  },
-
   getAuditLogs: (requestId?: string): AuditLog[] => {
-    const data = localStorage.getItem(AUDIT_KEY);
+    const data = localStorage.getItem('sispag_audit');
     const logs: AuditLog[] = data ? JSON.parse(data) : [];
     return requestId ? logs.filter(l => l.requestId === requestId) : logs;
-  },
-
-  addAuditLog: (log: Omit<AuditLog, 'id' | 'createdAt'>) => {
-    const logs = db.getAuditLogs();
-    const newLog: AuditLog = {
-      ...log,
-      id: Math.random().toString(36).substr(2, 9),
-      createdAt: new Date().toISOString()
-    };
-    localStorage.setItem(AUDIT_KEY, JSON.stringify([newLog, ...logs]));
   }
 };

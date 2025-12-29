@@ -4,6 +4,18 @@ import { db } from './db';
 import { msalInstance, loginRequest } from './msalConfig';
 
 export const authService = {
+  login: async (email: string, password: string): Promise<AuthState> => {
+    await new Promise(r => setTimeout(r, 800));
+    const users = db.getUsers();
+    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.isActive);
+    
+    if (user) {
+      await db.syncUser(user);
+      return { user, isAuthenticated: true, token: 'mock-jwt-' + user.id };
+    }
+    throw new Error('Credenciais inválidas ou usuário inativo.');
+  },
+
   loginWithMicrosoft: async (): Promise<AuthState> => {
     try {
       const loginResponse = await msalInstance.loginPopup({
@@ -14,49 +26,37 @@ export const authService = {
       
       if (!account) throw new Error("Falha ao obter conta Microsoft.");
 
+      // Mapeamento do officeLocation (Escritório) vindo do Microsoft Graph
+      const office = (account.idTokenClaims as any)?.officeLocation || (account.idTokenClaims as any)?.department || 'Matriz SP';
+
       const users = db.getUsers();
-      // Busca pelo email para vincular a conta Microsoft ao registro local
       let user = users.find(u => u.email.toLowerCase() === account.username.toLowerCase());
 
       const isAdmin = account.username.toLowerCase() === 'felipe.gabriel@viagroup.com.br';
 
       if (!user) {
         user = {
-          id: account.localAccountId, // ID Real da Microsoft
+          id: account.localAccountId,
           email: account.username,
           name: account.name || account.username.split('@')[0],
           role: isAdmin ? UserRole.ADMIN_MASTER : UserRole.SOLICITANTE,
           isActive: true,
-          department: (account.idTokenClaims as any)?.department || '',
+          department: office,
+          branchDefault: office,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-        db.saveUsers([...users, user]);
       } else {
-        // ATUALIZAÇÃO CRÍTICA: Se o usuário já existia mas com ID de placeholder, atualizamos para o ID real do Azure
-        let needsUpdate = false;
-        if (user.id !== account.localAccountId) {
-          user.id = account.localAccountId;
-          needsUpdate = true;
-        }
-        if (isAdmin && user.role !== UserRole.ADMIN_MASTER) {
-          user.role = UserRole.ADMIN_MASTER;
-          needsUpdate = true;
-        }
-        
-        // Sincroniza o departamento se disponível no token
-        const dept = (account.idTokenClaims as any)?.department;
-        if (dept && user.department !== dept) {
-          user.department = dept;
-          needsUpdate = true;
-        }
-
-        if (needsUpdate) {
-          db.saveUsers(users.map(u => u.email.toLowerCase() === user?.email.toLowerCase() ? user! : u));
-        }
+        user.name = account.name || user.name;
+        user.department = office;
+        user.branchDefault = office;
+        if (isAdmin) user.role = UserRole.ADMIN_MASTER;
       }
 
       if (!user.isActive) throw new Error("Sua conta está desativada no sistema.");
+
+      // Sincroniza usuário na tabela 'users' do Supabase
+      await db.syncUser(user);
 
       return {
         user,
