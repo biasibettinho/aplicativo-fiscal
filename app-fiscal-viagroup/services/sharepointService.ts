@@ -2,9 +2,10 @@
 import { PaymentRequest, RequestStatus } from '../types';
 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
-let CACHED_LIST_ID = ''; 
+const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
+const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
-// Mapeamento de campos internos do SharePoint (nomes de sistema)
+// Mapeamento de nomes internos para nomes de sistema
 const FIELD_MAP = {
   title: 'Title',
   invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
@@ -12,15 +13,20 @@ const FIELD_MAP = {
   status: 'Status',
   branch: 'Filial',
   generalObservation: 'Observa_x00e7__x00e3_o',
+  mirrorId: 'ID_ESPELHO',
   paymentMethod: 'MET_PAGAMENTO',
   pixKey: 'CAMPO_PIX',
   paymentDate: 'DATA_PAG',
   payee: 'PESSOA',
+  discountText: 'DESCONTO',
   statusManual: 'STATUS_ESPELHO_MANUAL',
   errorType: 'OBS_ERRO',
   errorObservation: 'OBS_CRIACAO',
+  fiscalSendDate: 'Dataenvio_fiscal',
+  finalizationDate: 'Datafinaliza_x00e7__x00e3_o',
   sharedWithUserId: 'SHARED_WITH',
   shareComment: 'COMENT_SHARE',
+  // Campos bancários (Assumindo nomes padrão se não fornecidos anteriormente)
   bank: 'BANCO',
   agency: 'AGENCIA',
   account: 'CONTA',
@@ -28,113 +34,59 @@ const FIELD_MAP = {
 };
 
 export const sharepointService = {
-  resolveListId: async (accessToken: string) => {
-    if (CACHED_LIST_ID) return CACHED_LIST_ID;
-    try {
-      const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const data = await resp.json();
-      
-      if (!data.value) return '';
-
-      // Busca robusta: tenta encontrar por ID específico, nome exato ou termo "sispag"
-      const list = data.value.find((l: any) => 
-        l.id === '3614909a-641b-463f-9118-283187212b1d' || // ID provável da V2
-        l.displayName.toLowerCase() === 'solicitacoes_sispag_v2' || 
-        l.name.toLowerCase() === 'solicitacoes_sispag_v2' ||
-        l.displayName.toLowerCase().includes('sispag')
-      );
-      
-      if (list) {
-        CACHED_LIST_ID = list.id;
-        return list.id;
-      }
-    } catch (e) {
-      console.error("Erro ao resolver lista SharePoint:", e);
-    }
-    return '';
-  },
-
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
-    const listId = await sharepointService.resolveListId(accessToken);
-    if (!listId) return [];
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
 
-    let allItems: any[] = [];
-    let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
-
-    try {
-      while (nextUrl) {
-        const response = await fetch(nextUrl, {
-          headers: { Authorization: `Bearer ${accessToken}` }
-        });
-
-        if (!response.ok) {
-          const err = await response.json();
-          console.error("Erro na busca do Graph:", err);
-          break;
-        }
-
-        const data = await response.json();
-        if (data.value) {
-          allItems = [...allItems, ...data.value];
-        }
-        
-        // Segue para a próxima página de resultados se existir
-        nextUrl = data['@odata.nextLink'] || null;
-      }
-
-      console.log(`Sucesso: ${allItems.length} itens carregados do SharePoint.`);
-
-      return allItems.map((item: any) => {
-        const f = item.fields || {};
-        const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || 'unknown';
-        
-        return {
-          id: item.id,
-          mirrorId: parseInt(item.id, 10) || 0,
-          title: f.Title || 'Sem Título',
-          branch: f[FIELD_MAP.branch] || '',
-          status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
-          orderNumbers: f[FIELD_MAP.orderNumbers] || '',
-          invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
-          payee: f[FIELD_MAP.payee] || '',
-          paymentMethod: f[FIELD_MAP.paymentMethod] || '',
-          pixKey: f[FIELD_MAP.pixKey] || '',
-          paymentDate: f[FIELD_MAP.paymentDate] || '',
-          bank: f[FIELD_MAP.bank] || '',
-          agency: f[FIELD_MAP.agency] || '',
-          account: f[FIELD_MAP.account] || '',
-          accountType: f[FIELD_MAP.accountType] || '',
-          generalObservation: f[FIELD_MAP.generalObservation] || '',
-          statusManual: f[FIELD_MAP.statusManual] || '',
-          errorType: f[FIELD_MAP.errorType] || '',
-          errorObservation: f[FIELD_MAP.errorObservation] || '',
-          sharedWithUserId: f[FIELD_MAP.sharedWithUserId] || '',
-          shareComment: f[FIELD_MAP.shareComment] || '',
-          createdAt: item.createdDateTime,
-          updatedAt: item.lastModifiedDateTime,
-          createdByUserId: creatorId,
-          createdByName: item.createdBy?.user?.displayName || 'Sistema',
-        };
-      });
-    } catch (error) {
-      console.error("Erro crítico ao buscar dados no SharePoint:", error);
-      return [];
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Falha ao conectar com SharePoint');
     }
+
+    const data = await response.json();
+    return data.value.map((item: any) => {
+      const f = item.fields;
+      return {
+        id: item.id,
+        mirrorId: f[FIELD_MAP.mirrorId] || 0,
+        title: f.Title || '',
+        branch: f[FIELD_MAP.branch] || '',
+        status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
+        orderNumbers: f[FIELD_MAP.orderNumbers] || '',
+        invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
+        payee: f[FIELD_MAP.payee] || '',
+        paymentMethod: f[FIELD_MAP.paymentMethod] || '',
+        pixKey: f[FIELD_MAP.pixKey] || '',
+        paymentDate: f[FIELD_MAP.paymentDate] || '',
+        bank: f[FIELD_MAP.bank] || '',
+        agency: f[FIELD_MAP.agency] || '',
+        account: f[FIELD_MAP.account] || '',
+        accountType: f[FIELD_MAP.accountType] || '',
+        generalObservation: f[FIELD_MAP.generalObservation] || '',
+        discountText: f[FIELD_MAP.discountText] || '',
+        statusManual: f[FIELD_MAP.statusManual] || '',
+        errorType: f[FIELD_MAP.errorType] || '',
+        errorObservation: f[FIELD_MAP.errorObservation] || '',
+        sharedWithUserId: f[FIELD_MAP.sharedWithUserId] || '',
+        shareComment: f[FIELD_MAP.shareComment] || '',
+        createdAt: item.createdDateTime,
+        updatedAt: item.lastModifiedDateTime,
+        createdByUserId: item.createdBy?.user?.id,
+        createdByName: item.createdBy?.user?.displayName,
+      };
+    });
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const listId = await sharepointService.resolveListId(accessToken);
-    if (!listId) throw new Error("Lista SharePoint não encontrada.");
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
-    
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`;
     const fields: any = {
       Title: data.title,
       [FIELD_MAP.invoiceNumber]: data.invoiceNumber,
       [FIELD_MAP.orderNumbers]: data.orderNumbers,
       [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
-      [FIELD_MAP.branch]: data.branch,
+      [FIELD_MAP.branch]: data.branch || 'Matriz SP',
       [FIELD_MAP.paymentMethod]: data.paymentMethod,
       [FIELD_MAP.paymentDate]: data.paymentDate,
       [FIELD_MAP.payee]: data.payee,
@@ -148,29 +100,47 @@ export const sharepointService = {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({ fields })
     });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Erro ao criar item no SharePoint');
+    }
 
     return response.json();
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const listId = await sharepointService.resolveListId(accessToken);
-    if (!listId) throw new Error("Lista SharePoint não encontrada.");
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/fields`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
     
     const fields: any = {};
-    Object.keys(data).forEach(key => {
-      const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];
-      if (spKey) fields[spKey] = (data as any)[key];
-    });
+    if (data.status) fields[FIELD_MAP.status] = data.status;
+    if (data.errorType) fields[FIELD_MAP.errorType] = data.errorType;
+    if (data.errorObservation) fields[FIELD_MAP.errorObservation] = data.errorObservation;
+    if (data.statusManual) fields[FIELD_MAP.statusManual] = data.statusManual;
+    if (data.sharedWithUserId) fields[FIELD_MAP.sharedWithUserId] = data.sharedWithUserId;
+    if (data.shareComment) fields[FIELD_MAP.shareComment] = data.shareComment;
+    if (data.generalObservation) fields[FIELD_MAP.generalObservation] = data.generalObservation;
 
     const response = await fetch(url, {
       method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(fields)
     });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Erro ao atualizar item no SharePoint');
+    }
+
     return response.json();
   }
 };

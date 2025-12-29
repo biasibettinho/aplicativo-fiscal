@@ -4,29 +4,18 @@ import { sharepointService } from './sharepointService';
 
 export const requestService = {
   getRequestsFiltered: async (user: User, accessToken: string): Promise<PaymentRequest[]> => {
-    if (!user || !accessToken) return [];
-    
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      // REGRA MESTRE: Admin Master (Felipe Gabriel) e Fiscais visualizam 100% dos dados
-      if (
-        user.role === UserRole.ADMIN_MASTER || 
-        user.role === UserRole.FISCAL_ADMIN || 
-        user.role === UserRole.FISCAL_COMUM
-      ) {
+      if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
         return all;
       }
 
-      // Solicitantes comuns: vêm apenas o que criaram
       if (user.role === UserRole.SOLICITANTE) {
-        return all.filter(r => 
-          r.createdByUserId === user.id || 
-          r.createdByName.toLowerCase().includes(user.name.split(' ')[0].toLowerCase())
-        ); 
+        // Agora filtramos para que o solicitante veja apenas o que ele criou
+        return all.filter(r => r.createdByUserId === user.id); 
       }
       
-      // Financeiro: vêm apenas o que já passou pelo fiscal ou foi compartilhado
       if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
         const financeAllowed = [
           RequestStatus.APROVADO, 
@@ -40,7 +29,7 @@ export const requestService = {
       
       return [];
     } catch (error) {
-      console.error("Erro ao filtrar solicitações:", error);
+      console.error("Erro ao filtrar solicitações do SharePoint:", error);
       return [];
     }
   },
