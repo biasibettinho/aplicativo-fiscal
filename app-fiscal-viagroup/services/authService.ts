@@ -34,23 +34,38 @@ export const authService = {
           name: account.name || account.username.split('@')[0],
           role: isAdmin ? UserRole.ADMIN_MASTER : UserRole.SOLICITANTE,
           isActive: true,
+          department: (account.idTokenClaims as any)?.department || '',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
         db.saveUsers([...users, user]);
-      } else if (isAdmin && user.role !== UserRole.ADMIN_MASTER) {
-        // Correção de Role caso o usuário já existisse mas com outra permissão
-        user.role = UserRole.ADMIN_MASTER;
-        db.saveUsers(users.map(u => u.id === user?.id ? user : u));
+      } else {
+        // Garante que o ID e o Papel do Admin Master estejam sempre corretos
+        let changed = false;
+        if (isAdmin && user.role !== UserRole.ADMIN_MASTER) {
+          user.role = UserRole.ADMIN_MASTER;
+          changed = true;
+        }
+        if (user.id !== account.localAccountId) {
+          user.id = account.localAccountId;
+          changed = true;
+        }
+        
+        if (changed) {
+          db.saveUsers(users.map(u => u.email.toLowerCase() === user?.email.toLowerCase() ? user! : u));
+        }
       }
 
       if (!user.isActive) throw new Error("Sua conta está desativada no sistema.");
 
-      return {
+      const state = {
         user,
         isAuthenticated: true,
         token: loginResponse.accessToken
       };
+      
+      localStorage.setItem('sispag_session', JSON.stringify(state));
+      return state;
     } catch (error: any) {
       console.error("MS Login Error:", error);
       throw new Error(error.message || "Erro na autenticação Microsoft.");
@@ -59,6 +74,10 @@ export const authService = {
   
   getCurrentUser: (): User | null => {
     const session = localStorage.getItem('sispag_session');
-    return session ? JSON.parse(session).user : null;
+    if (!session) return null;
+    const parsed = JSON.parse(session);
+    // Sempre busca a versão mais recente do banco local para evitar inconsistência de Role
+    const users = db.getUsers();
+    return users.find(u => u.email.toLowerCase() === parsed.user.email.toLowerCase()) || parsed.user;
   }
 };

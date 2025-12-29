@@ -4,20 +4,21 @@ import { sharepointService } from './sharepointService';
 
 export const requestService = {
   getRequestsFiltered: async (user: User, accessToken: string): Promise<PaymentRequest[]> => {
+    if (!user || !accessToken) return [];
+    
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      // ADMIN_MASTER visualiza todos os itens da lista
-      if (user.role === UserRole.ADMIN_MASTER) {
+      // REGRA MESTRE: Admin Master (Felipe Gabriel) e Fiscais visualizam 100% dos dados
+      if (
+        user.role === UserRole.ADMIN_MASTER || 
+        user.role === UserRole.FISCAL_ADMIN || 
+        user.role === UserRole.FISCAL_COMUM
+      ) {
         return all;
       }
 
-      // Papéis Fiscais veem tudo para análise
-      if (user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
-        return all;
-      }
-
-      // Solicitantes comuns veem apenas o que criaram (comparação por ID do Azure ou nome parcial)
+      // Solicitantes comuns: vêm apenas o que criaram
       if (user.role === UserRole.SOLICITANTE) {
         return all.filter(r => 
           r.createdByUserId === user.id || 
@@ -25,6 +26,7 @@ export const requestService = {
         ); 
       }
       
+      // Financeiro: vêm apenas o que já passou pelo fiscal ou foi compartilhado
       if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
         const financeAllowed = [
           RequestStatus.APROVADO, 

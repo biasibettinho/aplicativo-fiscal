@@ -38,8 +38,9 @@ export const sharepointService = {
       
       if (!data.value) return '';
 
-      // Busca por nome exato ou termo parcial ignorando case
+      // Busca robusta: tenta encontrar por ID específico, nome exato ou termo "sispag"
       const list = data.value.find((l: any) => 
+        l.id === '3614909a-641b-463f-9118-283187212b1d' || // ID provável da V2
         l.displayName.toLowerCase() === 'solicitacoes_sispag_v2' || 
         l.name.toLowerCase() === 'solicitacoes_sispag_v2' ||
         l.displayName.toLowerCase().includes('sispag')
@@ -50,20 +51,16 @@ export const sharepointService = {
         return list.id;
       }
     } catch (e) {
-      console.error("Erro ao resolver ID da lista:", e);
+      console.error("Erro ao resolver lista SharePoint:", e);
     }
     return '';
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     const listId = await sharepointService.resolveListId(accessToken);
-    if (!listId) {
-      console.error("Lista SisPag não encontrada no SharePoint.");
-      return [];
-    }
+    if (!listId) return [];
 
     let allItems: any[] = [];
-    // Adicionamos $top=999 para maximizar o tamanho do lote e expand=fields para pegar os dados
     let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
 
     try {
@@ -73,30 +70,30 @@ export const sharepointService = {
         });
 
         if (!response.ok) {
-          const errData = await response.json();
-          console.error("Erro ao buscar itens (paginação):", errData);
+          const err = await response.json();
+          console.error("Erro na busca do Graph:", err);
           break;
         }
 
         const data = await response.json();
-        allItems = [...allItems, ...data.value];
+        if (data.value) {
+          allItems = [...allItems, ...data.value];
+        }
         
-        // O segredo para pegar mais de 2000 itens (ou qualquer limite do Graph) está aqui:
+        // Segue para a próxima página de resultados se existir
         nextUrl = data['@odata.nextLink'] || null;
       }
 
-      console.log(`Total de itens recuperados do SharePoint: ${allItems.length}`);
+      console.log(`Sucesso: ${allItems.length} itens carregados do SharePoint.`);
 
       return allItems.map((item: any) => {
         const f = item.fields || {};
-        // O ID do criador no Graph é item.createdBy.user.id
-        // Sincronizamos este ID com o user.id da nossa aplicação para o RLS (filtros) funcionar
-        const creatorId = item.createdBy?.user?.id || f.AuthorLookupId;
+        const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || 'unknown';
         
         return {
           id: item.id,
           mirrorId: parseInt(item.id, 10) || 0,
-          title: f.Title || '',
+          title: f.Title || 'Sem Título',
           branch: f[FIELD_MAP.branch] || '',
           status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
           orderNumbers: f[FIELD_MAP.orderNumbers] || '',
@@ -122,7 +119,7 @@ export const sharepointService = {
         };
       });
     } catch (error) {
-      console.error("Erro crítico na integração SharePoint:", error);
+      console.error("Erro crítico ao buscar dados no SharePoint:", error);
       return [];
     }
   },
@@ -166,9 +163,7 @@ export const sharepointService = {
     const fields: any = {};
     Object.keys(data).forEach(key => {
       const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];
-      if (spKey) {
-        fields[spKey] = (data as any)[key];
-      }
+      if (spKey) fields[spKey] = (data as any)[key];
     });
 
     const response = await fetch(url, {
