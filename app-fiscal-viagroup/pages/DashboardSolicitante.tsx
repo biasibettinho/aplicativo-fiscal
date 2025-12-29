@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus } from '../types';
-import { requestService } from '../services/requestService';
+import { requestService } from '../services/requestService'; // Mantido para buscas
+import { sharepointService } from '../services/sharepointService'; // Importado para os novos uploads
 import { PAYMENT_METHODS } from '../constants';
 import { 
   Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote
@@ -15,6 +16,10 @@ const DashboardSolicitante: React.FC = () => {
   const [isNew, setIsNew] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // NOVOS ESTADOS PARA ANEXOS
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
+  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
   
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -67,7 +72,6 @@ const DashboardSolicitante: React.FC = () => {
 
   const filteredRequests = useMemo(() => {
     const filtered = requests.filter(req => {
-      // FILTRO DE SEGURANÇA: Apenas o que foi criado pelo usuário logado
       const isOwner = req.createdByUserId === authState.user?.id;
       if (!isOwner) return false;
 
@@ -94,7 +98,6 @@ const DashboardSolicitante: React.FC = () => {
       return matchesSearch && matchesDate;
     });
 
-    // Ordenação Decrescente: Mais recentes (data de criação) primeiro
     return [...filtered].sort((a, b) => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
@@ -106,20 +109,43 @@ const DashboardSolicitante: React.FC = () => {
     return !!formData.title && !!formData.paymentMethod;
   }, [formData]);
 
+  // FUNÇÃO DE SALVAMENTO AJUSTADA PARA MÚLTIPLOS ANEXOS
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
     try {
       const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
+      let itemId = selectedId;
+
+      // 1. Criar ou Atualizar Item Principal
       if (isEditing && selectedId) {
-        await requestService.updateRequest(selectedId, finalData, authState.token);
+        await sharepointService.updateRequest(authState.token, selectedId, finalData);
       } else {
-        await requestService.createRequest(finalData, authState.token);
+        const newRequest = await sharepointService.createRequest(authState.token, finalData);
+        itemId = newRequest.id;
       }
+
+      // 2. Upload das Notas Fiscais (Anexos do Item Principal)
+      if (itemId && invoiceFiles.length > 0) {
+        for (const file of invoiceFiles) {
+          await sharepointService.uploadMainAttachment(authState.token, itemId, file);
+        }
+      }
+
+      // 3. Upload dos Boletos (Lista Auxiliar)
+      if (itemId && ticketFiles.length > 0) {
+        for (const file of ticketFiles) {
+          await sharepointService.uploadAuxiliaryAttachment(authState.token, itemId, file);
+        }
+      }
+
       await syncData();
       setIsNew(false);
       setIsEditing(false);
       setFormData(initialFormData);
+      setInvoiceFiles([]); // Limpar arquivos após sucesso
+      setTicketFiles([]);  // Limpar arquivos após sucesso
+      alert("Solicitação enviada com sucesso!");
     } catch (e) {
       alert("Erro ao salvar: " + (e as Error).message);
     } finally {
@@ -167,7 +193,7 @@ const DashboardSolicitante: React.FC = () => {
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest">Solicitações ({filteredRequests.length})</h3>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-bold shadow-sm"><Plus size={16} className="mr-2" /> Nova</button>
+              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-bold shadow-sm"><Plus size={16} className="mr-2" /> Nova</button>
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -270,20 +296,37 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
                 )}
 
+                {/* AREA DE ANEXOS ATUALIZADA */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
                     <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={14} className="mr-2" /> Anexar Nota Fiscal (PDF)</h3>
-                    <div className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer">
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer">
                       <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
-                      <span className="text-[10px] font-bold">Selecionar arquivo</span>
-                    </div>
+                      <span className="text-[10px] font-bold text-center">
+                        {invoiceFiles.length > 0 ? `${invoiceFiles.length} nota(s) selecionada(s)` : 'Selecionar Notas'}
+                      </span>
+                      <input 
+                        type="file" 
+                        multiple 
+                        className="hidden" 
+                        onChange={(e) => setInvoiceFiles(Array.from(e.target.files || []))} 
+                      />
+                    </label>
                   </div>
                   <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
                     <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><CreditCard size={14} className="mr-2" /> Anexar Boleto</h3>
-                    <div className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer">
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer">
                       <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
-                      <span className="text-[10px] font-bold">Selecionar arquivo</span>
-                    </div>
+                      <span className="text-[10px] font-bold text-center">
+                        {ticketFiles.length > 0 ? `${ticketFiles.length} boleto(s) selecionado(s)` : 'Selecionar Boletos'}
+                      </span>
+                      <input 
+                        type="file" 
+                        multiple 
+                        className="hidden" 
+                        onChange={(e) => setTicketFiles(Array.from(e.target.files || []))} 
+                      />
+                    </label>
                   </div>
                 </div>
 
