@@ -17,7 +17,7 @@ const DashboardSolicitante: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // ESTADOS PARA ANEXOS
+  // ESTADOS PARA CONTROLE DE ARQUIVOS
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
   
@@ -46,12 +46,7 @@ const DashboardSolicitante: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<PaymentRequest>>(initialFormData);
 
-  useEffect(() => {
-    if (isNew && !isEditing && authState.user?.department) {
-      setFormData(prev => ({ ...prev, branch: authState.user?.department }));
-    }
-  }, [isNew, isEditing, authState.user]);
-
+  // Sincronização inicial e automática
   const syncData = useCallback(async () => {
     if (!authState.user || !authState.token) return;
     setIsLoading(true);
@@ -65,30 +60,36 @@ const DashboardSolicitante: React.FC = () => {
     }
   }, [authState.user, authState.token]);
 
-  useEffect(() => { syncData(); }, [syncData]);
+  useEffect(() => {
+    syncData();
+  }, [syncData]);
 
+  // Filtros de busca na lista lateral
   const filteredRequests = useMemo(() => {
-    const filtered = requests.filter(req => {
+    return requests.filter(req => {
       const isOwner = req.createdByUserId === authState.user?.id;
       if (!isOwner) return false;
-      const matchesSearch = req.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            req.id.toString().includes(searchTerm) ||
-                            (req.invoiceNumber && req.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+      const matchesSearch = 
+        req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        req.id.toString().includes(searchTerm) ||
+        (req.invoiceNumber && req.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()));
       return matchesSearch;
-    });
-    return [...filtered].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, authState.user?.id]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
   const isFormValid = useMemo(() => !!formData.title && !!formData.paymentMethod, [formData]);
 
+  // FUNÇÃO DE SALVAMENTO CORRIGIDA
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
+    
     try {
       const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
       let itemId = selectedId;
 
+      // 1. Criar ou Atualizar Registro de Texto
       if (isEditing && selectedId) {
         await sharepointService.updateRequest(authState.token, selectedId, finalData);
       } else {
@@ -96,26 +97,29 @@ const DashboardSolicitante: React.FC = () => {
         itemId = newRequest.id;
       }
 
-      if (itemId) {
-        // Envio de Notas Fiscais
-        for (const file of invoiceFiles) {
-          await sharepointService.uploadMainAttachment(authState.token, itemId, file);
-        }
-        // Envio de Boletos
-        for (const file of ticketFiles) {
-          await sharepointService.uploadAuxiliaryAttachment(authState.token, itemId, file);
-        }
+      if (!itemId) throw new Error("ID do item não encontrado.");
+
+      // 2. Upload de Notas Fiscais (Lista Principal)
+      for (const file of invoiceFiles) {
+        await sharepointService.uploadMainAttachment(authState.token, itemId, file);
       }
 
-      await syncData();
+      // 3. Upload de Boletos (Lista Auxiliar)
+      for (const file of ticketFiles) {
+        await sharepointService.uploadAuxiliaryAttachment(authState.token, itemId, file);
+      }
+
+      alert("Solicitação enviada com sucesso!");
       setIsNew(false);
       setIsEditing(false);
       setFormData(initialFormData);
       setInvoiceFiles([]);
       setTicketFiles([]);
-      alert("Sucesso!");
+      await syncData();
+
     } catch (e: any) {
-      alert("Erro: " + e.message);
+      console.error("Erro no salvamento:", e);
+      alert(e.message || "Erro ao processar solicitação");
     } finally {
       setIsLoading(false);
     }
@@ -135,122 +139,207 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full space-y-4">
-      {/* Barra de Filtros */}
+      {/* HEADER DE FILTROS */}
       <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-6">
         <div className="flex items-center space-x-3">
           <Calendar size={18} className="text-gray-400" />
-          <span className="text-sm font-bold text-gray-700 uppercase tracking-tighter">Período:</span>
+          <span className="text-sm font-bold text-gray-700 uppercase tracking-tighter">Filtros:</span>
         </div>
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-200 bg-white rounded-lg px-4 py-2 text-sm outline-none text-gray-700" />
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-200 bg-white rounded-lg px-4 py-2 text-sm outline-none text-gray-700" />
-        <button onClick={syncData} className="p-2 text-blue-600 ml-auto">
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-200 rounded-lg px-4 py-2 text-sm outline-none" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-200 rounded-lg px-4 py-2 text-sm outline-none" />
+        <button onClick={syncData} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg ml-auto">
           {isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}
         </button>
       </div>
 
       <div className="flex flex-1 space-x-6 overflow-hidden">
-        {/* Lista Lateral */}
+        {/* LISTA LATERAL */}
         <div className="w-1/3 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+          <div className="p-4 border-b bg-gray-50/50">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest">Solicitações</h3>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setFormData(initialFormData); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center text-sm font-bold"><Plus size={16} className="mr-2" /> Nova</button>
+              <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-widest">Minhas Solicitações</h3>
+              <button 
+                onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm"
+              >
+                <Plus size={16} className="mr-2 inline" /> Nova
+              </button>
             </div>
-            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm" />
+            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border rounded-lg text-sm" />
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto divide-y">
             {filteredRequests.map(req => (
-              <div key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`p-4 border-b cursor-pointer ${selectedId === req.id ? 'bg-blue-50' : ''}`}>
-                <div className="flex justify-between"><span className="text-[10px] font-bold text-gray-400">#{req.id}</span><Badge status={req.status} /></div>
-                <h4 className="font-semibold text-gray-800 text-sm truncate">{req.title}</h4>
+              <div key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`p-4 cursor-pointer hover:bg-gray-50 ${selectedId === req.id ? 'bg-blue-50 border-r-4 border-blue-500' : ''}`}>
+                <div className="flex justify-between mb-1"><span className="text-[10px] font-mono font-bold text-gray-400">#{req.id}</span><Badge status={req.status} /></div>
+                <h4 className="font-semibold text-gray-800 truncate text-sm">{req.title}</h4>
+                <div className="text-[10px] text-gray-500 mt-1 uppercase font-bold text-blue-600">{req.branch}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Formulário Principal */}
-        <div className={`flex-1 rounded-2xl shadow-xl overflow-hidden flex flex-col ${isNew ? 'bg-slate-900 text-white' : 'bg-white border'}`}>
+        {/* ÁREA DE CONTEÚDO / FORMULÁRIO */}
+        <div className={`flex-1 rounded-2xl shadow-xl overflow-hidden flex flex-col transition-all ${isNew ? 'bg-[#0a0f2b] text-white' : 'bg-white border border-gray-200'}`}>
           {isNew ? (
             <div className="flex-1 overflow-y-auto p-10 space-y-8">
-              <header className="flex justify-between items-center border-b border-white/10 pb-4">
-                <h2 className="text-3xl font-black uppercase italic">Nova Solicitação</h2>
-                <div className="text-[10px] font-black text-blue-300">FILIAL: {formData.branch}</div>
+              <header className="flex items-center justify-between border-b border-white/10 pb-4">
+                <h2 className="text-3xl font-black tracking-tighter uppercase italic">{isEditing ? 'Editar Solicitação' : 'Nova Solicitação'}</h2>
+                <div className="bg-white/10 px-4 py-1 rounded-full text-[10px] font-black uppercase text-blue-300 italic">Filial: {formData.branch}</div>
               </header>
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic">Título / Finalidade *</label>
-                  <input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4" />
+                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Título / Finalidade *</label>
+                  <input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
+                
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic">NF</label>
-                  <input type="text" value={formData.invoiceNumber} onChange={e => setFormData({...formData, invoiceNumber: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4" />
+                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Nº Nota Fiscal</label>
+                  <input type="text" value={formData.invoiceNumber} onChange={e => setFormData({...formData, invoiceNumber: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none" />
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic">Método</label>
-                  <select value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 text-white">
+                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Método de Pagamento</label>
+                  <select value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none text-white">
                     {PAYMENT_METHODS.map(m => <option key={m} value={m} className="bg-slate-900">{m}</option>)}
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic">Vencimento</label>
-                  <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4" />
+                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Data de Vencimento</label>
+                  <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none" />
                 </div>
+
                 <div>
-                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic">Pedidos</label>
-                  <input type="text" value={formData.orderNumbers} onChange={e => setFormData({...formData, orderNumbers: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4" />
+                  <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Nº Pedidos / Ordens</label>
+                  <input type="text" value={formData.orderNumbers} onChange={e => setFormData({...formData, orderNumbers: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none" />
                 </div>
               </div>
 
-              {/* CAMPOS DINÂMICOS RESTAURADOS */}
+              {/* DADOS BANCÁRIOS DINÂMICOS */}
               {formData.paymentMethod === 'TED/DEPOSITO' && (
-                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 grid grid-cols-2 gap-4">
-                  <div className="col-span-2"><label className="text-[10px] uppercase opacity-50">Favorecido</label><input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/5 border border-white/10 p-2 rounded" /></div>
-                  <div><label className="text-[10px] uppercase opacity-50">Banco</label><input type="text" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="w-full bg-white/5 border border-white/10 p-2 rounded" /></div>
-                  <div><label className="text-[10px] uppercase opacity-50">Agência</label><input type="text" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="w-full bg-white/5 border border-white/10 p-2 rounded" /></div>
-                  <div><label className="text-[10px] uppercase opacity-50">Conta</label><input type="text" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="w-full bg-white/5 border border-white/10 p-2 rounded" /></div>
-                  <div><label className="text-[10px] uppercase opacity-50">Tipo</label><select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="w-full bg-white/5 border border-white/10 p-2 rounded text-white bg-slate-900"><option value="Conta Corrente">Conta Corrente</option><option value="Conta Poupança">Conta Poupança</option></select></div>
+                <div className="bg-white/5 p-6 rounded-3xl border border-white/10 grid grid-cols-2 gap-4 animate-in fade-in duration-300">
+                  <div className="col-span-2">
+                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Favorecido (Nome Completo/Razão Social)</label>
+                    <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Banco</label>
+                    <input type="text" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Agência</label>
+                    <input type="text" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Conta</label>
+                    <input type="text" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase text-blue-300 italic">Tipo de Conta</label>
+                    <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="w-full bg-white/10 border-none rounded-lg p-3 mt-1 text-white bg-slate-800">
+                      <option value="Conta Corrente">Conta Corrente</option>
+                      <option value="Conta Poupança">Conta Poupança</option>
+                    </select>
+                  </div>
                 </div>
               )}
 
               {formData.paymentMethod === 'PIX' && (
-                <div className="bg-white/5 p-6 rounded-2xl border border-white/10">
-                  <label className="text-[10px] uppercase opacity-50">Chave PIX</label>
-                  <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/5 border border-white/20 p-4 rounded-xl" />
+                <div className="bg-white/5 p-6 rounded-3xl border border-white/10 animate-in fade-in duration-300">
+                  <label className="text-[10px] font-black uppercase text-blue-300 italic">Chave PIX (E-mail, CPF, CNPJ ou Aleatória)</label>
+                  <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/10 border-none rounded-xl p-4 mt-2 font-mono" />
                 </div>
               )}
 
-              {/* ANEXOS */}
+              {/* SEÇÃO DE ANEXOS */}
               <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white/5 p-6 rounded-2xl border border-white/10">
-                  <h3 className="text-[10px] font-black uppercase text-blue-300 mb-4 flex items-center"><FileText size={14} className="mr-2" /> Notas Fiscais</h3>
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 p-4 rounded-xl cursor-pointer">
-                    <Paperclip size={20} className="mb-2 opacity-30" />
-                    <span className="text-[9px] uppercase font-bold">{invoiceFiles.length} selecionadas</span>
+                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={16} className="mr-2" /> Notas Fiscais (PDF)</h3>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 cursor-pointer transition-all">
+                    <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{invoiceFiles.length > 0 ? `${invoiceFiles.length} Arquivo(s)` : 'Selecionar Arquivo'}</span>
                     <input type="file" multiple className="hidden" onChange={(e) => setInvoiceFiles(Array.from(e.target.files || []))} />
                   </label>
+                  {invoiceFiles.map((f, i) => (
+                    <div key={i} className="flex justify-between items-center text-[10px] bg-white/5 p-2 rounded border border-white/5">
+                      <span className="truncate w-40">{f.name}</span>
+                      <X size={12} className="text-red-400 cursor-pointer" onClick={() => setInvoiceFiles(invoiceFiles.filter((_, idx) => idx !== i))} />
+                    </div>
+                  ))}
                 </div>
-                <div className="bg-white/5 p-6 rounded-2xl border border-white/10">
-                  <h3 className="text-[10px] font-black uppercase text-blue-300 mb-4 flex items-center"><CreditCard size={14} className="mr-2" /> Boletos</h3>
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 p-4 rounded-xl cursor-pointer">
-                    <Paperclip size={20} className="mb-2 opacity-30" />
-                    <span className="text-[9px] uppercase font-bold">{ticketFiles.length} selecionadas</span>
+
+                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><CreditCard size={16} className="mr-2" /> Boletos / Comprovantes</h3>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 cursor-pointer transition-all">
+                    <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">{ticketFiles.length > 0 ? `${ticketFiles.length} Arquivo(s)` : 'Selecionar Arquivo'}</span>
                     <input type="file" multiple className="hidden" onChange={(e) => setTicketFiles(Array.from(e.target.files || []))} />
                   </label>
+                  {ticketFiles.map((f, i) => (
+                    <div key={i} className="flex justify-between items-center text-[10px] bg-white/5 p-2 rounded border border-white/5">
+                      <span className="truncate w-40">{f.name}</span>
+                      <X size={12} className="text-red-400 cursor-pointer" onClick={() => setTicketFiles(ticketFiles.filter((_, idx) => idx !== i))} />
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-4 pt-6 border-t border-white/10">
-                <button onClick={() => setIsNew(false)} className="text-[10px] font-bold uppercase opacity-50">Cancelar</button>
-                <button onClick={handleSave} disabled={isLoading || !isFormValid} className="bg-blue-600 px-8 py-3 rounded-xl font-bold uppercase text-xs flex items-center">
-                  {isLoading ? <Loader2 className="animate-spin mr-2" size={16} /> : <Send size={16} className="mr-2" />} Enviar Solicitação
+              <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center">
+                <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
+                <button 
+                  onClick={handleSave} 
+                  disabled={!isFormValid || isLoading} 
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30 transition-all shadow-lg shadow-blue-900/40"
+                >
+                  {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={18} className="mr-3" />}
+                  {isEditing ? 'Atualizar Solicitação' : 'Enviar Solicitação'}
                 </button>
               </div>
             </div>
+          ) : selectedRequest ? (
+            <div className="flex-1 flex flex-col overflow-hidden">
+               <header className="p-8 border-b border-gray-100 flex justify-between items-center bg-white">
+                <div>
+                  <div className="flex items-center space-x-3 mb-2">
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest font-mono">ID: #{selectedRequest.id}</span>
+                    <Badge status={selectedRequest.status} />
+                  </div>
+                  <h2 className="text-2xl font-black text-gray-900 tracking-tight">{selectedRequest.title}</h2>
+                </div>
+                {(selectedRequest.status === RequestStatus.ERRO_FISCAL || selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) && (
+                  <button onClick={startEdit} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center">
+                    <Edit3 size={18} className="mr-2" /> Corrigir Dados
+                  </button>
+                )}
+              </header>
+              <div className="flex-1 p-10 overflow-y-auto space-y-6 bg-gray-50/30">
+                <div className="grid grid-cols-3 gap-6">
+                   <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <h4 className="text-[9px] font-black text-gray-400 uppercase mb-2">Nota Fiscal</h4>
+                      <p className="text-lg font-black text-gray-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</p>
+                   </div>
+                   <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <h4 className="text-[9px] font-black text-gray-400 uppercase mb-2">Vencimento</h4>
+                      <p className="text-lg font-black text-gray-900">{selectedRequest.paymentDate ? new Date(selectedRequest.paymentDate).toLocaleDateString() : '---'}</p>
+                   </div>
+                   <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                      <h4 className="text-[9px] font-black text-gray-400 uppercase mb-2">Método</h4>
+                      <p className="text-lg font-black text-blue-600 uppercase italic">{selectedRequest.paymentMethod}</p>
+                   </div>
+                </div>
+                <div className="bg-white p-8 rounded-3xl border border-gray-100">
+                   <h4 className="text-[10px] font-black text-gray-400 uppercase mb-4 tracking-widest">Observações</h4>
+                   <div className="text-gray-700 text-sm leading-relaxed whitespace-pre-line">
+                    {selectedRequest.generalObservation || 'Nenhuma observação adicional informada.'}
+                   </div>
+                </div>
+              </div>
+            </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-300 italic">
-               <Banknote size={60} className="opacity-10 mb-4" />
-               <p className="text-[10px] uppercase font-black">Selecione uma solicitação</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
+              <Banknote size={80} className="opacity-10 mb-6" />
+              <p className="font-black uppercase text-[10px] tracking-widest text-gray-400 italic">Selecione uma solicitação para detalhamento</p>
             </div>
           )}
         </div>
