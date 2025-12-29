@@ -91,7 +91,7 @@ const DashboardFiscal: React.FC = () => {
   };
 
   const filteredRequests = useMemo(() => {
-    return requests.filter(r => {
+    const filtered = requests.filter(r => {
       const matchesSearch = 
         r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.id.toString().includes(searchTerm) ||
@@ -125,6 +125,11 @@ const DashboardFiscal: React.FC = () => {
       }
 
       return matchesSearch && matchesStatus && matchesBranch && matchesDate;
+    });
+
+    // Ordenação decrescente por data de criação
+    return [...filtered].sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [requests, searchTerm, statusFilter, branchFilter, startDate, endDate]);
 
