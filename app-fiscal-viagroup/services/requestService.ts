@@ -7,13 +7,22 @@ export const requestService = {
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
+      // ADMIN_MASTER visualiza todos os itens da lista
+      if (user.role === UserRole.ADMIN_MASTER) {
         return all;
       }
 
+      // Papéis Fiscais veem tudo para análise
+      if (user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
+        return all;
+      }
+
+      // Solicitantes comuns veem apenas o que criaram (comparação por ID do Azure ou nome parcial)
       if (user.role === UserRole.SOLICITANTE) {
-        // Agora filtramos para que o solicitante veja apenas o que ele criou
-        return all.filter(r => r.createdByUserId === user.id); 
+        return all.filter(r => 
+          r.createdByUserId === user.id || 
+          r.createdByName.toLowerCase().includes(user.name.split(' ')[0].toLowerCase())
+        ); 
       }
       
       if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
@@ -29,7 +38,7 @@ export const requestService = {
       
       return [];
     } catch (error) {
-      console.error("Erro ao filtrar solicitações do SharePoint:", error);
+      console.error("Erro ao filtrar solicitações:", error);
       return [];
     }
   },
