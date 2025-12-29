@@ -5,48 +5,13 @@ const USERS_KEY = 'sispag_users';
 const REQUESTS_KEY = 'sispag_requests';
 const AUDIT_KEY = 'sispag_audit';
 
+// IDs serão preenchidos dinamicamente no login via Microsoft para bater com o SharePoint
 const INITIAL_USERS: User[] = [
   {
-    id: 'admin_fg',
+    id: 'placeholder_admin',
     email: 'felipe.gabriel@viagroup.com.br',
     name: 'Felipe Gabriel',
     role: UserRole.ADMIN_MASTER,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'u1',
-    email: 'admin@sispag.com',
-    name: 'Admin Master',
-    role: UserRole.ADMIN_MASTER,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'u2',
-    email: 'solicitante@sispag.com',
-    name: 'João Silva',
-    role: UserRole.SOLICITANTE,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'u3',
-    email: 'fiscal@sispag.com',
-    name: 'Ana Fiscal',
-    role: UserRole.FISCAL_ADMIN,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'u4',
-    email: 'financeiro@sispag.com',
-    name: 'Pedro Financeiro',
-    role: UserRole.FINANCEIRO,
     isActive: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -56,9 +21,9 @@ const INITIAL_USERS: User[] = [
 export const db = {
   getUsers: (): User[] => {
     const data = localStorage.getItem(USERS_KEY);
-    let users: User[] = data && JSON.parse(data).length > 0 ? JSON.parse(data) : INITIAL_USERS;
+    let users: User[] = data ? JSON.parse(data) : INITIAL_USERS;
     
-    // Regra de Integridade: Garante que felipe.gabriel@viagroup.com.br sempre seja ADMIN_MASTER
+    // Garante que o administrador principal sempre tenha o papel correto
     let updated = false;
     users = users.map(u => {
       if (u.email.toLowerCase() === 'felipe.gabriel@viagroup.com.br' && u.role !== UserRole.ADMIN_MASTER) {
@@ -77,31 +42,6 @@ export const db = {
   
   saveUsers: (users: User[]) => {
     localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  },
-
-  syncExternalUsers: (externalUsers: Partial<User>[]) => {
-    const localUsers = db.getUsers();
-    const updatedUsers = [...localUsers];
-
-    externalUsers.forEach(ext => {
-      const exists = updatedUsers.find(u => u.email.toLowerCase() === ext.email?.toLowerCase());
-      if (!exists && ext.email && ext.name) {
-        const isAdmin = ext.email.toLowerCase() === 'felipe.gabriel@viagroup.com.br';
-        
-        updatedUsers.push({
-          id: ext.id || Math.random().toString(36).substr(2, 9),
-          email: ext.email,
-          name: ext.name,
-          role: isAdmin ? UserRole.ADMIN_MASTER : UserRole.SOLICITANTE,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-      }
-    });
-
-    db.saveUsers(updatedUsers);
-    return updatedUsers;
   },
 
   getRequests: (): PaymentRequest[] => {

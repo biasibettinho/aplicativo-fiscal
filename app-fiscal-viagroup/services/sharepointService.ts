@@ -37,11 +37,11 @@ export const sharepointService = {
       
       if (!data.value) return '';
 
-      // Busca mais flexível: tenta nome exato ou qualquer lista que contenha "SisPag"
+      // Busca por nome exato ou termo parcial ignorando case
       const list = data.value.find((l: any) => 
         l.displayName.toLowerCase() === 'solicitacoes_sispag_v2' || 
         l.name.toLowerCase() === 'solicitacoes_sispag_v2' ||
-        l.displayName.includes('SisPag')
+        l.displayName.toLowerCase().includes('sispag')
       );
       
       if (list) {
@@ -56,7 +56,10 @@ export const sharepointService = {
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     const listId = await sharepointService.resolveListId(accessToken);
-    if (!listId) return [];
+    if (!listId) {
+      console.warn("ID da lista não resolvido.");
+      return [];
+    }
 
     let allItems: any[] = [];
     let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
@@ -67,7 +70,11 @@ export const sharepointService = {
           headers: { Authorization: `Bearer ${accessToken}` }
         });
 
-        if (!response.ok) break;
+        if (!response.ok) {
+          const errData = await response.json();
+          console.error("Erro no fetch de itens:", errData);
+          break;
+        }
 
         const data = await response.json();
         allItems = [...allItems, ...data.value];
@@ -76,9 +83,9 @@ export const sharepointService = {
 
       return allItems.map((item: any) => {
         const f = item.fields || {};
-        // O ID do criador no Graph é item.createdBy.user.id
-        // No SharePoint fields, costuma ser AuthorLookupId (inteiro)
-        // Usamos o ID do Graph para bater com o ID da sessão MSAL
+        // O ID do criador é vital para o filtro de Solicitante bater com o user.id
+        const creatorId = item.createdBy?.user?.id || f.AuthorLookupId;
+        
         return {
           id: item.id,
           mirrorId: parseInt(item.id, 10) || 0,
@@ -103,8 +110,8 @@ export const sharepointService = {
           shareComment: f[FIELD_MAP.shareComment] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
-          createdByUserId: item.createdBy?.user?.id,
-          createdByName: item.createdBy?.user?.displayName,
+          createdByUserId: creatorId,
+          createdByName: item.createdBy?.user?.displayName || 'Desconhecido',
         };
       });
     } catch (error) {

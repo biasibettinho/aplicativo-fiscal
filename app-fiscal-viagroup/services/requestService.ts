@@ -7,13 +7,14 @@ export const requestService = {
     try {
       const all = await sharepointService.getRequests(accessToken);
       
+      // ADMIN_MASTER e Papéis Fiscais veem tudo
       if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
         return all;
       }
 
+      // Solicitantes comuns veem apenas o que criaram
       if (user.role === UserRole.SOLICITANTE) {
-        // Agora filtramos para que o solicitante veja apenas o que ele criou
-        return all.filter(r => r.createdByUserId === user.id); 
+        return all.filter(r => r.createdByUserId === user.id || r.createdByName.includes(user.name.split(' ')[0])); 
       }
       
       if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
