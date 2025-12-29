@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus } from '../types';
@@ -68,6 +67,10 @@ const DashboardSolicitante: React.FC = () => {
 
   const filteredRequests = useMemo(() => {
     const filtered = requests.filter(req => {
+      // FILTRO DE SEGURANÇA: Apenas o que foi criado pelo usuário logado
+      const isOwner = req.createdByUserId === authState.user?.id;
+      if (!isOwner) return false;
+
       const matchesSearch = 
         req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.id.toString().includes(searchTerm) ||
@@ -95,7 +98,7 @@ const DashboardSolicitante: React.FC = () => {
     return [...filtered].sort((a, b) => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [requests, searchTerm, startDate, endDate]);
+  }, [requests, searchTerm, startDate, endDate, authState.user?.id]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -348,4 +351,3 @@ const DashboardSolicitante: React.FC = () => {
 };
 
 export default DashboardSolicitante;
-
