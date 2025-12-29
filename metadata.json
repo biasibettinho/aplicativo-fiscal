@@ -1,0 +1,7 @@
+{
+  "name": "App Fiscal",
+  "description": "Plataforma corporativa para gestão de fluxo de notas, pedidos e pagamentos com controle granular de acessos (RBAC/RLS), auditoria e fluxos de aprovação entre Fiscal e Financeiro.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
