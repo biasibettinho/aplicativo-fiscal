@@ -1,90 +1,75 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../App'; // 👈 CORRIGIDO: ../App
-import { sharepointService } from '../services/sharepointService'; // 👈 CORRIGIDO
-import { PaymentRequest, RequestStatus } from '../types'; // 👈 CORRIGIDO
-import { Layout } from '../components/Layout'; // 👈 CORRIGIDO
-import { Badge } from '../components/Badge'; // 👈 CORRIGIDO
+import { useAuth } from '../App';  // ✅ useAuth EXPORTADO do App.tsx
+import { sharepointService } from '../services/sharepointService';
+import { PaymentRequest, RequestStatus } from '../types';
+import Layout from '../components/Layout';
+import Badge from '../components/Badge';
 
-// 👈 FUNÇÃO stripHtml LOCAL (não precisa import)
 const stripHtml = (html: string): string => {
-  if (!html) return '';
-  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+  return html?.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || '';
 };
 
 const DashboardSolicitante: React.FC = () => {
+  const { authState } = useAuth();  // ✅ CORRETO do App.tsx[file:9]
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<PaymentRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRequest, setSelectedRequest] = useState<PaymentRequest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<RequestStatus | 'todos'>('todos');
-  
-  const authState = useAuth();
+
   const currentUserId = authState.user?.id;
   const currentUserEmail = authState.user?.email;
 
-  // 👇 CARREGA APENAS PEDIDOS DO USUÁRIO LOGADO
+  // ✅ CARREGA E FILTRA PEDIDOS DO USUÁRIO
   useEffect(() => {
     const loadRequests = async () => {
       try {
         setLoading(true);
-        if (!authState.token) return;
+        if (!authState.token || !authState.isAuthenticated) return;
 
-        console.log('🔄 Carregando pedidos do usuário:', currentUserId);
         const allRequests = await sharepointService.getRequests(authState.token);
         
-        // 👈 FILTRA SOMENTE PEDIDOS CRIADOS PELO USUÁRIO
-        const userRequests = allRequests.filter(req => 
+        // ✅ FILTRA PEDIDOS DO USUÁRIO LOGADO
+        const userRequests = allRequests.filter((req: PaymentRequest) => 
           req.createdByUserId === currentUserId ||
           req.createdByName?.toLowerCase().includes(currentUserEmail?.toLowerCase() || '')
         );
         
         setRequests(userRequests);
         setFilteredRequests(userRequests);
-        console.log(`✅ ${userRequests.length} pedidos carregados para ${currentUserEmail}`);
+        console.log(`✅ ${userRequests.length} pedidos do usuário ${currentUserEmail}`);
       } catch (error) {
-        console.error('❌ Erro carregar pedidos:', error);
+        console.error('Erro:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    if (authState.isAuthenticated) {
-      loadRequests();
-    }
-  }, [authState.token, authState.isAuthenticated]);
+    loadRequests();
+  }, [authState.token, authState.isAuthenticated, currentUserId, currentUserEmail]);
 
-  // Filtros locais
+  // ✅ BUSCA LOCAL
   useEffect(() => {
-    let filtered = [...requests];
-
-    if (searchTerm) {
-      filtered = filtered.filter(req =>
-        req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (req.invoiceNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (req.orderNumbers || '').toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    if (statusFilter !== 'todos') {
-      filtered = filtered.filter(req => req.status === statusFilter);
-    }
-
+    const filtered = requests.filter((req: PaymentRequest) =>
+      req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      req.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      req.orderNumbers.toLowerCase().includes(searchTerm.toLowerCase())
+    );
     setFilteredRequests(filtered);
-  }, [requests, searchTerm, statusFilter]);
+  }, [requests, searchTerm]);
 
-  const formatStatus = (status: RequestStatus) => {
-    const statusLabels: Record<RequestStatus, string> = {
-      [RequestStatus.PENDENTE]: 'Pendente',
-      [RequestStatus.ANALISE]: 'Análise',
-      [RequestStatus.APROVADO]: 'Aprovado',
-      [RequestStatus.ERROFISCAL]: 'Erro Fiscal',
-      [RequestStatus.ERROFINANCEIRO]: 'Erro Financeiro',
-      [RequestStatus.LANCADO]: 'Lançado',
-      [RequestStatus.FATURADO]: 'Faturado',
-      [RequestStatus.COMPARTILHADO]: 'Compartilhado'
+  // ✅ STATUS SIMPLES (sem enum)
+  const formatStatus = (status: string) => {
+    const labels: { [key: string]: string } = {
+      'Pendente': 'Pendente',
+      'Análise': 'Análise', 
+      'Aprovado': 'Aprovado',
+      'Erro - Fiscal': 'Erro Fiscal',
+      'Erro - Financeiro': 'Erro Financeiro',
+      'Lançado': 'Lançado',
+      'Faturado': 'Faturado'
     };
-    return statusLabels[status] || status;
+    return labels[status] || status;
   };
 
   if (loading) {
@@ -100,109 +85,104 @@ const DashboardSolicitante: React.FC = () => {
   return (
     <Layout>
       <div className="p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Meus Pedidos</h1>
-            <p className="text-gray-600 mt-1">
-              {requests.length} pedidos totais | {filteredRequests.length} filtrados
-            </p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Meus Pedidos</h1>
+          <p className="text-gray-600 mt-1">
+            {requests.length} total | {filteredRequests.length} filtrados
+          </p>
         </div>
 
-        {/* Filtros */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border">
-          <div className="flex flex-col md:flex-row gap-4">
-            <input
-              type="text"
-              placeholder="Buscar por título, NF ou pedido..."
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <select
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as RequestStatus | 'todos')}
-            >
-              <option value="todos">Todos Status</option>
-              <option value={RequestStatus.PENDENTE}>Pendente</option>
-              <option value={RequestStatus.ANALISE}>Análise</option>
-              <option value={RequestStatus.APROVADO}>Aprovado</option>
-            </select>
-          </div>
-        </div>
+        {/* Busca */}
+        <input
+          type="text"
+          placeholder="Buscar NF, pedido ou título..."
+          className="w-full max-w-md px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
 
-        {/* Tabela + Detalhes */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Lista */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-              <div className="p-6 border-b">
-                <h2 className="text-xl font-semibold">Lista de Pedidos</h2>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">NF/Pedido</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredRequests.map((request) => (
-                      <tr
-                        key={request.id}
-                        className="hover:bg-gray-50 cursor-pointer"
-                        onClick={() => setSelectedRequest(request)}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="font-medium">{stripHtml(request.invoiceNumber) || '---'}</div>
-                          <div className="text-sm text-gray-500">{stripHtml(request.orderNumbers)}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <Badge status={request.status}>{formatStatus(request.status)}</Badge>
-                        </td>
-                        <td className="px-6 py-4 text-sm">
-                          {request.createdAt ? new Date(request.createdAt).toLocaleDateString('pt-BR') : '---'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {filteredRequests.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  Nenhum pedido encontrado
-                </div>
-              )}
+        {/* Tabela */}
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    NF/Pedido
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Data
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredRequests.map((request) => (
+                  <tr
+                    key={request.id}
+                    className="hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => setSelectedRequest(request)}
+                  >
+                    <td className="px-6 py-4">
+                      <div className="font-medium text-gray-900">
+                        {stripHtml(request.invoiceNumber) || '---'}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {stripHtml(request.orderNumbers)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Badge status={request.status as any}>
+                        {formatStatus(request.status)}
+                      </Badge>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {request.createdAt 
+                        ? new Date(request.createdAt).toLocaleDateString('pt-BR') 
+                        : '---'
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {filteredRequests.length === 0 && (
+            <div className="text-center py-12 text-gray-500">
+              Nenhum pedido encontrado
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Detalhes */}
-          <div className="lg:col-span-1">
-            {selectedRequest ? (
-              <div className="bg-white rounded-lg shadow-sm border p-6 max-h-[500px] overflow-y-auto">
-                <h3 className="text-lg font-semibold mb-4">
-                  Pedido {stripHtml(selectedRequest.invoiceNumber)}
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <div><strong>Título:</strong> {selectedRequest.title}</div>
-                  <div><strong>Pedidos:</strong> {stripHtml(selectedRequest.orderNumbers)}</div>
-                  <div><strong>Método:</strong> {selectedRequest.paymentMethod || '---'}</div>
-                  <div><strong>Data:</strong> {selectedRequest.paymentDate ? new Date(selectedRequest.paymentDate).toLocaleDateString('pt-BR') : '---'}</div>
-                  <div><strong>Destinatário:</strong> {selectedRequest.payee || selectedRequest.title}</div>
-                  {selectedRequest.generalObservation && (
-                    <div><strong>Obs:</strong> {selectedRequest.generalObservation}</div>
-                  )}
-                </div>
+        {/* Detalhes */}
+        <div className="p-6 bg-white rounded-lg shadow-sm border max-w-md">
+          {selectedRequest ? (
+            <>
+              <h3 className="text-lg font-semibold mb-4">
+                Pedido {stripHtml(selectedRequest.invoiceNumber)}
+              </h3>
+              <div className="space-y-2 text-sm">
+                <div><strong>Título:</strong> {selectedRequest.title}</div>
+                <div><strong>Status:</strong> {formatStatus(selectedRequest.status)}</div>
+                <div><strong>Data:</strong> {new Date(selectedRequest.createdAt).toLocaleDateString('pt-BR')}</div>
+                <div><strong>Destinatário:</strong> {selectedRequest.payee || selectedRequest.title}</div>
+                {selectedRequest.paymentMethod && (
+                  <div><strong>Método:</strong> {selectedRequest.paymentMethod}</div>
+                )}
+                {selectedRequest.generalObservation && (
+                  <div className="text-gray-700 mt-2 p-2 bg-gray-50 rounded">
+                    <strong>Observação:</strong> {selectedRequest.generalObservation}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="bg-gray-50 rounded-lg p-8 text-center text-gray-500 h-[500px] flex items-center justify-center">
-                Selecione um pedido
-              </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <div className="text-center text-gray-500 py-12">
+              Selecione um pedido para detalhes
+            </div>
+          )}
         </div>
       </div>
     </Layout>
