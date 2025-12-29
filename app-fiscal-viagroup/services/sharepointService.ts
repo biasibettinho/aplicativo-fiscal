@@ -1,147 +1,195 @@
-// Substitua pelos seus IDs reais
-const SITE_ID = 'vialacteoscombr.sharepoint.com,guid-do-site,guid-da-web'; 
-const LIST_ID = 'guid-da-lista-principal';
+import { PaymentRequest, RequestStatus } from '../types';
 
-/**
- * Limpa o nome do arquivo para evitar Erro 400 (Bad Request)
- * Remove acentos, caracteres especiais e limita o tamanho.
- */
+const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
+let CACHED_MAIN_LIST_ID = ''; 
+let CACHED_AUX_LIST_ID = '';
+
+const FIELD_MAP = {
+  title: 'Title',
+  invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
+  orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
+  status: 'Status',
+  branch: 'Filial',
+  generalObservation: 'Observa_x00e7__x00e3_o',
+  paymentMethod: 'MET_PAGAMENTO',
+  pixKey: 'CAMPO_PIX',
+  paymentDate: 'DATA_PAG',
+  payee: 'PESSOA',
+  statusManual: 'STATUS_ESPELHO_MANUAL',
+  errorType: 'OBS_ERRO',
+  errorObservation: 'OBS_CRIACAO',
+  sharedWithUserId: 'SHARED_WITH',
+  shareComment: 'COMENT_SHARE',
+  bank: 'BANCO',
+  agency: 'AGENCIA',
+  account: 'CONTA',
+  accountType: 'TIPO_CONTA'
+};
+
 const sanitizeFileName = (name: string) => {
   const extension = name.split('.').pop();
   const baseName = name.split('.').slice(0, -1).join('.');
-  
   return baseName
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove acentos
-    .replace(/[#%*:<>?/|\\"]/g, '') // Remove caracteres proibidos
-    .replace(/\s+/g, '_')           // Espaços por underline
-    .substring(0, 60)               // Limita tamanho do corpo
+    .replace(/[\u0300-\u036f]/g, "") 
+    .replace(/[#%*:<>?/|\\"]/g, '') 
+    .replace(/\s+/g, '_')           
+    .substring(0, 60)               
     + '.' + extension;
 };
 
-/**
- * Converte arquivo para Base64 para envio via Microsoft Graph
- */
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => {
-      const base64String = reader.result?.toString().split(',')[1];
-      resolve(base64String || '');
-    };
+    reader.onload = () => resolve(reader.result?.toString().split(',')[1] || '');
     reader.onerror = (error) => reject(error);
   });
 };
 
 export const sharepointService = {
-  // Busca as solicitações (Garante que o carregamento volte a funcionar)
-  async getRequests(token: string) {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items?expand=fields`;
-    const response = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error("Falha ao carregar solicitações.");
-    const data = await response.json();
-    return data.value;
-  },
-
-  // Cria o item de texto
-  async createRequest(token: string, data: any) {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items`;
-    
-    const payload = {
-      fields: {
-        Title: data.title || 'Sem Título',
-        InvoiceNumber: data.invoiceNumber || '',
-        OrderNumbers: data.orderNumbers || '',
-        Payee: data.payee || '',
-        PaymentMethod: data.paymentMethod || 'Boleto',
-        PaymentDate: data.paymentDate,
-        GeneralObservation: data.generalObservation || '',
-        Bank: data.bank || '',
-        Agency: data.agency || '',
-        Account: data.account || '',
-        AccountType: data.accountType || 'Conta Corrente',
-        PixKey: data.pixKey || '',
-        Branch: data.branch || 'Matriz SP',
-        Status: 'Pendente'
-      }
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      // Trata o erro de hostname inválido
-      if (error.error.code === 'invalidHostname') {
-        throw new Error("Configuração de SITE_ID incorreta no servidor.");
-      }
-      throw new Error(error.error.message);
-    }
-
-    return await response.json();
-  },
-
-  /**
-   * Faz o upload de anexo usando contentBytes (Formato correto para Itens de Lista)
-   * Resolve o erro: Resource not found for the segment 'attachments'
-   */
-  async uploadAttachment(token: string, itemId: string, file: File) {
-    const fileName = sanitizeFileName(file.name);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items/${itemId}/attachments`;
+  resolveListIdByName: async (accessToken: string, listName: string, isMain: boolean = true) => {
+    if (isMain && CACHED_MAIN_LIST_ID) return CACHED_MAIN_LIST_ID;
+    if (!isMain && CACHED_AUX_LIST_ID) return CACHED_AUX_LIST_ID;
 
     try {
-      const base64Content = await fileToBase64(file);
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: fileName,
-          contentBytes: base64Content
-        })
+      const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error.message);
+      const data = await resp.json();
+      const list = data.value?.find((l: any) => 
+        l.displayName.toLowerCase() === listName.toLowerCase() || 
+        l.name.toLowerCase() === listName.toLowerCase() ||
+        (isMain && l.displayName.toLowerCase().includes('sispag'))
+      );
+      
+      if (list) {
+        if (isMain) CACHED_MAIN_LIST_ID = list.id;
+        else CACHED_AUX_LIST_ID = list.id;
+        return list.id;
       }
-      return true;
-    } catch (error: any) {
-      throw new Error(`Erro no anexo ${file.name}: ${error.message}`);
+    } catch (e) {
+      console.error(`Erro ao resolver lista ${listName}:`, e);
     }
+    return '';
   },
 
-  async uploadMainAttachment(token: string, itemId: string, file: File) {
-    return this.uploadAttachment(token, itemId, file);
+  getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
+    const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
+    if (!listId) return [];
+    
+    let allItems: any[] = [];
+    let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
+
+    try {
+      while (nextUrl) {
+        const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const data = await response.json();
+        if (data.value) allItems = [...allItems, ...data.value];
+        nextUrl = data['@odata.nextLink'] || null;
+      }
+      return allItems.map((item: any) => {
+        const f = item.fields || {};
+        return {
+          id: item.id,
+          mirrorId: parseInt(item.id, 10) || 0,
+          title: f.Title || 'Sem Título',
+          branch: f[FIELD_MAP.branch] || '',
+          status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
+          orderNumbers: f[FIELD_MAP.orderNumbers] || '',
+          invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
+          payee: f[FIELD_MAP.payee] || '',
+          paymentMethod: f[FIELD_MAP.paymentMethod] || '',
+          pixKey: f[FIELD_MAP.pixKey] || '',
+          paymentDate: f[FIELD_MAP.paymentDate] || '',
+          bank: f[FIELD_MAP.bank] || '',
+          agency: f[FIELD_MAP.agency] || '',
+          account: f[FIELD_MAP.account] || '',
+          accountType: f[FIELD_MAP.accountType] || '',
+          generalObservation: f[FIELD_MAP.generalObservation] || '',
+          statusManual: f[FIELD_MAP.statusManual] || '',
+          createdAt: item.createdDateTime,
+          updatedAt: item.lastModifiedDateTime,
+          createdByUserId: item.createdBy?.user?.id || 'unknown',
+          createdByName: item.createdBy?.user?.displayName || 'Sistema',
+        };
+      });
+    } catch (e) { return []; }
   },
 
-  async uploadAuxiliaryAttachment(token: string, itemId: string, file: File) {
-    return this.uploadAttachment(token, itemId, file);
-  },
+  createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
+    const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    
+    const fields: any = {
+      Title: data.title,
+      [FIELD_MAP.invoiceNumber]: data.invoiceNumber,
+      [FIELD_MAP.orderNumbers]: data.orderNumbers,
+      [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
+      [FIELD_MAP.branch]: data.branch,
+      [FIELD_MAP.paymentMethod]: data.paymentMethod,
+      [FIELD_MAP.paymentDate]: data.paymentDate,
+      [FIELD_MAP.payee]: data.payee,
+      [FIELD_MAP.bank]: data.bank,
+      [FIELD_MAP.agency]: data.agency,
+      [FIELD_MAP.account]: data.account,
+      [FIELD_MAP.accountType]: data.accountType,
+      [FIELD_MAP.generalObservation]: data.generalObservation,
+      [FIELD_MAP.pixKey]: data.pixKey,
+    };
 
-  async updateRequest(token: string, itemId: string, data: any) {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${LIST_ID}/items/${itemId}`;
-    const payload = { fields: data };
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
     });
-    return response.ok;
+    return resp.json();
+  },
+
+  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File) => {
+    const fileName = sanitizeFileName(file.name);
+    const base64 = await fileToBase64(file);
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: fileName, contentBytes: base64 })
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.error?.message || "Erro no upload");
+    }
+    return true;
+  },
+
+  async createAuxiliaryItem(accessToken: string, mainRequestId: string, title: string) {
+    const listId = await sharepointService.resolveListIdByName(accessToken, 'APP_Fiscal_AUX_ANEXOS', false);
+    if (!listId) throw new Error("Lista auxiliar não encontrada.");
+    
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
+    });
+    return resp.json();
+  },
+
+  updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
+    const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/fields`;
+    const fields: any = {};
+    Object.keys(data).forEach(key => {
+      const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];
+      if (spKey) fields[spKey] = (data as any)[key];
+    });
+    const resp = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields)
+    });
+    return resp.json();
   }
 };
