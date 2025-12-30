@@ -37,15 +37,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Sidebar - Sem logos */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-        <div className="p-8 border-b border-gray-100">
-          <h1 className="text-sm font-black text-gray-400 uppercase tracking-[0.3em]">
-            Menu do Sistema
-          </h1>
+      {/* Sidebar */}
+      <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+        <div className="p-8 border-b border-gray-100 flex justify-center bg-gray-50/50">
+          <img 
+            src="https://viagroup.com.br/assets/via_group-22fac685.png" 
+            alt="Via Group" 
+            className="h-10 object-contain"
+          />
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 mt-4">
+        <nav className="flex-1 p-6 space-y-2 mt-4">
           <NavItem to="/solicitante" icon={LayoutDashboard} label="Solicitante" roles={[UserRole.SOLICITANTE, UserRole.ADMIN_MASTER]} />
           <NavItem to="/fiscal" icon={ShieldCheck} label="Fiscal / Admin" roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]} />
           <NavItem to="/financeiro" icon={BadgeDollarSign} label="Financeiro" roles={[UserRole.FINANCEIRO, UserRole.FINANCEIRO_MASTER, UserRole.ADMIN_MASTER]} />
@@ -53,9 +55,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <NavItem to="/admin" icon={Settings} label="Configurações" roles={[UserRole.ADMIN_MASTER]} />
         </nav>
 
-        <div className="p-4 border-t border-gray-100">
-          <div className="flex items-center space-x-3 px-4 py-2 mb-4">
-            <div className="bg-gray-100 p-2 rounded-full text-gray-600">
+        <div className="p-6 border-t border-gray-100">
+          <div className="flex items-center space-x-3 px-4 py-3 mb-4 bg-gray-50 rounded-2xl">
+            <div className="bg-white p-2 rounded-xl text-blue-600 shadow-sm">
               <UserCircle size={24} />
             </div>
             <div className="flex-1 min-w-0">
@@ -75,8 +77,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8">
-          <h2 className="text-lg font-black text-gray-800 tracking-tight uppercase italic">
+        <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-10">
+          <h2 className="text-xl font-black text-gray-800 tracking-tight uppercase italic">
             {location.pathname === '/solicitante' && 'Fluxo de Notas'}
             {location.pathname === '/fiscal' && 'Análise Fiscal'}
             {location.pathname === '/financeiro' && 'Gestão Financeira'}
@@ -84,10 +86,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             {location.pathname === '/stats' && 'Insights e Métricas'}
           </h2>
           <div className="flex items-center">
-            <span className="text-[10px] font-black bg-gray-100 text-gray-400 px-3 py-1 rounded-full tracking-widest uppercase">V1.2.0</span>
+            <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100">V1.2.0</span>
           </div>
         </header>
-        <section className="flex-1 overflow-y-auto p-8 bg-gray-50/50">
+        <section className="flex-1 overflow-y-auto p-10 bg-gray-50/50 custom-scrollbar">
           {children}
         </section>
       </main>

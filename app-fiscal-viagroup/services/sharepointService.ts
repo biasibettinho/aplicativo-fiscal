@@ -69,7 +69,7 @@ export const sharepointService = {
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: item.createdBy?.user?.id || 'unknown',
           createdByName: item.createdBy?.user?.displayName || 'Sistema',
-          attachments: [] // Buscaremos sob demanda para garantir precisão
+          attachments: [] 
         };
       });
     } catch (e) {
@@ -101,32 +101,39 @@ export const sharepointService = {
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Busca itens na lista secundária onde ID_SOL == requestId
-      // Nota: Graph filter para campos customizados pode exigir indexação. 
-      // Se ID_SOL for número, remover as aspas simples.
+      // Tenta buscar primeiro assumindo que ID_SOL é texto, se falhar ou retornar vazio, tenta como número.
+      // A maioria das integrações Power Automate -> SharePoint usa texto para chaves estrangeiras.
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq '${requestId}'`;
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, "Prefer": "HonorNonIndexedQueriesWarningMayFail" } });
       const data = await response.json();
       
-      const attachments: Attachment[] = [];
-      if (data.value) {
-        data.value.forEach((item: any) => {
-          if (item.attachments) {
-            item.attachments.forEach((a: any) => {
-              attachments.push({
-                id: a.id,
-                requestId: requestId,
-                fileName: a.name,
-                type: 'boleto',
-                mimeType: 'application/pdf',
-                size: 0,
-                storageUrl: a['@microsoft.graph.downloadUrl'] || '',
-                createdAt: item.createdDateTime
-              });
-            });
-          }
-        });
+      let items = data.value || [];
+
+      // Se não retornou nada com aspas, tenta sem aspas (caso a coluna seja Number)
+      if (items.length === 0) {
+        const urlNum = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq ${requestId}`;
+        const respNum = await fetch(urlNum, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const dataNum = await respNum.json();
+        items = dataNum.value || [];
       }
+      
+      const attachments: Attachment[] = [];
+      items.forEach((item: any) => {
+        if (item.attachments) {
+          item.attachments.forEach((a: any) => {
+            attachments.push({
+              id: a.id,
+              requestId: requestId,
+              fileName: a.name,
+              type: 'boleto',
+              mimeType: 'application/pdf',
+              size: 0,
+              storageUrl: a['@microsoft.graph.downloadUrl'] || '',
+              createdAt: item.createdDateTime
+            });
+          });
+        }
+      });
       return attachments;
     } catch (e) {
       console.error("Erro ao buscar anexos secundários:", e);
