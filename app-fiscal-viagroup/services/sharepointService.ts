@@ -73,43 +73,48 @@ export const sharepointService = {
         };
       });
     } catch (e) {
-      console.error(e);
+      console.error("Erro ao listar solicitações:", e);
       return [];
     }
   },
 
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
+      // O endpoint de attachments do item retorna metadados, incluindo a URL de download
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
-      return (data.value || []).map((a: any) => ({
+      
+      if (!data.value) return [];
+
+      return data.value.map((a: any) => ({
         id: a.id,
         requestId: itemId,
         fileName: a.name,
         type: 'invoice_pdf',
         mimeType: 'application/pdf',
         size: 0,
+        // O Graph retorna '@microsoft.graph.downloadUrl' para o conteúdo direto
         storageUrl: a['@microsoft.graph.downloadUrl'] || '',
         createdAt: new Date().toISOString()
       }));
     } catch (e) {
-      console.error("Erro ao buscar anexos da lista principal:", e);
+      console.error(`Erro ao buscar anexos do item ${itemId}:`, e);
       return [];
     }
   },
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Tenta buscar primeiro assumindo que ID_SOL é texto, se falhar ou retornar vazio, tenta como número.
-      // A maioria das integrações Power Automate -> SharePoint usa texto para chaves estrangeiras.
+      // Busca exata por ID_SOL na lista secundária
+      // Tentamos o filtro com aspas (String)
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq '${requestId}'`;
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, "Prefer": "HonorNonIndexedQueriesWarningMayFail" } });
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
       
       let items = data.value || [];
 
-      // Se não retornou nada com aspas, tenta sem aspas (caso a coluna seja Number)
+      // Fallback: Tentamos sem aspas (caso o campo ID_SOL seja do tipo Number no SharePoint)
       if (items.length === 0) {
         const urlNum = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq ${requestId}`;
         const respNum = await fetch(urlNum, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -136,7 +141,7 @@ export const sharepointService = {
       });
       return attachments;
     } catch (e) {
-      console.error("Erro ao buscar anexos secundários:", e);
+      console.error(`Erro no lookup de anexos secundários para ${requestId}:`, e);
       return [];
     }
   },
@@ -166,7 +171,10 @@ export const sharepointService = {
       body: JSON.stringify({ fields })
     });
     
-    if (!resp.ok) throw new Error("Falha ao criar item no SharePoint");
+    if (!resp.ok) {
+      const errData = await resp.json();
+      throw new Error(errData?.error?.message || "Falha ao criar item no SharePoint");
+    }
     return await resp.json();
   },
 
@@ -201,11 +209,17 @@ export const sharepointService = {
       const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];
       if (spKey) fields[spKey] = (data as any)[key];
     });
+    
     const resp = await fetch(url, {
       method: 'PATCH',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(fields)
     });
+    
+    if (!resp.ok) {
+      const errData = await resp.json();
+      throw new Error(errData?.error?.message || "Falha ao atualizar campos no SharePoint");
+    }
     return await resp.json();
   }
 };
