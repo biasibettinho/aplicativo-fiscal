@@ -1,10 +1,10 @@
 
 import { PaymentRequest, RequestStatus } from '../types';
 
-// Referência do site usando o hostname e o caminho relativo fornecido
-const SITE_REF = 'vialacteoscombr.sharepoint.com:/sites/Powerapps';
+// Site ID global (hostname,siteCollectionId,siteId) para evitar erros de caminho relativo
+const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
-// IDs fornecidos pelo usuário para garantir precisão total
+// IDs únicos das listas fornecidos pelo usuário
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
@@ -48,14 +48,14 @@ export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
-      // Acesso direto via ID de lista para evitar erro de resolução de nome
-      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_REF}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=999`;
+      // Acesso direto via Site ID e List ID para máxima estabilidade
+      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=999`;
 
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
         if (!response.ok) {
           const errData = await response.json();
-          throw new Error(`Erro SharePoint (${response.status}): ${errData.error?.message || response.statusText}`);
+          throw new Error(`Erro SharePoint: ${errData.error?.message || response.statusText}`);
         }
         const data = await response.json();
         if (data.value) allItems = [...allItems, ...data.value];
@@ -89,13 +89,13 @@ export const sharepointService = {
         };
       });
     } catch (e: any) {
-      console.error("Erro fatal no getRequests:", e);
+      console.error("Erro no getRequests:", e);
       return [];
     }
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_REF}/lists/${MAIN_LIST_ID}/items`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`;
     
     const fields: any = {
       Title: data.title,
@@ -121,7 +121,7 @@ export const sharepointService = {
     });
     
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro ao salvar dados no SharePoint.");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro.");
     return result;
   },
 
@@ -129,7 +129,7 @@ export const sharepointService = {
     const extension = file.name.split('.').pop() || 'pdf';
     const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_REF}/lists/${listId}/items/${itemId}/attachments`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
     const resp = await fetch(url, {
       method: 'POST',
@@ -139,13 +139,13 @@ export const sharepointService = {
 
     if (!resp.ok) {
       const err = await resp.json();
-      throw new Error(err.error?.message || `Erro no anexo: ${fileName}`);
+      throw new Error(err.error?.message || "Erro no upload do anexo.");
     }
     return true;
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_REF}/lists/${AUX_LIST_ID}/items`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${AUX_LIST_ID}/items`;
     
     const resp = await fetch(url, {
       method: 'POST',
@@ -158,12 +158,12 @@ export const sharepointService = {
       })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro no registro de anexos auxiliares.");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro na lista auxiliar.");
     return result;
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_REF}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
     const fields: any = {};
     Object.keys(data).forEach(key => {
       const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];
