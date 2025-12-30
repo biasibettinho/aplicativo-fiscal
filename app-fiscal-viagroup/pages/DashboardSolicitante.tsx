@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X
+  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -80,7 +80,7 @@ const DashboardSolicitante: React.FC = () => {
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
-    setUploadStatus('Salvando...');
+    setUploadStatus('Salvando formulário...');
     
     try {
       const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
@@ -100,25 +100,37 @@ const DashboardSolicitante: React.FC = () => {
       const nfId = formData.invoiceNumber?.trim() || `SOLIC_${itemId}`;
       const baseName = `NF_${nfId}`;
 
+      // Notas Fiscais
       if (invoiceFiles.length > 0) {
         for (let i = 0; i < invoiceFiles.length; i++) {
           const name = invoiceFiles.length > 1 ? `${baseName}_P${i + 1}` : baseName;
-          setUploadStatus(`Anexando NF ${i + 1}...`);
-          await sharepointService.uploadAttachment(authState.token, MAIN_LIST_ID, itemId, invoiceFiles[i], name);
+          setUploadStatus(`Aguardando servidor: NF ${i + 1}...`);
+          try {
+            await sharepointService.uploadAttachment(authState.token, MAIN_LIST_ID, itemId, invoiceFiles[i], name);
+          } catch (attErr: any) {
+            console.warn(attErr);
+            alert(`O registro foi salvo, mas não conseguimos anexar a NF "${name}" agora por lentidão do SharePoint. Você poderá anexar editando o item mais tarde.`);
+          }
         }
       }
 
+      // Boletos e Comprovantes
       if (ticketFiles.length > 0) {
-        setUploadStatus('Vinculando documentos...');
-        const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
-        for (let i = 0; i < ticketFiles.length; i++) {
-          const name = `BOLETO_${nfId}_${i + 1}`;
-          setUploadStatus(`Anexando Doc ${i + 1}...`);
-          await sharepointService.uploadAttachment(authState.token, AUX_LIST_ID, auxItem.id, ticketFiles[i], name);
+        setUploadStatus('Criando vínculo para boletos...');
+        try {
+          const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
+          for (let i = 0; i < ticketFiles.length; i++) {
+            const name = `BOLETO_${nfId}_${i + 1}`;
+            setUploadStatus(`Aguardando servidor: Doc ${i + 1}...`);
+            await sharepointService.uploadAttachment(authState.token, AUX_LIST_ID, auxItem.id, ticketFiles[i], name);
+          }
+        } catch (auxErr: any) {
+          console.warn(auxErr);
+          alert(`O registro foi salvo, mas houve um erro ao processar os arquivos de Boletos/Comprovantes.`);
         }
       }
 
-      setUploadStatus('Sucesso!');
+      setUploadStatus('Processado com Sucesso!');
       setTimeout(() => {
         setIsNew(false);
         setIsEditing(false);
@@ -127,10 +139,10 @@ const DashboardSolicitante: React.FC = () => {
         setTicketFiles([]);
         setUploadStatus('');
         syncData();
-      }, 1000);
+      }, 1500);
 
     } catch (e: any) {
-      alert(`Falha: ${e.message}`);
+      alert(`Falha Crítica: ${e.message}`);
       setUploadStatus('Erro no envio');
     } finally {
       setIsLoading(false);
@@ -330,6 +342,16 @@ const DashboardSolicitante: React.FC = () => {
                   <p className="text-xs font-bold text-gray-500 mt-2 uppercase tracking-tight truncate">Favorecido: {selectedRequest.payee || '---'}</p>
                 </div>
               </div>
+
+              {selectedRequest.status.includes('Erro') && selectedRequest.errorObservation && (
+                <div className="bg-red-50 p-6 rounded-2xl border border-red-100 flex items-start space-x-4">
+                   <AlertCircle className="text-red-600" size={24} />
+                   <div>
+                      <h4 className="text-xs font-black uppercase text-red-600 tracking-widest mb-1">Motivo da Reprovação</h4>
+                      <p className="text-sm text-red-800 font-medium italic">"{selectedRequest.errorObservation}"</p>
+                   </div>
+                </div>
+              )}
             </div>
           </div>
         ) : (

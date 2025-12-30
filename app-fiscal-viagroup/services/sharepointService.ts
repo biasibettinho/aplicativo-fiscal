@@ -138,19 +138,22 @@ export const sharepointService = {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
     let lastError = '';
-    const maxRetries = 3;
+    const maxRetries = 5;
 
     for (let i = 0; i < maxRetries; i++) {
       try {
-        // 1. Pequeno delay antes da tentativa (exponencial)
-        await delay(2000 * (i + 1));
+        // Delay inicial maior e progressivo (3s, 6s, 9s...)
+        const waitTime = 3000 * (i + 1);
+        await delay(waitTime);
 
-        // 2. Tenta "acordar" o item consultando-o primeiro (isso ajuda o Graph a indexar o segmento de attachments)
-        await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}`, {
+        // Verifica se o item está pronto consultando com expansão de anexos
+        const check = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}?$expand=attachments`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
+        
+        if (!check.ok) continue;
 
-        // 3. Tenta o upload
+        // Se chegamos aqui, o item existe. Agora tentamos o upload.
         const resp = await fetch(url, {
           method: 'POST',
           headers: { 
@@ -168,20 +171,23 @@ export const sharepointService = {
         const err = await resp.json();
         lastError = err.error?.message || "Erro desconhecido";
         
-        // Se o erro não for de "segmento não encontrado", não adianta tentar de novo
-        if (!lastError.includes('attachments')) break;
+        // Se o erro não for especificamente sobre o segmento "attachments", paramos o retry
+        if (!lastError.toLowerCase().includes('attachments')) break;
 
       } catch (e: any) {
         lastError = e.message;
       }
     }
 
-    throw new Error(`Falha definitiva no anexo ${fileName}: ${lastError}. O SharePoint ainda não liberou o espaço de arquivos para este item.`);
+    throw new Error(`O SharePoint não liberou o espaço de anexos para o arquivo ${fileName} após várias tentativas. Detalhe: ${lastError}`);
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${AUX_LIST_ID}/items`;
     
+    // Pequeno delay para não sobrecarregar as APIs em sequência
+    await delay(1000);
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
