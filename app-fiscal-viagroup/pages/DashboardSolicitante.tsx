@@ -4,7 +4,7 @@ import { PaymentRequest, RequestStatus } from '../types';
 import { requestService } from '../services/requestService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote
+  Plus, Search, History, ChevronRight, Clock, Loader2, Calendar, User, CreditCard, Hash, Landmark, Info
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -13,7 +13,6 @@ const DashboardSolicitante: React.FC = () => {
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
   const todayStr = new Date().toISOString().split('T')[0];
@@ -22,329 +21,162 @@ const DashboardSolicitante: React.FC = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
-  
-  const initialFormData: Partial<PaymentRequest> = {
-    title: '',
-    invoiceNumber: '',
-    orderNumbers: '',
-    payee: '',
-    paymentMethod: 'Boleto',
-    paymentDate: todayStr,
-    generalObservation: '',
-    bank: '',
-    agency: '',
-    account: '',
-    accountType: 'Conta Corrente',
-    pixKey: '',
-    branch: authState.user?.department || 'Matriz SP'
-  };
-
-  const [formData, setFormData] = useState<Partial<PaymentRequest>>(initialFormData);
-
+  // Carregar dados iniciais
   useEffect(() => {
-    if (isNew && !isEditing && authState.user?.department) {
-      setFormData(prev => ({ ...prev, branch: authState.user?.department }));
-    }
-  }, [isNew, isEditing, authState.user]);
-
-  const syncData = useCallback(async () => {
-    if (!authState.user || !authState.token) return;
-    setIsLoading(true);
-    try {
-      const current = await requestService.getRequestsFiltered(authState.user, authState.token);
-      setRequests(current);
-    } catch (e) {
-      console.error("Erro na sincronização:", e);
-    } finally {
-      setIsLoading(false);
-    }
+    const load = async () => {
+      if (authState.user && authState.token) {
+        const data = await requestService.getRequestsFiltered(authState.user, authState.token);
+        setRequests(data);
+      }
+    };
+    load();
   }, [authState.user, authState.token]);
 
-  useEffect(() => {
-    syncData();
-  }, [syncData]);
-
+  // --- LÓGICA DE FILTRO E ORDENAÇÃO CORRIGIDA ---
   const filteredRequests = useMemo(() => {
+    // 1. Filtragem
     const filtered = requests.filter(req => {
-      // FILTRO DE SEGURANÇA: Apenas o que foi criado pelo usuário logado
-      const isOwner = req.createdByUserId === authState.user?.id;
-      if (!isOwner) return false;
-
+      const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
-        req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        req.id.toString().includes(searchTerm) ||
-        (req.invoiceNumber && req.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+        (req.title?.toLowerCase() || '').includes(searchLower) || 
+        (req.invoiceNumber?.toLowerCase() || '').includes(searchLower) ||
+        (req.id?.toString() || '').includes(searchLower);
       
-      const reqDate = new Date(req.createdAt);
-      reqDate.setHours(0, 0, 0, 0);
-
-      let matchesDate = true;
-      if (startDate) {
-        const start = new Date(startDate);
-        start.setHours(0, 0, 0, 0);
-        if (reqDate < start) matchesDate = false;
-      }
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        if (reqDate > end) matchesDate = false;
-      }
-
+      const reqDate = req.paymentDate; 
+      const matchesDate = (!startDate || reqDate >= startDate) && 
+                          (!endDate || reqDate <= endDate);
+      
       return matchesSearch && matchesDate;
     });
 
-    // Ordenação Decrescente: Mais recentes (data de criação) primeiro
+    // 2. Ordenação Decrescente Garantida (Maior ID primeiro)
     return [...filtered].sort((a, b) => {
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      // Força a conversão para número para evitar ordenação de texto (ex: "10" vindo antes de "2")
+      const idA = parseInt(String(a.id), 10) || 0;
+      const idB = parseInt(String(b.id), 10) || 0;
+      
+      // b - a = Ordem Decrescente (Ex: 150, 149, 148...)
+      return idB - idA;
     });
-  }, [requests, searchTerm, startDate, endDate, authState.user?.id]);
+  }, [requests, searchTerm, startDate, endDate]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
-  const isFormValid = useMemo(() => {
-    return !!formData.title && !!formData.paymentMethod;
-  }, [formData]);
-
-  const handleSave = async () => {
-    if (!authState.user || !authState.token || !isFormValid) return;
-    setIsLoading(true);
-    try {
-      const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
-      if (isEditing && selectedId) {
-        await requestService.updateRequest(selectedId, finalData, authState.token);
-      } else {
-        await requestService.createRequest(finalData, authState.token);
-      }
-      await syncData();
-      setIsNew(false);
-      setIsEditing(false);
-      setFormData(initialFormData);
-    } catch (e) {
-      alert("Erro ao salvar: " + (e as Error).message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const startEdit = () => {
-    if (!selectedRequest) return;
-    setFormData({
-      title: selectedRequest.title,
-      invoiceNumber: stripHtml(selectedRequest.invoiceNumber),
-      orderNumbers: stripHtml(selectedRequest.orderNumbers),
-      payee: selectedRequest.payee,
-      paymentMethod: selectedRequest.paymentMethod,
-      paymentDate: selectedRequest.paymentDate?.split('T')[0],
-      generalObservation: selectedRequest.generalObservation,
-      bank: selectedRequest.bank,
-      agency: selectedRequest.agency,
-      account: selectedRequest.account,
-      accountType: selectedRequest.accountType,
-      pixKey: selectedRequest.pixKey,
-      branch: selectedRequest.branch
-    });
-    setIsEditing(true);
-    setIsNew(true);
-  };
-
   return (
-    <div className="flex flex-col h-full space-y-4">
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-6">
-        <div className="flex items-center space-x-3">
-          <Calendar size={18} className="text-gray-400" />
-          <span className="text-sm font-bold text-gray-700 uppercase tracking-tighter">Período:</span>
-        </div>
-        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-gray-200 bg-white rounded-lg px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-700" />
-        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-gray-200 bg-white rounded-lg px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 text-gray-700" />
-        <button onClick={syncData} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors ml-auto">
-          {isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}
-        </button>
-      </div>
-
-      <div className="flex flex-1 space-x-6 overflow-hidden">
-        <div className="w-1/3 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-gray-900 text-xs uppercase tracking-widest">Solicitações ({filteredRequests.length})</h3>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center text-sm font-bold shadow-sm"><Plus size={16} className="mr-2" /> Nova</button>
-            </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-              <input type="text" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" />
-            </div>
+    <div className="flex h-full bg-gray-50 overflow-hidden">
+      {/* Lista Lateral */}
+      <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-xl">
+        <div className="p-6 border-b border-gray-100 bg-white sticky top-0 z-10">
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-black text-gray-900 tracking-tighter italic">SISPAG</h1>
+            <button 
+              onClick={() => { setIsNew(true); setSelectedId(null); }}
+              className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
+            >
+              <Plus size={20} />
+            </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-            {filteredRequests.map(req => (
-              <div key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); setIsEditing(false); }} className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${selectedId === req.id ? 'bg-blue-50 border-r-4 border-blue-500' : ''}`}>
-                <div className="flex justify-between items-start mb-1">
-                  <span className="text-[10px] font-mono font-bold text-gray-400">#{req.id}</span>
+          <div className="space-y-3">
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={16} />
+              <input 
+                type="text" 
+                placeholder="Buscar nota ou ID..." 
+                className="w-full pl-11 pr-4 py-3 bg-gray-50 border-0 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+          {filteredRequests.length > 0 ? (
+            filteredRequests.map(req => (
+              <button
+                key={req.id}
+                onClick={() => { setSelectedId(req.id); setIsNew(false); }}
+                className={`w-full p-4 rounded-3xl transition-all text-left border-2 ${
+                  selectedId === req.id 
+                    ? 'bg-white border-blue-600 shadow-xl shadow-blue-50/50 scale-[1.02]' 
+                    : 'bg-white border-transparent hover:border-gray-100 hover:bg-gray-50 shadow-sm'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded-full">
+                    ID #{req.id}
+                  </span>
                   <Badge status={req.status} />
                 </div>
-                <h4 className="font-semibold text-gray-800 truncate mb-1 text-sm">{req.title}</h4>
-                <div className="flex items-center text-[10px] text-gray-500 space-x-3 font-medium">
-                  <span className="flex items-center tracking-tighter"><Clock size={10} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span>
-                  <span className="text-indigo-600 font-bold uppercase tracking-tight">{req.branch}</span>
+                <h3 className="font-bold text-gray-900 text-sm mb-1 truncate">{req.title}</h3>
+                <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
+                  <Calendar size={12} className="mr-1" />
+                  {new Date(req.paymentDate).toLocaleDateString('pt-BR')}
                 </div>
-              </div>
-            ))}
-            {filteredRequests.length === 0 && !isLoading && (
-              <div className="p-8 text-center text-gray-400 text-xs italic">Nenhuma solicitação encontrada.</div>
-            )}
-          </div>
-        </div>
-
-        <div className={`flex-1 rounded-2xl shadow-xl overflow-hidden flex flex-col transition-all ${isNew ? 'bg-gradient-to-br from-[#0a0f2b] via-[#0d1442] to-[#121c4b] text-white' : 'bg-white border border-gray-200'}`}>
-          {isNew ? (
-            <div className="flex-1 overflow-y-auto p-10">
-              <div className="max-w-4xl mx-auto space-y-8">
-                <header className="flex items-center justify-between border-b border-white/10 pb-4">
-                  <h2 className="text-3xl font-black tracking-tighter uppercase italic">{isEditing ? 'Editar Solicitação' : 'Nova Solicitação'}</h2>
-                  <div className="bg-white/10 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/5 italic text-blue-300">Escritório Autodetectado: {formData.branch}</div>
-                </header>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="md:col-span-2">
-                    <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Título / Finalidade <span className="text-red-400">*</span></label>
-                    <input type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none focus:ring-2 focus:ring-blue-500 text-white" placeholder="Ex: Pagamento Consultoria TI - Março" />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Número da Nota Fiscal</label>
-                    <input type="text" value={formData.invoiceNumber} onChange={e => setFormData({...formData, invoiceNumber: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none" />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Método de Pagamento</label>
-                    <select value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none text-white">
-                      {PAYMENT_METHODS.filter(m => m !== 'Transferência').map(m => <option key={m} value={m} className="bg-slate-900">{m}</option>)}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Data de Vencimento</label>
-                    <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none text-white" />
-                  </div>
-                  
-                  <div className="md:col-span-1">
-                    <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Pedido(s) Vinculado(s)</label>
-                    <input type="text" value={formData.orderNumbers} onChange={e => setFormData({...formData, orderNumbers: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none" />
-                  </div>
-                </div>
-
-                {formData.paymentMethod === 'TED/DEPOSITO' && (
-                  <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6 animate-in fade-in slide-in-from-top duration-300">
-                    <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={14} className="mr-2" /> Dados da Conta para Depósito</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2 opacity-60">Favorecido</label>
-                        <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none" />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2 opacity-60">Banco</label>
-                        <input type="text" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2 opacity-60">Agência</label>
-                        <input type="text" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2 opacity-60">Conta</label>
-                        <input type="text" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none" />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className="block text-[10px] font-black uppercase tracking-widest mb-2 opacity-60">Tipo de Conta</label>
-                        <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-lg p-3 outline-none text-white">
-                           <option value="Conta Corrente" className="bg-slate-900">Conta Corrente</option>
-                           <option value="Conta Poupança" className="bg-slate-900">Conta Poupança</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {formData.paymentMethod === 'PIX' && (
-                  <div className="bg-white/5 p-8 rounded-3xl border border-white/10 animate-in fade-in slide-in-from-top duration-300">
-                    <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Chave PIX</label>
-                    <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none" placeholder="CPF, CNPJ, E-mail ou Chave Aleatória" />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
-                    <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={14} className="mr-2" /> Anexar Nota Fiscal (PDF)</h3>
-                    <div className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer">
-                      <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
-                      <span className="text-[10px] font-bold">Selecionar arquivo</span>
-                    </div>
-                  </div>
-                  <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
-                    <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><CreditCard size={14} className="mr-2" /> Anexar Boleto</h3>
-                    <div className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 hover:bg-white/10 transition-all cursor-pointer">
-                      <Paperclip size={24} className="text-blue-300 mb-2 opacity-30" />
-                      <span className="text-[10px] font-bold">Selecionar arquivo</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black uppercase tracking-widest mb-2 text-blue-300 italic">Informações Adicionais / Observações</label>
-                  <textarea rows={3} value={formData.generalObservation} onChange={e => setFormData({...formData, generalObservation: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-xl p-4 outline-none resize-none" placeholder="Descreva detalhes relevantes para o fiscal..." />
-                </div>
-
-                <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center">
-                  <button onClick={() => { setIsNew(false); setIsEditing(false); }} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
-                  <button onClick={handleSave} disabled={!isFormValid || isLoading} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs shadow-2xl shadow-blue-500/20 flex items-center disabled:opacity-30 transition-all active:scale-95">
-                    {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={18} className="mr-3" />}
-                    {isEditing ? 'Atualizar Dados' : 'Enviar Solicitação'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : selectedRequest ? (
-            <div className="flex-1 flex flex-col overflow-hidden">
-               <header className="p-8 border-b border-gray-100 flex justify-between items-center bg-white shadow-sm">
-                <div>
-                  <div className="flex items-center space-x-3 mb-2">
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">ID SharePoint: #{selectedRequest.id} • {selectedRequest.branch}</span>
-                    <Badge status={selectedRequest.status} />
-                  </div>
-                  <h2 className="text-2xl font-black text-gray-900 tracking-tight">{selectedRequest.title}</h2>
-                </div>
-                {(selectedRequest.status === RequestStatus.ERRO_FISCAL || selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) && (
-                  <button onClick={startEdit} className="flex items-center space-x-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-blue-700">
-                    <Edit3 size={18} /><span>Corrigir</span>
-                  </button>
-                )}
-              </header>
-              <div className="flex-1 p-10 overflow-y-auto space-y-6 text-gray-700">
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
-                   <div className="bg-gray-50 p-6 rounded-2xl border">
-                      <h4 className="text-[9px] font-black text-gray-400 uppercase mb-1">Nota Fiscal</h4>
-                      <p className="text-lg font-black text-gray-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</p>
-                   </div>
-                   <div className="bg-gray-50 p-6 rounded-2xl border">
-                      <h4 className="text-[9px] font-black text-gray-400 uppercase mb-1">Vencimento</h4>
-                      <p className="text-lg font-black text-gray-900">{selectedRequest.paymentDate ? new Date(selectedRequest.paymentDate).toLocaleDateString() : '---'}</p>
-                   </div>
-                   <div className="bg-gray-50 p-6 rounded-2xl border">
-                      <h4 className="text-[9px] font-black text-gray-400 uppercase mb-1">Método</h4>
-                      <p className="text-lg font-black text-gray-900">{selectedRequest.paymentMethod}</p>
-                   </div>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border border-gray-100 space-y-2">
-                   <p className="text-xs font-bold uppercase text-gray-400 tracking-widest">Observações:</p>
-                   <p className="text-sm italic">"{selectedRequest.generalObservation || 'Nenhuma observação informada.'}"</p>
-                </div>
-              </div>
-            </div>
+              </button>
+            ))
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
-              <Banknote size={80} className="opacity-10 mb-6" />
-              <p className="font-black uppercase text-[10px] tracking-widest text-gray-400">Via Group • Plataforma SisPag</p>
+            <div className="py-20 text-center">
+              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Nenhum resultado</p>
             </div>
           )}
         </div>
+      </div>
+
+      {/* Área de Conteúdo / Detalhes */}
+      <div className="flex-1 flex flex-col bg-gray-50">
+        {selectedRequest ? (
+          <div className="flex-1 overflow-y-auto p-12">
+            <div className="max-w-4xl mx-auto space-y-8">
+              <div className="flex justify-between items-end border-b border-gray-200 pb-8">
+                <div>
+                  <h2 className="text-4xl font-black text-gray-900 tracking-tighter mb-2">{selectedRequest.title}</h2>
+                  <div className="flex items-center space-x-4">
+                     <Badge status={selectedRequest.status} className="px-4 py-1.5 text-xs" />
+                     <span className="text-sm text-gray-400 font-medium">Lançada em {new Date(selectedRequest.createdAt).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid de Informações */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Dados da Nota</p>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-500">NF:</span>
+                      <span className="text-sm font-bold text-gray-900">{selectedRequest.invoiceNumber}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-500">Favorecido:</span>
+                      <span className="text-sm font-bold text-gray-900">{selectedRequest.payee}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Pagamento</p>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-500">Método:</span>
+                      <span className="text-sm font-bold text-gray-900">{selectedRequest.paymentMethod}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-500">Data Prevista:</span>
+                      <span className="text-sm font-bold text-gray-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
+             <h3 className="text-xl font-black text-gray-900 tracking-tight">Selecione uma solicitação</h3>
+             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">A nota mais recente aparecerá no topo da lista à esquerda.</p>
+          </div>
+        )}
       </div>
     </div>
   );
