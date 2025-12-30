@@ -1,59 +1,142 @@
-import { PaymentRequest, RequestStatus, User, UserRole } from '../types';
-import { sharepointService } from './sharepointService';
+import { PaymentRequest, RequestStatus } from '../types';
 
-export const requestService = {
-  getRequestsFiltered: async (user: User, accessToken: string): Promise<PaymentRequest[]> => {
-    try {
-      const all = await sharepointService.getRequests(accessToken);
-      
-      let filtered: PaymentRequest[] = [];
+// IDs ORIGINAIS MANTIDOS PARA ESTABILIDADE
+const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
+const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 
-      // 1. Aplicamos os filtros de acordo com o papel do usuário
-      if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
-        filtered = all;
-      } else if (user.role === UserRole.SOLICITANTE) {
-        // Filtra para o solicitante ver apenas o que ele criou
-        filtered = all.filter(r => r.createdByUserId === user.id); 
-      } else if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
-        const financeAllowed = [
-          RequestStatus.APROVADO, 
-          RequestStatus.LANCADO, 
-          RequestStatus.FATURADO, 
-          RequestStatus.ERRO_FINANCEIRO, 
-          RequestStatus.COMPARTILHADO
-        ];
-        filtered = all.filter(r => financeAllowed.includes(r.status) || r.statusManual === 'Compartilhado');
+const FIELD_MAP = {
+  title: 'Title',
+  invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
+  orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
+  status: 'Status',
+  branch: 'Filial',
+  generalObservation: 'Observa_x00e7__x00e3_o',
+  mirrorId: 'ID_ESPELHO',
+  paymentMethod: 'MET_PAGAMENTO',
+  pixKey: 'CAMPO_PIX',
+  paymentDate: 'DATA_PAG',
+  payee: 'PESSOA',
+  discountText: 'DESCONTO',
+  statusManual: 'STATUS_ESPELHO_MANUAL',
+  errorType: 'OBS_ERRO',
+  errorObservation: 'OBS_CRIACAO',
+  sharedWithUserId: 'SHARED_WITH',
+  shareComment: 'COMENT_SHARE',
+  bank: 'BANCO',
+  agency: 'AGENCIA',
+  account: 'CONTA',
+  accountType: 'TIPO_CONTA'
+};
+
+/**
+ * Gera nome do arquivo baseado no primeiro número encontrado na Nota Fiscal
+ */
+const generateFileName = (originalName: string, invoiceNumber?: string) => {
+  const extension = originalName.split('.').pop();
+  
+  if (invoiceNumber) {
+    const firstMatch = invoiceNumber.match(/\d+/);
+    if (firstMatch) {
+      return `NF_${firstMatch[0]}.${extension}`;
+    }
+  }
+
+  const cleanBase = originalName.split('.').slice(0, -1).join('.')
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[#%*:<>?/|\\"]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 30);
+    
+  return `${cleanBase}.${extension}`;
+};
+
+export const sharepointService = {
+  getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
+    const allRequests: PaymentRequest[] = [];
+    let url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=5000`;
+
+    while (url) {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error?.message || 'Falha SharePoint');
       }
 
-      // 2. ORDENAÇÃO DECRESCENTE (ID maior primeiro)
-      // Usamos Number() para garantir que a comparação seja numérica e não alfabética
-      return filtered.sort((a, b) => Number(b.id) - Number(a.id));
+      const data = await response.json();
+      const pageRequests = data.value.map((item: any) => {
+        const f = item.fields;
+        return {
+          id: item.id,
+          title: f.Title || '',
+          invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
+          status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
+          branch: f[FIELD_MAP.branch] || '',
+          createdAt: item.createdDateTime,
+          // Mantenha os outros mapeamentos conforme sua necessidade
+        };
+      });
 
-    } catch (error) {
-      console.error("Erro ao filtrar solicitações do SharePoint:", error);
-      return [];
+      allRequests.push(...pageRequests);
+      url = data['@odata.nextLink'];
     }
+    return allRequests;
   },
 
-  createRequest: async (data: Partial<PaymentRequest>, accessToken: string): Promise<any> => {
-    return await sharepointService.createRequest(accessToken, data);
-  },
+  createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`;
+    const fields: any = {
+      Title: data.title,
+      [FIELD_MAP.invoiceNumber]: data.invoiceNumber,
+      [FIELD_MAP.orderNumbers]: data.orderNumbers,
+      [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
+      [FIELD_MAP.branch]: data.branch || 'Matriz SP',
+      [FIELD_MAP.paymentMethod]: data.paymentMethod,
+      [FIELD_MAP.paymentDate]: data.paymentDate,
+      [FIELD_MAP.payee]: data.payee,
+      [FIELD_MAP.bank]: data.bank,
+      [FIELD_MAP.agency]: data.agency,
+      [FIELD_MAP.account]: data.account,
+      [FIELD_MAP.accountType]: data.accountType,
+      [FIELD_MAP.pixKey]: data.pixKey,
+      [FIELD_MAP.generalObservation]: data.generalObservation
+    };
 
-  updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string): Promise<any> => {
-    return await sharepointService.updateRequest(accessToken, id, data);
-  },
-
-  changeStatus: async (id: string, status: RequestStatus, accessToken: string, comment?: string): Promise<any> => {
-    const update: Partial<PaymentRequest> = { status };
-    if (comment) update.generalObservation = comment;
-    return await sharepointService.updateRequest(accessToken, id, update);
-  },
-
-  shareRequest: async (id: string, shareUserId: string, comment: string, accessToken: string): Promise<any> => {
-    return await sharepointService.updateRequest(accessToken, id, {
-      sharedWithUserId: shareUserId,
-      shareComment: comment,
-      statusManual: 'Compartilhado'
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
     });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'Erro ao criar item');
+    }
+    return response.json();
+  },
+
+  async uploadAttachment(accessToken: string, itemId: string, file: File, invoiceNumber?: string) {
+    const cleanName = generateFileName(file.name, invoiceNumber);
+    console.log(`📤 Tentando anexo: ${cleanName}`);
+    
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments/${cleanName}/content`;
+
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': file.type
+      },
+      body: file
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Erro no upload:", errorData);
+      throw new Error(errorData.error?.message || "Erro 400 no anexo");
+    }
+    return true;
   }
 };
