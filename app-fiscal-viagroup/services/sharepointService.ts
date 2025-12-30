@@ -1,10 +1,7 @@
 
 import { PaymentRequest, RequestStatus } from '../types';
 
-// Site ID global (hostname,siteCollectionId,siteId)
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
-
-// IDs das listas (GUIDs fornecidos)
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
@@ -26,13 +23,10 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 const sanitizeFileName = (name: string) => {
-  return name
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[#%*:<>?/|\\"]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 80);
+  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[#%*:<>?/|\\"]/g, '').replace(/\s+/g, '_').substring(0, 80);
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -44,7 +38,29 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+/**
+ * Função para extrair detalhes técnicos de erros do Microsoft Graph
+ */
+async function parseGraphError(response: Response) {
+  const requestId = response.headers.get('request-id') || 'N/A';
+  const clientRequestId = response.headers.get('client-request-id') || 'N/A';
+  const date = response.headers.get('date') || 'N/A';
+  
+  let errorDetail = 'Erro desconhecido';
+  try {
+    const body = await response.json();
+    errorDetail = body.error?.message || JSON.stringify(body);
+  } catch (e) {
+    errorDetail = await response.text();
+  }
+
+  return `[MS-GRAPH-ERROR] 
+Status: ${response.status}
+Msg: ${errorDetail}
+Request-ID: ${requestId}
+Client-Request-ID: ${clientRequestId}
+Date: ${date}`;
+}
 
 export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
@@ -54,10 +70,7 @@ export const sharepointService = {
 
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(`Erro SharePoint: ${errData.error?.message || response.statusText}`);
-        }
+        if (!response.ok) throw new Error(await parseGraphError(response));
         const data = await response.json();
         if (data.value) allItems = [...allItems, ...data.value];
         nextUrl = data['@odata.nextLink'] || null;
@@ -95,14 +108,13 @@ export const sharepointService = {
         };
       });
     } catch (e: any) {
-      console.error("Erro no getRequests:", e);
+      console.error(e);
       return [];
     }
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`;
-    
     const fields: any = {
       Title: data.title,
       [FIELD_MAP.invoiceNumber]: data.invoiceNumber || '',
@@ -126,9 +138,8 @@ export const sharepointService = {
       body: JSON.stringify({ fields })
     });
     
-    const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro.");
-    return result;
+    if (!resp.ok) throw new Error(await parseGraphError(resp));
+    return await resp.json();
   },
 
   uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string) => {
@@ -137,70 +148,59 @@ export const sharepointService = {
     const base64 = await fileToBase64(file);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
-    let lastError = '';
-    const maxRetries = 5;
+    let lastErrorMessage = '';
+    const maxRetries = 6;
 
     for (let i = 0; i < maxRetries; i++) {
       try {
-        // Delay inicial maior e progressivo (3s, 6s, 9s...)
-        const waitTime = 3000 * (i + 1);
-        await delay(waitTime);
+        // Delay progressivo (4s, 8s, 12s...) - SharePoint Online é lento para propagar anexos
+        await delay(4000 * (i + 1));
 
-        // Verifica se o item está pronto consultando com expansão de anexos
-        const check = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}?$expand=attachments`, {
+        // Tenta verificar se o item e seu segmento de anexos já são visíveis
+        const check = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}`, {
           headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        
-        if (!check.ok) continue;
 
-        // Se chegamos aqui, o item existe. Agora tentamos o upload.
+        if (!check.ok) {
+           lastErrorMessage = await parseGraphError(check);
+           continue;
+        }
+
+        // Tenta o upload propriamente dito
         const resp = await fetch(url, {
           method: 'POST',
-          headers: { 
-            'Authorization': `Bearer ${accessToken}`, 
-            'Content-Type': 'application/json' 
-          },
-          body: JSON.stringify({ 
-            name: fileName, 
-            contentBytes: base64 
-          })
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: fileName, contentBytes: base64 })
         });
 
         if (resp.ok) return true;
-
-        const err = await resp.json();
-        lastError = err.error?.message || "Erro desconhecido";
         
-        // Se o erro não for especificamente sobre o segmento "attachments", paramos o retry
-        if (!lastError.toLowerCase().includes('attachments')) break;
+        lastErrorMessage = await parseGraphError(resp);
+        
+        // Se o erro for "Resource not found for segment attachments", continuamos o loop
+        if (!lastErrorMessage.toLowerCase().includes('attachments')) {
+           throw new Error(lastErrorMessage);
+        }
 
       } catch (e: any) {
-        lastError = e.message;
+        lastErrorMessage = e.message;
+        if (!lastErrorMessage.toLowerCase().includes('attachments')) throw e;
       }
     }
 
-    throw new Error(`O SharePoint não liberou o espaço de anexos para o arquivo ${fileName} após várias tentativas. Detalhe: ${lastError}`);
+    throw new Error(`O recurso de anexos do SharePoint não ficou pronto após ${maxRetries} tentativas.\n\nLOG TÉCNICO:\n${lastErrorMessage}`);
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${AUX_LIST_ID}/items`;
-    
-    // Pequeno delay para não sobrecarregar as APIs em sequência
     await delay(1000);
-
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        fields: { 
-          Title: `Boleto Ref ID: ${mainRequestId}`, 
-          ID_SOLICITACAO: mainRequestId 
-        } 
-      })
+      body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
     });
-    const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro na lista auxiliar.");
-    return result;
+    if (!resp.ok) throw new Error(await parseGraphError(resp));
+    return await resp.json();
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
@@ -215,6 +215,7 @@ export const sharepointService = {
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(fields)
     });
-    return resp.json();
+    if (!resp.ok) throw new Error(await parseGraphError(resp));
+    return await resp.json();
   }
 };

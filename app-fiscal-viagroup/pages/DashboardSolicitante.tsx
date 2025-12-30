@@ -6,11 +6,10 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, Calendar, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle
+  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
-// IDs fixos fornecidos para as operações de anexo
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
@@ -30,21 +29,11 @@ const DashboardSolicitante: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
-  
   const initialFormData: Partial<PaymentRequest> = {
-    title: '',
-    invoiceNumber: '',
-    orderNumbers: '',
-    payee: '',
-    paymentMethod: 'Boleto',
-    paymentDate: todayStr,
-    generalObservation: '',
-    bank: '',
-    agency: '',
-    account: '',
-    accountType: 'Conta Corrente',
-    pixKey: '',
-    branch: authState.user?.department || 'Matriz SP'
+    title: '', invoiceNumber: '', orderNumbers: '', payee: '',
+    paymentMethod: 'Boleto', paymentDate: todayStr, generalObservation: '',
+    bank: '', agency: '', account: '', accountType: 'Conta Corrente',
+    pixKey: '', branch: authState.user?.department || 'Matriz SP'
   };
 
   const [formData, setFormData] = useState<Partial<PaymentRequest>>(initialFormData);
@@ -80,70 +69,67 @@ const DashboardSolicitante: React.FC = () => {
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
-    setUploadStatus('Salvando formulário...');
+    setUploadStatus('Iniciando...');
     
     try {
       const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
       let itemId = selectedId;
 
       if (isEditing && selectedId) {
-        setUploadStatus('Atualizando...');
+        setUploadStatus('Atualizando formulário...');
         await sharepointService.updateRequest(authState.token, selectedId, finalData);
       } else {
-        setUploadStatus('Criando registro...');
+        setUploadStatus('Criando registro principal...');
         const newReq = await sharepointService.createRequest(authState.token, finalData);
         itemId = newReq.id;
       }
 
-      if (!itemId) throw new Error("Erro ao obter o ID do item.");
+      if (!itemId) throw new Error("ID do item não retornado pelo SharePoint.");
 
       const nfId = formData.invoiceNumber?.trim() || `SOLIC_${itemId}`;
       const baseName = `NF_${nfId}`;
 
-      // Notas Fiscais
+      // Upload de Notas Fiscais
       if (invoiceFiles.length > 0) {
         for (let i = 0; i < invoiceFiles.length; i++) {
           const name = invoiceFiles.length > 1 ? `${baseName}_P${i + 1}` : baseName;
-          setUploadStatus(`Aguardando servidor: NF ${i + 1}...`);
+          setUploadStatus(`Preparando espaço para NF (${i + 1}/${invoiceFiles.length})...`);
           try {
             await sharepointService.uploadAttachment(authState.token, MAIN_LIST_ID, itemId, invoiceFiles[i], name);
-          } catch (attErr: any) {
-            console.warn(attErr);
-            alert(`O registro foi salvo, mas não conseguimos anexar a NF "${name}" agora por lentidão do SharePoint. Você poderá anexar editando o item mais tarde.`);
+          } catch (err: any) {
+            console.error(err);
+            alert(`O registro foi salvo, mas a NF "${name}" falhou.\n\nMotivo:\n${err.message}`);
           }
         }
       }
 
-      // Boletos e Comprovantes
+      // Upload de Boletos
       if (ticketFiles.length > 0) {
-        setUploadStatus('Criando vínculo para boletos...');
+        setUploadStatus('Criando vínculo para Boletos...');
         try {
           const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
           for (let i = 0; i < ticketFiles.length; i++) {
             const name = `BOLETO_${nfId}_${i + 1}`;
-            setUploadStatus(`Aguardando servidor: Doc ${i + 1}...`);
+            setUploadStatus(`Enviando Documento (${i + 1}/${ticketFiles.length})...`);
             await sharepointService.uploadAttachment(authState.token, AUX_LIST_ID, auxItem.id, ticketFiles[i], name);
           }
-        } catch (auxErr: any) {
-          console.warn(auxErr);
-          alert(`O registro foi salvo, mas houve um erro ao processar os arquivos de Boletos/Comprovantes.`);
+        } catch (err: any) {
+          console.error(err);
+          alert(`O registro principal foi salvo, mas houve erro nos Boletos.\n\nLog:\n${err.message}`);
         }
       }
 
-      setUploadStatus('Processado com Sucesso!');
+      setUploadStatus('Concluído com sucesso!');
       setTimeout(() => {
-        setIsNew(false);
-        setIsEditing(false);
-        setFormData(initialFormData);
-        setInvoiceFiles([]);
-        setTicketFiles([]);
-        setUploadStatus('');
+        setIsNew(false); setIsEditing(false); setFormData(initialFormData);
+        setInvoiceFiles([]); setTicketFiles([]); setUploadStatus('');
         syncData();
-      }, 1500);
+      }, 2000);
 
     } catch (e: any) {
-      alert(`Falha Crítica: ${e.message}`);
-      setUploadStatus('Erro no envio');
+      console.error(e);
+      alert(`FALHA CRÍTICA NO LANÇAMENTO:\n\n${e.message}`);
+      setUploadStatus('Falha no processo');
     } finally {
       setIsLoading(false);
     }
@@ -157,22 +143,20 @@ const DashboardSolicitante: React.FC = () => {
       orderNumbers: stripHtml(selectedRequest.orderNumbers),
       paymentDate: selectedRequest.paymentDate?.split('T')[0]
     });
-    setIsEditing(true);
-    setIsNew(true);
+    setIsEditing(true); setIsNew(true);
   };
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
-      {/* Lista Lateral */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-lg font-black text-gray-800 uppercase tracking-tight">Solicitações</h1>
             <div className="flex items-center space-x-2">
-              <button onClick={syncData} className="p-2 text-gray-400 hover:text-blue-600 transition-colors">
+              <button onClick={syncData} className="p-2 text-gray-400 hover:text-blue-600">
                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}
               </button>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-md">
+              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md">
                 <Plus size={20} />
               </button>
             </div>
@@ -182,7 +166,6 @@ const DashboardSolicitante: React.FC = () => {
             <input type="text" placeholder="Filtrar por nome ou NF..." className="w-full pl-10 pr-4 py-3 bg-gray-50 border-0 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         </div>
-
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {filteredRequests.map(req => (
             <button key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`w-full p-4 rounded-2xl transition-all text-left border-2 ${selectedId === req.id ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}>
@@ -200,14 +183,17 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Principal */}
       <div className={`flex-1 flex flex-col transition-all ${isNew ? 'bg-slate-900 text-white' : 'bg-gray-50'}`}>
         {isNew ? (
           <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
             <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in duration-300">
               <header className="flex items-center justify-between border-b border-white/10 pb-8">
                 <h2 className="text-3xl font-black uppercase italic tracking-tight">{isEditing ? 'Ajustar Cadastro' : 'Novo Lançamento'}</h2>
-                {uploadStatus && <div className="text-blue-400 font-black uppercase text-[10px] tracking-widest flex items-center bg-white/5 px-4 py-2 rounded-full border border-white/10"><Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}</div>}
+                {uploadStatus && (
+                  <div className="text-blue-400 font-black uppercase text-[10px] tracking-widest flex items-center bg-white/5 px-4 py-2 rounded-full border border-white/10">
+                    <Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}
+                  </div>
+                )}
               </header>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
