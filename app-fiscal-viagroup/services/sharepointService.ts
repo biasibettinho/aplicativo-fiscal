@@ -26,7 +26,11 @@ const FIELD_MAP = {
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const sanitizeFileName = (name: string) => {
-  return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[#%*:<>?/|\\"]/g, '').replace(/\s+/g, '_').substring(0, 80);
+  return name.normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[#%*:<>?/|\\"]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 80);
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -38,28 +42,16 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-/**
- * Função para extrair detalhes técnicos de erros do Microsoft Graph
- */
 async function parseGraphError(response: Response) {
   const requestId = response.headers.get('request-id') || 'N/A';
-  const clientRequestId = response.headers.get('client-request-id') || 'N/A';
-  const date = response.headers.get('date') || 'N/A';
-  
-  let errorDetail = 'Erro desconhecido';
+  let errorDetail = '';
   try {
     const body = await response.json();
     errorDetail = body.error?.message || JSON.stringify(body);
   } catch (e) {
     errorDetail = await response.text();
   }
-
-  return `[MS-GRAPH-ERROR] 
-Status: ${response.status}
-Msg: ${errorDetail}
-Request-ID: ${requestId}
-Client-Request-ID: ${clientRequestId}
-Date: ${date}`;
+  return `[${response.status}] ${errorDetail} (ReqID: ${requestId})`;
 }
 
 export const sharepointService = {
@@ -142,53 +134,62 @@ export const sharepointService = {
     return await resp.json();
   },
 
-  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string) => {
+  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string, onLog?: (msg: string) => void) => {
     const extension = file.name.split('.').pop() || 'pdf';
     const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+    const attachmentEndpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
-    let lastErrorMessage = '';
-    const maxRetries = 6;
+    const log = (m: string) => { console.log(m); if (onLog) onLog(m); };
 
+    log(`Iniciando upload de ${fileName}...`);
+
+    let ready = false;
+    const maxRetries = 10;
+    
+    // LOOP DE PRONTIDÃO: Verifica se o endpoint /attachments existe antes de tentar o POST
     for (let i = 0; i < maxRetries; i++) {
-      try {
-        // Delay progressivo (4s, 8s, 12s...) - SharePoint Online é lento para propagar anexos
-        await delay(4000 * (i + 1));
+      log(`Checando prontidão do segmento (tentativa ${i+1}/${maxRetries})...`);
+      
+      const check = await fetch(attachmentEndpoint, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
 
-        // Tenta verificar se o item e seu segmento de anexos já são visíveis
-        const check = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+      if (check.ok) {
+        ready = true;
+        log(`Segmento 'attachments' detectado e pronto.`);
+        break;
+      }
 
-        if (!check.ok) {
-           lastErrorMessage = await parseGraphError(check);
-           continue;
-        }
-
-        // Tenta o upload propriamente dito
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: fileName, contentBytes: base64 })
-        });
-
-        if (resp.ok) return true;
-        
-        lastErrorMessage = await parseGraphError(resp);
-        
-        // Se o erro for "Resource not found for segment attachments", continuamos o loop
-        if (!lastErrorMessage.toLowerCase().includes('attachments')) {
-           throw new Error(lastErrorMessage);
-        }
-
-      } catch (e: any) {
-        lastErrorMessage = e.message;
-        if (!lastErrorMessage.toLowerCase().includes('attachments')) throw e;
+      const errText = await check.text();
+      if (errText.toLowerCase().includes('not found') || check.status === 404) {
+        log(`SharePoint ainda não provisionou o recurso. Aguardando 5s...`);
+        await delay(5000);
+      } else {
+        throw new Error(`Erro inesperado na verificação: ${await parseGraphError(check)}`);
       }
     }
 
-    throw new Error(`O recurso de anexos do SharePoint não ficou pronto após ${maxRetries} tentativas.\n\nLOG TÉCNICO:\n${lastErrorMessage}`);
+    if (!ready) throw new Error("O SharePoint não liberou o espaço de anexos para este item a tempo.");
+
+    log(`Executando POST para envio do arquivo...`);
+    const resp = await fetch(attachmentEndpoint, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ name: fileName, contentBytes: base64 })
+    });
+
+    if (resp.ok) {
+      log(`Sucesso: ${fileName} enviado.`);
+      return true;
+    }
+    
+    const finalErr = await parseGraphError(resp);
+    log(`Erro no upload final: ${finalErr}`);
+    throw new Error(finalErr);
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {

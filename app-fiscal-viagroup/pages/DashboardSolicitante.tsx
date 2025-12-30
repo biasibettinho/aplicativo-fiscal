@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle
+  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle, Terminal
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -21,10 +21,20 @@ const DashboardSolicitante: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [logs, setLogs] = useState<string[]>([]);
   
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const addLog = (msg: string) => {
+    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-20));
+  };
+
+  useEffect(() => {
+    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
-  
   const todayStr = new Date().toISOString().split('T')[0];
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -44,21 +54,15 @@ const DashboardSolicitante: React.FC = () => {
     try {
       const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id));
-    } catch (e) {
-      console.error("Erro na sincronização:", e);
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setIsLoading(false); }
   };
 
   useEffect(() => { syncData(); }, [authState.user, authState.token]);
 
   const filteredRequests = useMemo(() => {
     const filtered = requests.filter(req => {
-      const searchLower = searchTerm.toLowerCase();
-      return (req.title?.toLowerCase() || '').includes(searchLower) || 
-             (req.invoiceNumber?.toLowerCase() || '').includes(searchLower) ||
-             (req.id?.toString() || '').includes(searchLower);
+      const s = searchTerm.toLowerCase();
+      return (req.title?.toLowerCase() || '').includes(s) || (req.invoiceNumber?.toLowerCase() || '').includes(s) || (req.id?.toString() || '').includes(s);
     });
     return [...filtered].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm]);
@@ -69,57 +73,54 @@ const DashboardSolicitante: React.FC = () => {
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
-    setUploadStatus('Iniciando...');
+    setUploadStatus('Processando...');
+    setLogs([]);
+    addLog('Iniciando submissão...');
     
     try {
       const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
       let itemId = selectedId;
 
       if (isEditing && selectedId) {
-        setUploadStatus('Atualizando formulário...');
+        addLog('Atualizando item existente...');
         await sharepointService.updateRequest(authState.token, selectedId, finalData);
       } else {
-        setUploadStatus('Criando registro principal...');
+        addLog('Criando novo item na lista principal...');
         const newReq = await sharepointService.createRequest(authState.token, finalData);
         itemId = newReq.id;
+        addLog(`Item criado com ID: ${itemId}`);
       }
 
-      if (!itemId) throw new Error("ID do item não retornado pelo SharePoint.");
+      if (!itemId) throw new Error("ID do item não encontrado.");
 
       const nfId = formData.invoiceNumber?.trim() || `SOLIC_${itemId}`;
-      const baseName = `NF_${nfId}`;
-
-      // Upload de Notas Fiscais
-      if (invoiceFiles.length > 0) {
-        for (let i = 0; i < invoiceFiles.length; i++) {
-          const name = invoiceFiles.length > 1 ? `${baseName}_P${i + 1}` : baseName;
-          setUploadStatus(`Preparando espaço para NF (${i + 1}/${invoiceFiles.length})...`);
-          try {
-            await sharepointService.uploadAttachment(authState.token, MAIN_LIST_ID, itemId, invoiceFiles[i], name);
-          } catch (err: any) {
-            console.error(err);
-            alert(`O registro foi salvo, mas a NF "${name}" falhou.\n\nMotivo:\n${err.message}`);
-          }
-        }
-      }
-
-      // Upload de Boletos
-      if (ticketFiles.length > 0) {
-        setUploadStatus('Criando vínculo para Boletos...');
+      
+      // Notas Fiscais
+      for (const file of invoiceFiles) {
         try {
-          const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
-          for (let i = 0; i < ticketFiles.length; i++) {
-            const name = `BOLETO_${nfId}_${i + 1}`;
-            setUploadStatus(`Enviando Documento (${i + 1}/${ticketFiles.length})...`);
-            await sharepointService.uploadAttachment(authState.token, AUX_LIST_ID, auxItem.id, ticketFiles[i], name);
-          }
+          await sharepointService.uploadAttachment(authState.token, MAIN_LIST_ID, itemId, file, `NF_${nfId}`, addLog);
         } catch (err: any) {
-          console.error(err);
-          alert(`O registro principal foi salvo, mas houve erro nos Boletos.\n\nLog:\n${err.message}`);
+          addLog(`ERRO NF: ${err.message}`);
+          alert(`O registro foi salvo, mas uma NF falhou.\nLog: ${err.message}`);
         }
       }
 
-      setUploadStatus('Concluído com sucesso!');
+      // Boletos
+      if (ticketFiles.length > 0) {
+        addLog('Provisionando lista auxiliar para boletos...');
+        const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
+        for (const file of ticketFiles) {
+          try {
+            await sharepointService.uploadAttachment(authState.token, AUX_LIST_ID, auxItem.id, file, `BOLETO_${nfId}`, addLog);
+          } catch (err: any) {
+            addLog(`ERRO BOLETO: ${err.message}`);
+            alert(`O registro foi salvo, mas um boleto falhou.\nLog: ${err.message}`);
+          }
+        }
+      }
+
+      addLog('Tudo pronto!');
+      setUploadStatus('Finalizado!');
       setTimeout(() => {
         setIsNew(false); setIsEditing(false); setFormData(initialFormData);
         setInvoiceFiles([]); setTicketFiles([]); setUploadStatus('');
@@ -127,9 +128,9 @@ const DashboardSolicitante: React.FC = () => {
       }, 2000);
 
     } catch (e: any) {
-      console.error(e);
-      alert(`FALHA CRÍTICA NO LANÇAMENTO:\n\n${e.message}`);
-      setUploadStatus('Falha no processo');
+      addLog(`FALHA CRÍTICA: ${e.message}`);
+      alert(`Erro no processo:\n${e.message}`);
+      setUploadStatus('Erro');
     } finally {
       setIsLoading(false);
     }
@@ -137,12 +138,7 @@ const DashboardSolicitante: React.FC = () => {
 
   const startEdit = () => {
     if (!selectedRequest) return;
-    setFormData({
-      ...selectedRequest,
-      invoiceNumber: stripHtml(selectedRequest.invoiceNumber),
-      orderNumbers: stripHtml(selectedRequest.orderNumbers),
-      paymentDate: selectedRequest.paymentDate?.split('T')[0]
-    });
+    setFormData({ ...selectedRequest, invoiceNumber: stripHtml(selectedRequest.invoiceNumber), orderNumbers: stripHtml(selectedRequest.orderNumbers), paymentDate: selectedRequest.paymentDate?.split('T')[0] });
     setIsEditing(true); setIsNew(true);
   };
 
@@ -153,12 +149,8 @@ const DashboardSolicitante: React.FC = () => {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-lg font-black text-gray-800 uppercase tracking-tight">Solicitações</h1>
             <div className="flex items-center space-x-2">
-              <button onClick={syncData} className="p-2 text-gray-400 hover:text-blue-600">
-                {isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}
-              </button>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md">
-                <Plus size={20} />
-              </button>
+              <button onClick={syncData} className="p-2 text-gray-400 hover:text-blue-600">{isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}</button>
+              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); setLogs([]); }} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md"><Plus size={20} /></button>
             </div>
           </div>
           <div className="relative">
@@ -169,15 +161,9 @@ const DashboardSolicitante: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {filteredRequests.map(req => (
             <button key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`w-full p-4 rounded-2xl transition-all text-left border-2 ${selectedId === req.id ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}>
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-2 py-0.5 rounded-md font-mono">#{req.id}</span>
-                <Badge status={req.status} />
-              </div>
+              <div className="flex justify-between items-start mb-2"><span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-2 py-0.5 rounded-md font-mono">#{req.id}</span><Badge status={req.status} /></div>
               <h3 className="font-bold text-gray-900 text-sm mb-1 truncate">{req.title}</h3>
-              <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest space-x-3">
-                <span className="flex items-center"><Clock size={12} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span>
-                <span className="text-blue-500 italic">{req.branch}</span>
-              </div>
+              <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest space-x-3"><span className="flex items-center"><Clock size={12} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span><span className="text-blue-500 italic">{req.branch}</span></div>
             </button>
           ))}
         </div>
@@ -185,15 +171,11 @@ const DashboardSolicitante: React.FC = () => {
 
       <div className={`flex-1 flex flex-col transition-all ${isNew ? 'bg-slate-900 text-white' : 'bg-gray-50'}`}>
         {isNew ? (
-          <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-12 custom-scrollbar relative">
             <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in duration-300">
               <header className="flex items-center justify-between border-b border-white/10 pb-8">
                 <h2 className="text-3xl font-black uppercase italic tracking-tight">{isEditing ? 'Ajustar Cadastro' : 'Novo Lançamento'}</h2>
-                {uploadStatus && (
-                  <div className="text-blue-400 font-black uppercase text-[10px] tracking-widest flex items-center bg-white/5 px-4 py-2 rounded-full border border-white/10">
-                    <Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}
-                  </div>
-                )}
+                {uploadStatus && <div className="text-blue-400 font-black uppercase text-[10px] tracking-widest flex items-center bg-white/5 px-4 py-2 rounded-full border border-white/10"><Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}</div>}
               </header>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -290,6 +272,14 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
+              {isLoading && logs.length > 0 && (
+                <div className="bg-black/50 border border-white/10 rounded-2xl p-6 space-y-2 font-mono text-[10px] text-blue-300">
+                  <div className="flex items-center mb-2 text-white font-black uppercase tracking-widest italic opacity-50"><Terminal size={14} className="mr-2" /> Monitor de Operação</div>
+                  {logs.map((log, i) => <div key={i} className="animate-in fade-in slide-in-from-left-1">{log}</div>)}
+                  <div ref={logEndRef} />
+                </div>
+              )}
+
               <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center pb-12">
                 <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
                 <button onClick={handleSave} disabled={!isFormValid || isLoading} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-xl font-black uppercase text-xs flex items-center disabled:opacity-30 shadow-xl shadow-blue-900/40">
@@ -303,10 +293,7 @@ const DashboardSolicitante: React.FC = () => {
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
             <header className="p-12 border-b border-gray-200 bg-white flex justify-between items-end shadow-sm">
               <div>
-                <div className="flex items-center space-x-3 mb-4">
-                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] bg-gray-50 px-3 py-1 rounded-md">ID: {selectedRequest.id}</span>
-                  <Badge status={selectedRequest.status} />
-                </div>
+                <div className="flex items-center space-x-3 mb-4"><span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] bg-gray-50 px-3 py-1 rounded-md">ID: {selectedRequest.id}</span><Badge status={selectedRequest.status} /></div>
                 <h2 className="text-4xl font-black text-gray-900 tracking-tight uppercase italic">{selectedRequest.title}</h2>
               </div>
               {selectedRequest.status.includes('Erro') && (
@@ -328,23 +315,17 @@ const DashboardSolicitante: React.FC = () => {
                   <p className="text-xs font-bold text-gray-500 mt-2 uppercase tracking-tight truncate">Favorecido: {selectedRequest.payee || '---'}</p>
                 </div>
               </div>
-
               {selectedRequest.status.includes('Erro') && selectedRequest.errorObservation && (
                 <div className="bg-red-50 p-6 rounded-2xl border border-red-100 flex items-start space-x-4">
                    <AlertCircle className="text-red-600" size={24} />
-                   <div>
-                      <h4 className="text-xs font-black uppercase text-red-600 tracking-widest mb-1">Motivo da Reprovação</h4>
-                      <p className="text-sm text-red-800 font-medium italic">"{selectedRequest.errorObservation}"</p>
-                   </div>
+                   <div><h4 className="text-xs font-black uppercase text-red-600 tracking-widest mb-1">Motivo da Reprovação</h4><p className="text-sm text-red-800 font-medium italic">"{selectedRequest.errorObservation}"</p></div>
                 </div>
               )}
             </div>
           </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-300 text-center animate-in fade-in">
-            <div className="bg-white p-12 rounded-[3rem] shadow-xl border border-gray-50 mb-8">
-               <Banknote size={80} className="text-blue-50" />
-            </div>
+            <div className="bg-white p-12 rounded-[3rem] shadow-xl border border-gray-50 mb-8"><Banknote size={80} className="text-blue-50" /></div>
             <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Fluxo de Notas</h3>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2 max-w-xs">Gerencie suas solicitações no menu lateral.</p>
           </div>
