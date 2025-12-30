@@ -24,15 +24,12 @@ const FIELD_MAP = {
 };
 
 const sanitizeFileName = (name: string) => {
-  const parts = name.split('.');
-  const extension = parts.length > 1 ? parts.pop() : 'pdf';
-  const baseName = parts.join('.');
-  return baseName
+  return name
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[#%*:<>?/|\\"]/g, '')
     .replace(/\s+/g, '_')
-    .substring(0, 80) + '.' + extension;
+    .substring(0, 80);
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -56,10 +53,13 @@ export const sharepointService = {
       const data = await resp.json();
       
       if (data.value) {
+        // Tenta achar pelo displayName (que é o que aparece no SharePoint) ou pelo name (URL)
         const list = data.value.find((l: any) => 
-          l.name === listName || 
-          l.displayName === listName ||
-          l.displayName.toLowerCase().includes(listName.toLowerCase())
+          l.displayName === listName || 
+          l.name === listName ||
+          l.displayName.toLowerCase() === listName.toLowerCase() ||
+          (isMain && l.displayName.toLowerCase().includes('sispag')) ||
+          (!isMain && l.displayName.toLowerCase().includes('aux_anexos'))
         );
         
         if (list) {
@@ -69,10 +69,10 @@ export const sharepointService = {
         }
       }
       
-      // Fallback: Tenta usar o próprio nome da lista como ID (comum no Graph)
-      return listName;
+      throw new Error(`Lista '${listName}' não pôde ser resolvida.`);
     } catch (e: any) {
-      return listName;
+      console.error("Erro fatal ao resolver lista:", e);
+      throw e;
     }
   },
 
@@ -143,14 +143,15 @@ export const sharepointService = {
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields })
     });
+    
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro no SharePoint");
+    if (!resp.ok) throw new Error(result.error?.message || "Falha na criação do item");
     return result;
   },
 
-  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName?: string) => {
-    const extension = file.name.split('.').pop();
-    const fileName = sanitizeFileName(customName ? `${customName}.${extension}` : file.name);
+  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string) => {
+    const extension = file.name.split('.').pop() || 'pdf';
+    const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
@@ -162,12 +163,12 @@ export const sharepointService = {
 
     if (!resp.ok) {
       const err = await resp.json();
-      throw new Error(err.error?.message || "Erro no upload");
+      throw new Error(err.error?.message || "Falha no anexo");
     }
     return true;
   },
 
-  async createAuxiliaryItem(accessToken: string, mainRequestId: string, title: string) {
+  async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
     const listId = await sharepointService.resolveListIdByName(accessToken, 'APP_Fiscal_AUX_ANEXOS', false);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
     
@@ -177,7 +178,7 @@ export const sharepointService = {
       body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro auxiliar");
+    if (!resp.ok) throw new Error(result.error?.message || "Falha na lista auxiliar");
     return result;
   },
 

@@ -91,30 +91,31 @@ const DashboardSolicitante: React.FC = () => {
         itemId = newReq.id;
       }
 
-      if (!itemId) throw new Error("ID não gerado. Verifique os campos obrigatórios.");
+      if (!itemId) throw new Error("O servidor SharePoint não retornou um ID de item válido.");
 
-      // Renomeia o anexo para o número da Nota Fiscal
-      const nfName = formData.invoiceNumber ? `NF_${formData.invoiceNumber.trim()}` : `SOLIC_${itemId}`;
+      // Renomeação automática baseada na NF
+      const nfId = formData.invoiceNumber?.trim() || `ID_${itemId}`;
+      const baseName = `NF_${nfId}`;
 
-      // Upload Notas Fiscais
+      // Envio de NFs (Lista Principal)
       if (invoiceFiles.length > 0) {
         const mainListId = await sharepointService.resolveListIdByName(authState.token, 'solicitacoes_sispag_v2', true);
         for (let i = 0; i < invoiceFiles.length; i++) {
-          const customName = invoiceFiles.length > 1 ? `${nfName}_PARTE_${i + 1}` : nfName;
+          const name = invoiceFiles.length > 1 ? `${baseName}_PARTE_${i + 1}` : baseName;
           setUploadStatus(`Anexando NF ${i + 1}/${invoiceFiles.length}...`);
-          await sharepointService.uploadAttachment(authState.token, mainListId, itemId, invoiceFiles[i], customName);
+          await sharepointService.uploadAttachment(authState.token, mainListId, itemId, invoiceFiles[i], name);
         }
       }
 
-      // Upload Boletos
+      // Envio de Boletos (Lista Auxiliar)
       if (ticketFiles.length > 0) {
-        setUploadStatus('Preparando boletos...');
-        const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId, formData.title || '');
+        setUploadStatus('Gerando registro de boletos...');
+        const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
         const auxListId = await sharepointService.resolveListIdByName(authState.token, 'APP_Fiscal_AUX_ANEXOS', false);
         for (let i = 0; i < ticketFiles.length; i++) {
-          const customName = `BOLETO_${nfName}_${i + 1}`;
+          const name = `BOLETO_${nfId}_${i + 1}`;
           setUploadStatus(`Anexando Boleto ${i + 1}/${ticketFiles.length}...`);
-          await sharepointService.uploadAttachment(authState.token, auxListId, auxItem.id, ticketFiles[i], customName);
+          await sharepointService.uploadAttachment(authState.token, auxListId, auxItem.id, ticketFiles[i], name);
         }
       }
 
@@ -130,9 +131,8 @@ const DashboardSolicitante: React.FC = () => {
       }, 1000);
 
     } catch (e: any) {
-      console.error(e);
       alert(`Erro: ${e.message}`);
-      setUploadStatus('Falha no envio');
+      setUploadStatus('Erro no envio');
     } finally {
       setIsLoading(false);
     }
@@ -152,14 +152,11 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
-      {/* Sidebar List */}
+      {/* Sidebar - Lista Lateral */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-xl">
         <div className="p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
           <div className="flex items-center justify-between mb-6">
-             <div className="flex flex-col">
-                <img src="https://viagroup.com.br/assets/via_group-22fac685.png" alt="Via Group" className="h-6 w-auto mb-1 opacity-80" />
-                <h1 className="text-xl font-black text-gray-900 tracking-tighter uppercase italic">Minhas Notas</h1>
-             </div>
+            <h1 className="text-xl font-black text-gray-900 tracking-tighter uppercase italic">Minhas Notas</h1>
             <div className="flex items-center space-x-2">
               <button onClick={syncData} className="p-2 text-gray-400 hover:text-blue-600 transition-colors">
                 {isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}
@@ -171,7 +168,7 @@ const DashboardSolicitante: React.FC = () => {
           </div>
           <div className="relative group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-            <input type="text" placeholder="Buscar..." className="w-full pl-11 pr-4 py-3 bg-gray-50 border-0 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input type="text" placeholder="Pesquisar..." className="w-full pl-11 pr-4 py-3 bg-gray-50 border-0 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
         </div>
 
@@ -199,7 +196,7 @@ const DashboardSolicitante: React.FC = () => {
             <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
               <header className="flex items-center justify-between border-b border-white/10 pb-6">
                 <h2 className="text-4xl font-black tracking-tighter uppercase italic">{isEditing ? 'Editar Registro' : 'Nova Solicitação'}</h2>
-                {uploadStatus && <div className="text-blue-300 font-black animate-pulse uppercase text-[10px] tracking-widest bg-white/5 px-4 py-2 rounded-full flex items-center border border-white/10"><Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}</div>}
+                {uploadStatus && <div className="text-blue-300 font-black animate-pulse uppercase text-[10px] tracking-widest flex items-center bg-white/5 px-4 py-2 rounded-full border border-white/10"><Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}</div>}
               </header>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -227,18 +224,18 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* Condicionais de Pagamento */}
+              {/* Lógica de Pagamento Dinâmica */}
               {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'PIX') && (
                 <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6 shadow-2xl">
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={18} className="mr-2" /> Dados Bancários</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="md:col-span-2">
-                       <label className="block text-[10px] font-black uppercase text-white/40 mb-2">Favorecido (Nome/Razão Social)</label>
+                       <label className="block text-[10px] font-black uppercase text-white/40 mb-2 italic tracking-widest">Favorecido (Nome/Razão Social)</label>
                        <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/10 border border-white/10 rounded-xl p-3 outline-none text-white" />
                     </div>
                     {formData.paymentMethod === 'PIX' ? (
                        <div className="md:col-span-2">
-                          <label className="block text-[10px] font-black uppercase text-white/40 mb-2">Chave PIX</label>
+                          <label className="block text-[10px] font-black uppercase text-white/40 mb-2 italic tracking-widest">Chave PIX</label>
                           <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/10 border border-white/10 rounded-xl p-3 outline-none text-white font-mono" />
                        </div>
                     ) : (
@@ -257,11 +254,11 @@ const DashboardSolicitante: React.FC = () => {
               )}
 
               <div className="md:col-span-2">
-                <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Observações</label>
+                <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Observações Gerais</label>
                 <textarea rows={3} value={formData.generalObservation} onChange={e => setFormData({...formData, generalObservation: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-2xl p-4 outline-none text-white resize-none" />
               </div>
 
-              {/* Anexos */}
+              {/* Anexos com Suporte a Renomeação */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={18} className="mr-2" /> Notas Fiscais (PDF)</h3>
@@ -273,7 +270,7 @@ const DashboardSolicitante: React.FC = () => {
                   <div className="space-y-2">
                     {invoiceFiles.map((f, i) => (
                       <div key={i} className="flex justify-between items-center text-[10px] bg-white/5 p-3 rounded-xl border border-white/10">
-                        <span className="truncate flex-1">{f.name}</span>
+                        <span className="truncate flex-1 font-mono">{f.name}</span>
                         <button onClick={() => setInvoiceFiles(invoiceFiles.filter((_, idx) => idx !== i))} className="text-red-400"><X size={14} /></button>
                       </div>
                     ))}
@@ -290,7 +287,7 @@ const DashboardSolicitante: React.FC = () => {
                   <div className="space-y-2">
                     {ticketFiles.map((f, i) => (
                       <div key={i} className="flex justify-between items-center text-[10px] bg-white/5 p-3 rounded-xl border border-white/10">
-                        <span className="truncate flex-1">{f.name}</span>
+                        <span className="truncate flex-1 font-mono">{f.name}</span>
                         <button onClick={() => setTicketFiles(ticketFiles.filter((_, idx) => idx !== i))} className="text-red-400"><X size={14} /></button>
                       </div>
                     ))}
@@ -302,7 +299,7 @@ const DashboardSolicitante: React.FC = () => {
                 <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white">Cancelar</button>
                 <button onClick={handleSave} disabled={!isFormValid || isLoading} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30">
                   {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={18} className="mr-3" />}
-                  {isEditing ? 'Atualizar Dados' : 'Enviar Nota'}
+                  {isEditing ? 'Atualizar Solicitação' : 'Enviar Nota Fiscal'}
                 </button>
               </div>
             </div>
@@ -318,13 +315,13 @@ const DashboardSolicitante: React.FC = () => {
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">{selectedRequest.title}</h2>
               </div>
               {selectedRequest.status.includes('Erro') && (
-                <button onClick={startEdit} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-xl flex items-center hover:bg-blue-700"><Edit3 size={18} className="mr-2" /> Corrigir</button>
+                <button onClick={startEdit} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-xl flex items-center hover:bg-blue-700"><Edit3 size={18} className="mr-2" /> Corrigir Registro</button>
               )}
             </header>
             <div className="flex-1 overflow-y-auto p-12 space-y-8 custom-scrollbar">
               <div className="grid grid-cols-2 gap-6">
                 <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 italic">Informações da Nota</p>
+                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 italic">Dados Técnicos</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div><span className="text-[9px] font-bold text-gray-400 uppercase">NF</span><p className="text-lg font-black text-gray-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</p></div>
                     <div><span className="text-[9px] font-bold text-gray-400 uppercase">Vencimento</span><p className="text-lg font-black text-gray-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
@@ -341,10 +338,10 @@ const DashboardSolicitante: React.FC = () => {
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-300 text-center animate-in fade-in">
             <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl border border-gray-100 mb-8 flex flex-col items-center">
-               <Banknote size={100} className="text-blue-100" />
+               <Banknote size={100} className="text-blue-100 animate-pulse duration-[3000ms]" />
             </div>
-            <h3 className="text-2xl font-black text-gray-900 tracking-tight">Gestão de Pagamentos</h3>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2">Escolha uma nota para gerenciar ou crie uma nova.</p>
+            <h3 className="text-2xl font-black text-gray-900 tracking-tight">Painel do Solicitante</h3>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2">Escolha uma nota ou crie uma nova solicitação.</p>
           </div>
         )}
       </div>

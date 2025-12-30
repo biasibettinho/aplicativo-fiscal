@@ -30,7 +30,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         }`}
       >
         <Icon size={20} />
-        <span className="font-medium">{label}</span>
+        <span className="font-medium text-sm">{label}</span>
       </Link>
     );
   };
@@ -38,16 +38,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b border-gray-100 flex flex-col items-center">
-          <img 
-            src="https://viagroup.com.br/assets/via_group-22fac685.png" 
-            alt="Via Group" 
-            className="h-10 w-auto mb-3" 
-          />
-          <h1 className="text-sm font-black text-blue-700 tracking-widest uppercase">
-            App Fiscal
+      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+        <div className="p-8 border-b border-gray-100 flex flex-col">
+          <h1 className="text-xl font-black text-blue-800 tracking-tighter uppercase italic leading-none">
+            VIA GROUP
           </h1>
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 ml-0.5">
+            App Fiscal
+          </span>
         </div>
 
         <nav className="flex-1 p-4 space-y-1">
@@ -65,15 +63,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
-              <p className="text-xs text-gray-500 truncate">{user?.role}</p>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-tight truncate">{user?.role}</p>
             </div>
           </div>
           <button 
             onClick={logout}
-            className="flex items-center space-x-3 w-full px-4 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            className="flex items-center space-x-3 w-full px-4 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors font-bold text-sm"
           >
-            <LogOut size={20} />
-            <span className="font-medium">Sair</span>
+            <LogOut size={18} />
+            <span>Sair</span>
           </button>
         </div>
       </aside>
@@ -81,18 +79,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8">
-          <h2 className="text-lg font-semibold text-gray-800">
-            {location.pathname === '/solicitante' && 'Painel do Solicitante'}
+          <h2 className="text-lg font-bold text-gray-800 tracking-tight">
+            {location.pathname === '/solicitante' && 'Fluxo de Notas'}
             {location.pathname === '/fiscal' && 'Análise Fiscal'}
             {location.pathname === '/financeiro' && 'Gestão Financeira'}
-            {location.pathname === '/admin' && 'Administração do Sistema'}
+            {location.pathname === '/admin' && 'Painel Administrativo'}
             {location.pathname === '/stats' && 'Insights e Métricas'}
           </h2>
           <div className="flex items-center space-x-4">
-            <span className="text-xs font-medium bg-gray-100 text-gray-600 px-2 py-1 rounded">V1.2.0</span>
+            <span className="text-[9px] font-black bg-gray-100 text-gray-500 px-2 py-1 rounded tracking-widest">V1.2.0</span>
           </div>
         </header>
-        <section className="flex-1 overflow-y-auto p-8">
+        <section className="flex-1 overflow-y-auto p-8 bg-gray-50/50">
           {children}
         </section>
       </main>
