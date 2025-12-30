@@ -23,19 +23,16 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
-/**
- * Motor de busca Graph com suporte a retentativas (Backoff) e Headers de Preferência
- */
 async function graphFetch(
   url: string,
   accessToken: string,
   options: RequestInit = {},
-  retries = 3
+  retries = 2
 ) {
   const headers: any = {
     Authorization: `Bearer ${accessToken}`,
     Accept: "application/json",
-    "Prefer": "HonorNonIndexedQueriesWarning", // Essencial para listas grandes
+    "Prefer": "HonorNonIndexedQueriesWarning",
     ...options.headers,
   };
 
@@ -48,15 +45,14 @@ async function graphFetch(
       const errorText = await res.text();
       lastError = new Error(`Graph API ${res.status}: ${errorText}`);
       
-      // Retry apenas em erros temporários (429, 5xx) ou 404/400 intermitentes
-      if (res.status === 429 || res.status >= 500 || res.status === 404) {
-        await new Promise(r => setTimeout(r, 600 * attempt));
+      if (res.status === 429 || res.status >= 500) {
+        await new Promise(r => setTimeout(r, 500 * attempt));
         continue;
       }
       break; 
     } catch (e) {
       lastError = e;
-      await new Promise(r => setTimeout(r, 600 * attempt));
+      await new Promise(r => setTimeout(r, 500 * attempt));
     }
   }
   throw lastError;
@@ -117,43 +113,98 @@ export const sharepointService = {
     }
   },
 
-  getAttachmentBlobUrl: async (accessToken: string, listId: string, itemId: string, attachmentId: string): Promise<string> => {
+  getAttachmentBlobUrl: async (accessToken: string, listId: string, itemId: string, attachmentId: string, isDriveItem = false): Promise<string> => {
     try {
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
+      let url = isDriveItem 
+        ? `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/drive/items/${attachmentId}/content`
+        : `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
+      
       const response = await graphFetch(url, accessToken);
       const blob = await response.blob();
       return URL.createObjectURL(blob);
     } catch (e) {
-      console.error(`Falha no binário do anexo ${attachmentId}:`, e);
+      console.error(`Falha no binário (Drive=${isDriveItem}):`, e);
       return '';
+    }
+  },
+
+  /**
+   * Busca por arquivos usando múltiplos critérios (ID ou Número da Nota)
+   */
+  searchDriveFiles: async (accessToken: string, query: string): Promise<Attachment[]> => {
+    if (!query || query === '---') return [];
+    try {
+      console.log(`🔍 [DIAGNÓSTICO] Buscando no Drive por: "${query}"`);
+      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/drive/root/search(q='${query}')`;
+      console.log(`🔗 [TESTE MANUAL] Cole este link no Graph Explorer para validar se o arquivo existe na biblioteca:\n${url}`);
+      
+      const response = await graphFetch(url, accessToken);
+      const data = await response.json();
+      
+      if (!data.value || data.value.length === 0) {
+        console.warn(`⚠️ Nenhum arquivo encontrado na biblioteca para a busca: ${query}`);
+        return [];
+      }
+
+      const files = data.value.filter((item: any) => item.file);
+      console.log(`✅ Encontrados ${files.length} arquivos na biblioteca.`);
+
+      return (await Promise.all(files.map(async (file: any) => {
+        const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, "", "", file.id, true);
+        if (!blobUrl) return null;
+        return {
+          id: file.id,
+          requestId: query,
+          fileName: file.name,
+          type: 'invoice_pdf',
+          mimeType: file.file?.mimeType || 'application/pdf',
+          size: file.size,
+          storageUrl: blobUrl,
+          createdAt: file.createdDateTime
+        };
+      }))).filter(a => a !== null) as Attachment[];
+    } catch (e) {
+      console.error("Erro na busca de arquivos no Drive:", e);
+      return [];
     }
   },
 
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
-      const response = await graphFetch(url, accessToken);
+      // 1. Tenta Anexos da Lista
+      const attListUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
+      console.log(`📎 [TESTE MANUAL] Verificando anexos de item (Lista):\n${attListUrl}`);
+      
+      const response = await graphFetch(attListUrl, accessToken);
       const data = await response.json();
       
-      if (!data.value || data.value.length === 0) return [];
+      let results: Attachment[] = [];
 
-      const attachments = await Promise.all(data.value.map(async (a: any) => {
-        const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, MAIN_LIST_ID, itemId, a.id);
-        if (!blobUrl) return null;
-        
-        return {
-          id: a.id,
-          requestId: itemId,
-          fileName: a.name,
-          type: 'invoice_pdf',
-          mimeType: 'application/pdf',
-          size: 0,
-          storageUrl: blobUrl,
-          createdAt: new Date().toISOString()
-        };
-      }));
+      if (data.value && data.value.length > 0) {
+        results = (await Promise.all(data.value.map(async (a: any) => {
+          const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, MAIN_LIST_ID, itemId, a.id, false);
+          return blobUrl ? {
+            id: a.id,
+            requestId: itemId,
+            fileName: a.name,
+            type: 'invoice_pdf' as any,
+            mimeType: 'application/pdf',
+            size: 0,
+            storageUrl: blobUrl,
+            createdAt: new Date().toISOString()
+          } : null;
+        }))).filter(a => a !== null) as Attachment[];
+      }
+
+      // 2. Se não achou na lista, busca na Biblioteca pelo ID
+      if (results.length === 0) {
+        results = await sharepointService.searchDriveFiles(accessToken, itemId);
+      }
+
+      // 3. Se ainda não achou, tenta buscar pelo Número da Nota (se disponível no item selecionado)
+      // Nota: O caller (Dashboard) pode passar o invoiceNumber se quisermos ser mais precisos.
       
-      return attachments.filter(a => a !== null) as Attachment[];
+      return results;
     } catch (e) {
       console.error(`Erro ao capturar anexos do item ${itemId}:`, e);
       return [];
@@ -162,6 +213,7 @@ export const sharepointService = {
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
+      console.log(`📦 [DIAGNÓSTICO] Iniciando busca de boletos vinculados ao ID: ${requestId}`);
       let items: any[] = [];
       const filters = [`fields/ID_SOL eq '${requestId}'`, `fields/ID_SOL eq ${requestId}`];
 
@@ -178,29 +230,35 @@ export const sharepointService = {
       }
 
       const allAttachments: Attachment[] = [];
+
       for (const item of items) {
-        const attUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`;
-        const attRes = await graphFetch(attUrl, accessToken);
+        const attRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`, accessToken);
         const attData = await attRes.json();
         
-        if (attData.value) {
+        if (attData.value && attData.value.length > 0) {
           const processed = await Promise.all(attData.value.map(async (a: any) => {
-            const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, SECONDARY_LIST_ID, item.id, a.id);
-            if (!blobUrl) return null;
-            return {
+            const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, SECONDARY_LIST_ID, item.id, a.id, false);
+            return blobUrl ? {
               id: a.id,
               requestId: requestId,
               fileName: a.name,
-              type: 'boleto',
+              type: 'boleto' as any,
               mimeType: 'application/pdf',
               size: 0,
               storageUrl: blobUrl,
               createdAt: item.createdDateTime
-            };
+            } : null;
           }));
           allAttachments.push(...processed.filter(a => a !== null) as Attachment[]);
         }
       }
+
+      if (allAttachments.length === 0) {
+        // Fallback para biblioteca se não houver lookup
+        const driveResults = await sharepointService.searchDriveFiles(accessToken, requestId);
+        allAttachments.push(...driveResults.map(a => ({ ...a, type: 'boleto' as any })));
+      }
+
       return allAttachments;
     } catch (e) {
       console.error(`Erro no lookup de boletos para ${requestId}:`, e);

@@ -29,5 +29,6 @@ msalInstance.initialize().then(() => {
 }).catch(err => console.error("Falha no MSAL Init:", err));
 
 export const loginRequest = {
-  scopes: ["User.Read", "User.Read.All", "Sites.ReadWrite.All"]
+  // Adicionado Files.Read.All para cobrir Document Libraries (Sugestão do Copilot)
+  scopes: ["User.Read", "User.Read.All", "Sites.ReadWrite.All", "Files.Read.All"]
 };

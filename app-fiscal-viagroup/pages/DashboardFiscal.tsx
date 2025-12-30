@@ -36,18 +36,28 @@ const DashboardFiscal: React.FC = () => {
     const fetchAtts = async () => {
       if (selectedId && authState.token) {
         setIsFetchingAttachments(true);
+        // Limpar lista anterior para feedback visual imediato
+        setMainAttachments([]);
+        setSecondaryAttachments([]);
+        
         try {
           const [main, secondary] = await Promise.all([
             sharepointService.getItemAttachments(authState.token, selectedId),
             sharepointService.getSecondaryAttachments(authState.token, selectedId)
           ]);
+          
           if (isMounted) {
-            setMainAttachments(main);
-            setSecondaryAttachments(secondary);
+            setMainAttachments(main || []);
+            setSecondaryAttachments(secondary || []);
           }
-        } catch (e) { console.error(e); } finally { if (isMounted) setIsFetchingAttachments(false); }
+        } catch (e) { 
+          console.error("Dashboard Fiscal - Falha ao carregar anexos:", e);
+        } finally { 
+          if (isMounted) setIsFetchingAttachments(false); 
+        }
       } else {
-        setMainAttachments([]); setSecondaryAttachments([]);
+        setMainAttachments([]); 
+        setSecondaryAttachments([]);
       }
     };
     fetchAtts();
