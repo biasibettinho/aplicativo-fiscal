@@ -62,7 +62,7 @@ const DashboardFinanceiro: React.FC = () => {
   }, [requests]);
 
   const filteredRequests = useMemo(() => {
-    return requests.filter(r => {
+    const filtered = requests.filter(r => {
       const matchesSearch = 
         r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.id.toString().includes(searchTerm) ||
@@ -85,6 +85,11 @@ const DashboardFinanceiro: React.FC = () => {
       }
 
       return matchesSearch && matchesBranch && matchesDate;
+    });
+
+    // Ordenação decrescente: novidades primeiro
+    return [...filtered].sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [requests, searchTerm, branchFilter, startDate, endDate]);
 

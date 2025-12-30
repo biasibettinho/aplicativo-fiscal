@@ -1,20 +1,33 @@
+
 import { PaymentRequest, RequestStatus, User, UserRole } from '../types';
 import { sharepointService } from './sharepointService';
 
 export const requestService = {
   getRequestsFiltered: async (user: User, accessToken: string): Promise<PaymentRequest[]> => {
+    if (!user || !accessToken) return [];
+    
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      let filtered: PaymentRequest[] = [];
+      // REGRA MESTRE: Admin Master (Felipe Gabriel) e Fiscais visualizam 100% dos dados
+      if (
+        user.role === UserRole.ADMIN_MASTER || 
+        user.role === UserRole.FISCAL_ADMIN || 
+        user.role === UserRole.FISCAL_COMUM
+      ) {
+        return all;
+      }
 
-      // 1. Aplicamos os filtros de acordo com o papel do usuário
-      if (user.role === UserRole.ADMIN_MASTER || user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
-        filtered = all;
-      } else if (user.role === UserRole.SOLICITANTE) {
-        // Filtra para o solicitante ver apenas o que ele criou
-        filtered = all.filter(r => r.createdByUserId === user.id); 
-      } else if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
+      // Solicitantes comuns: vêm apenas o que criaram
+      if (user.role === UserRole.SOLICITANTE) {
+        return all.filter(r => 
+          r.createdByUserId === user.id || 
+          r.createdByName.toLowerCase().includes(user.name.split(' ')[0].toLowerCase())
+        ); 
+      }
+      
+      // Financeiro: vêm apenas o que já passou pelo fiscal ou foi compartilhado
+      if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
         const financeAllowed = [
           RequestStatus.APROVADO, 
           RequestStatus.LANCADO, 
@@ -22,15 +35,12 @@ export const requestService = {
           RequestStatus.ERRO_FINANCEIRO, 
           RequestStatus.COMPARTILHADO
         ];
-        filtered = all.filter(r => financeAllowed.includes(r.status) || r.statusManual === 'Compartilhado');
+        return all.filter(r => financeAllowed.includes(r.status) || r.statusManual === 'Compartilhado');
       }
-
-      // 2. ORDENAÇÃO DECRESCENTE (ID maior primeiro)
-      // Usamos Number() para garantir que a comparação seja numérica e não alfabética
-      return filtered.sort((a, b) => Number(b.id) - Number(a.id));
-
+      
+      return [];
     } catch (error) {
-      console.error("Erro ao filtrar solicitações do SharePoint:", error);
+      console.error("Erro ao filtrar solicitações:", error);
       return [];
     }
   },
