@@ -54,26 +54,25 @@ export const sharepointService = {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const data = await resp.json();
-      if (!data.value) throw new Error("Não foi possível listar as tabelas do SharePoint.");
-
-      // Busca flexível: tenta nome exato ou termo contido
-      const list = data.value.find((l: any) => 
-        l.displayName === listName || 
-        l.name === listName ||
-        l.displayName.toLowerCase().includes(listName.toLowerCase()) ||
-        (isMain && l.displayName.toLowerCase().includes('sispag')) ||
-        (!isMain && l.displayName.toLowerCase().includes('aux_anexos'))
-      );
       
-      if (list) {
-        if (isMain) CACHED_MAIN_LIST_ID = list.id;
-        else CACHED_AUX_LIST_ID = list.id;
-        return list.id;
+      if (data.value) {
+        const list = data.value.find((l: any) => 
+          l.name === listName || 
+          l.displayName === listName ||
+          l.displayName.toLowerCase().includes(listName.toLowerCase())
+        );
+        
+        if (list) {
+          if (isMain) CACHED_MAIN_LIST_ID = list.id;
+          else CACHED_AUX_LIST_ID = list.id;
+          return list.id;
+        }
       }
-      throw new Error(`Lista '${listName}' não encontrada no site.`);
+      
+      // Fallback: Tenta usar o próprio nome da lista como ID (comum no Graph)
+      return listName;
     } catch (e: any) {
-      console.error("Erro ao resolver lista:", e);
-      throw e;
+      return listName;
     }
   },
 
@@ -145,7 +144,7 @@ export const sharepointService = {
       body: JSON.stringify({ fields })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro ao salvar no SharePoint");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro no SharePoint");
     return result;
   },
 
@@ -163,7 +162,7 @@ export const sharepointService = {
 
     if (!resp.ok) {
       const err = await resp.json();
-      throw new Error(err.error?.message || "Erro no upload do anexo");
+      throw new Error(err.error?.message || "Erro no upload");
     }
     return true;
   },
@@ -178,7 +177,7 @@ export const sharepointService = {
       body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro auxiliar de anexos");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro auxiliar");
     return result;
   },
 
