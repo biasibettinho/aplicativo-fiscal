@@ -8,7 +8,7 @@ const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 const FIELD_MAP = {
   title: 'Title',
   invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
-  orderNumbers: 'Qualopedido_x0028_x0029__x003f', // Corrigido encoding
+  orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
   status: 'Status',
   branch: 'Filial',
   generalObservation: 'Observa_x00e7__x00e3_o',
@@ -78,15 +78,25 @@ export const sharepointService = {
     }
   },
 
-  getAttachmentBlob: async (accessToken: string, listId: string, itemId: string, attachmentId: string): Promise<string> => {
+  getAttachmentUrl: async (accessToken: string, listId: string, itemId: string, attachment: any): Promise<string> => {
     try {
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-      if (!response.ok) throw new Error("Falha no download");
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
+      // Tenta conteúdo binário primeiro (Geralmente mais estável para PDF)
+      const valueUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachment.id}/$value`;
+      const response = await fetch(valueUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      
+      if (response.ok) {
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+      }
+      
+      // Se falhar o binário, tenta a URL de download que às vezes vem no objeto
+      if (attachment['@microsoft.graph.downloadUrl']) {
+        return attachment['@microsoft.graph.downloadUrl'];
+      }
+      
+      return '';
     } catch (e) {
-      console.error("Erro ao gerar Blob de anexo:", e);
+      console.error("Erro ao processar anexo:", attachment.name, e);
       return '';
     }
   },
@@ -97,10 +107,11 @@ export const sharepointService = {
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
       
-      if (!data.value) return [];
+      if (!data.value || data.value.length === 0) return [];
 
       const attachments = await Promise.all(data.value.map(async (a: any) => {
-        const blobUrl = await sharepointService.getAttachmentBlob(accessToken, MAIN_LIST_ID, itemId, a.id);
+        const finalUrl = await sharepointService.getAttachmentUrl(accessToken, MAIN_LIST_ID, itemId, a);
+        if (!finalUrl) return null;
         return {
           id: a.id,
           requestId: itemId,
@@ -108,12 +119,12 @@ export const sharepointService = {
           type: 'invoice_pdf',
           mimeType: 'application/pdf',
           size: 0,
-          storageUrl: blobUrl,
+          storageUrl: finalUrl,
           createdAt: new Date().toISOString()
         };
       }));
       
-      return attachments.filter(a => !!a.storageUrl) as Attachment[];
+      return attachments.filter(a => a !== null) as Attachment[];
     } catch (e) {
       console.error(`Erro ao buscar anexos do item ${itemId}:`, e);
       return [];
@@ -122,16 +133,17 @@ export const sharepointService = {
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Lookup ID_SOL (tenta como string e como número)
-      let items: any[] = [];
+      // Lookup ID_SOL
       const filterStr = `fields/ID_SOL eq '${requestId}'`;
-      const filterNum = `fields/ID_SOL eq ${requestId}`;
+      const lookupUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterStr}`;
+      
+      const response = await fetch(lookupUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const data = await response.json();
+      let items = data.value || [];
 
-      const resStr = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterStr}`, { headers: { Authorization: `Bearer ${accessToken}` } });
-      const dataStr = await resStr.json();
-      items = dataStr.value || [];
-
+      // Fallback numérico
       if (items.length === 0) {
+        const filterNum = `fields/ID_SOL eq ${requestId}`;
         const resNum = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterNum}`, { headers: { Authorization: `Bearer ${accessToken}` } });
         const dataNum = await resNum.json();
         items = dataNum.value || [];
@@ -140,12 +152,14 @@ export const sharepointService = {
       const allAttachments: Attachment[] = [];
 
       for (const item of items) {
+        // Para cada item encontrado no lookup, buscamos os anexos dele
         const attRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`, { headers: { Authorization: `Bearer ${accessToken}` } });
         const attData = await attRes.json();
         
         if (attData.value) {
           const processed = await Promise.all(attData.value.map(async (a: any) => {
-            const blobUrl = await sharepointService.getAttachmentBlob(accessToken, SECONDARY_LIST_ID, item.id, a.id);
+            const finalUrl = await sharepointService.getAttachmentUrl(accessToken, SECONDARY_LIST_ID, item.id, a);
+            if (!finalUrl) return null;
             return {
               id: a.id,
               requestId: requestId,
@@ -153,11 +167,11 @@ export const sharepointService = {
               type: 'boleto',
               mimeType: 'application/pdf',
               size: 0,
-              storageUrl: blobUrl,
+              storageUrl: finalUrl,
               createdAt: item.createdDateTime
             };
           }));
-          allAttachments.push(...processed.filter(a => !!a.storageUrl));
+          allAttachments.push(...processed.filter(a => a !== null) as Attachment[]);
         }
       }
       
