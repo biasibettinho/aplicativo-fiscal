@@ -23,6 +23,46 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
+/**
+ * Função utilitária para chamadas ao Graph com lógica de retentativa e headers de preferência
+ */
+async function graphFetch(
+  url: string,
+  accessToken: string,
+  options: RequestInit = {},
+  retries = 3
+) {
+  // Fix: Using 'any' for headers to prevent type mismatch with options.headers (HeadersInit)
+  const headers: any = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json",
+    "Prefer": "HonorNonIndexedQueriesWarning", // Crucial para filtros em colunas não indexadas
+    ...options.headers,
+  };
+
+  let lastError: any;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, { ...options, headers });
+      if (res.ok) return res;
+      
+      const errorText = await res.text();
+      lastError = new Error(`Graph API ${res.status}: ${errorText}`);
+      
+      // Se for erro de rate limit ou servidor, espera um pouco antes de tentar de novo
+      if (res.status === 429 || res.status >= 500) {
+        await new Promise(r => setTimeout(r, 500 * attempt));
+        continue;
+      }
+      break; 
+    } catch (e) {
+      lastError = e;
+      await new Promise(r => setTimeout(r, 500 * attempt));
+    }
+  }
+  throw lastError;
+}
+
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -33,40 +73,13 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export const sharepointService = {
-  /**
-   * Captura o binário do anexo e gera uma URL local segura.
-   * Utilizamos o endpoint /$value para obter os bytes diretos.
-   */
-  getAttachmentBlobUrl: async (accessToken: string, listId: string, itemId: string, attachmentId: string): Promise<string> => {
-    try {
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
-      const response = await fetch(url, { 
-        headers: { 
-          Authorization: `Bearer ${accessToken}`,
-          'Accept': '*/*' 
-        } 
-      });
-      
-      if (!response.ok) {
-        console.warn(`Falha ao baixar binário do anexo ${attachmentId} (Status: ${response.status})`);
-        return '';
-      }
-      
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    } catch (e) {
-      console.error("Erro técnico ao processar download do anexo:", e);
-      return '';
-    }
-  },
-
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
       let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=999`;
 
       while (nextUrl) {
-        const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const response = await graphFetch(nextUrl, accessToken);
         const data = await response.json();
         if (data.value) allItems = [...allItems, ...data.value];
         nextUrl = data['@odata.nextLink'] || null;
@@ -105,26 +118,30 @@ export const sharepointService = {
     }
   },
 
+  getAttachmentBlobUrl: async (accessToken: string, listId: string, itemId: string, attachmentId: string): Promise<string> => {
+    try {
+      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
+      const response = await graphFetch(url, accessToken);
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.error(`Erro ao baixar binário do anexo ${attachmentId}:`, e);
+      return '';
+    }
+  },
+
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
-      // Endpoint oficial de anexos para itens de lista
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const response = await graphFetch(url, accessToken);
       const data = await response.json();
       
-      if (!data.value || data.value.length === 0) {
-        console.log(`Nenhum anexo encontrado para o item ${itemId} via Graph API.`);
-        return [];
-      }
+      if (!data.value || data.value.length === 0) return [];
 
       const attachments = await Promise.all(data.value.map(async (a: any) => {
         const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, MAIN_LIST_ID, itemId, a.id);
+        if (!blobUrl) return null;
         
-        // Fallback: se o binário falhar, usamos a URL de download original se disponível
-        const finalUrl = blobUrl || a['@microsoft.graph.downloadUrl'] || '';
-        
-        if (!finalUrl) return null;
-
         return {
           id: a.id,
           requestId: itemId,
@@ -132,53 +149,52 @@ export const sharepointService = {
           type: 'invoice_pdf',
           mimeType: 'application/pdf',
           size: 0,
-          storageUrl: finalUrl,
+          storageUrl: blobUrl,
           createdAt: new Date().toISOString()
         };
       }));
       
       return attachments.filter(a => a !== null) as Attachment[];
     } catch (e) {
-      console.error(`Erro crítico ao buscar anexos do item ${itemId}:`, e);
+      console.error(`Erro ao capturar anexos do item ${itemId}:`, e);
       return [];
     }
   },
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Lookup na lista de boletos pelo campo ID_SOL
-      const filterStr = `fields/ID_SOL eq '${requestId}'`;
-      const lookupUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterStr}`;
-      
-      const response = await fetch(lookupUrl, { 
-        headers: { 
-          Authorization: `Bearer ${accessToken}`,
-          'Prefer': 'HonorNonIndexedQueriesWarningMayFail'
-        } 
-      });
-      const data = await response.json();
-      let items = data.value || [];
+      // Tenta filtro por ID_SOL (String e Number como fallback)
+      let items: any[] = [];
+      const filters = [
+        `fields/ID_SOL eq '${requestId}'`,
+        `fields/ID_SOL eq ${requestId}`
+      ];
 
-      // Fallback para filtro numérico se string falhar (coluna Number no SharePoint)
-      if (items.length === 0) {
-        const filterNum = `fields/ID_SOL eq ${requestId}`;
-        const resNum = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterNum}`, { headers: { Authorization: `Bearer ${accessToken}` } });
-        const dataNum = await resNum.json();
-        items = dataNum.value || [];
+      for (const filter of filters) {
+        const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
+        try {
+          const res = await graphFetch(url, accessToken);
+          const data = await res.json();
+          if (data.value && data.value.length > 0) {
+            items = data.value;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
       }
 
       const allAttachments: Attachment[] = [];
 
       for (const item of items) {
-        const attRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const attUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`;
+        const attRes = await graphFetch(attUrl, accessToken);
         const attData = await attRes.json();
         
         if (attData.value) {
           const processed = await Promise.all(attData.value.map(async (a: any) => {
             const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, SECONDARY_LIST_ID, item.id, a.id);
-            const finalUrl = blobUrl || a['@microsoft.graph.downloadUrl'] || '';
-
-            if (!finalUrl) return null;
+            if (!blobUrl) return null;
             return {
               id: a.id,
               requestId: requestId,
@@ -186,7 +202,7 @@ export const sharepointService = {
               type: 'boleto',
               mimeType: 'application/pdf',
               size: 0,
-              storageUrl: finalUrl,
+              storageUrl: blobUrl,
               createdAt: item.createdDateTime
             };
           }));
@@ -196,7 +212,7 @@ export const sharepointService = {
       
       return allAttachments;
     } catch (e) {
-      console.error(`Erro crítico no lookup de anexos secundários para ${requestId}:`, e);
+      console.error(`Erro no lookup de boletos para ${requestId}:`, e);
       return [];
     }
   },
@@ -220,16 +236,12 @@ export const sharepointService = {
       [FIELD_MAP.pixKey]: data.pixKey || '',
     };
 
-    const resp = await fetch(url, {
+    const resp = await graphFetch(url, accessToken, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields })
     });
     
-    if (!resp.ok) {
-      const errData = await resp.json();
-      throw new Error(errData?.error?.message || "Falha ao criar item no SharePoint");
-    }
     return await resp.json();
   },
 
@@ -265,16 +277,12 @@ export const sharepointService = {
       if (spKey) fields[spKey] = (data as any)[key];
     });
     
-    const resp = await fetch(url, {
+    const resp = await graphFetch(url, accessToken, {
       method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields)
     });
     
-    if (!resp.ok) {
-      const errData = await resp.json();
-      throw new Error(errData?.error?.message || "Falha ao atualizar campos no SharePoint");
-    }
     return await resp.json();
   }
 };

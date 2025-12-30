@@ -48,13 +48,13 @@ const Login: React.FC = () => {
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-gray-50 py-12 px-10 shadow-xl rounded-[3.5rem] border border-gray-100 flex flex-col items-center relative overflow-hidden">
+        <div className="bg-white py-12 px-10 shadow-2xl rounded-[3.5rem] border border-gray-100 flex flex-col items-center relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-blue-600/5 rounded-full -mr-12 -mt-12"></div>
           
           <button
             onClick={handleMicrosoftLogin}
             disabled={isMsLoading}
-            className="w-full flex items-center justify-center py-5 px-6 bg-white border border-gray-200 rounded-2xl shadow-md text-sm font-black text-slate-900 hover:bg-gray-100 transition-all mb-8 active:scale-95"
+            className="w-full flex items-center justify-center py-5 px-6 bg-white border border-gray-200 rounded-2xl shadow-lg text-sm font-black text-slate-900 hover:bg-gray-50 transition-all mb-8 active:scale-95"
           >
             {isMsLoading ? (
               <Loader2 className="animate-spin h-5 w-5 mr-3" />
