@@ -14,6 +14,7 @@ const DashboardSolicitante: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -47,24 +48,29 @@ const DashboardSolicitante: React.FC = () => {
 
   useEffect(() => { syncData(); }, [authState.user, authState.token]);
 
-  // Efeito para buscar anexos da lista secundária quando selecionar um item
+  // Busca todos os anexos (Main + Secondary) ao selecionar um item
   useEffect(() => {
-    const fetchSecondary = async () => {
+    const fetchAllAttachments = async () => {
       if (selectedId && authState.token) {
         setIsFetchingAttachments(true);
         try {
-          const attachments = await sharepointService.getSecondaryAttachments(authState.token, selectedId);
-          setSecondaryAttachments(attachments);
+          const [main, secondary] = await Promise.all([
+            sharepointService.getItemAttachments(authState.token, selectedId),
+            sharepointService.getSecondaryAttachments(authState.token, selectedId)
+          ]);
+          setMainAttachments(main);
+          setSecondaryAttachments(secondary);
         } catch (e) {
-          console.error(e);
+          console.error("Erro ao carregar anexos:", e);
         } finally {
           setIsFetchingAttachments(false);
         }
       } else {
+        setMainAttachments([]);
         setSecondaryAttachments([]);
       }
     };
-    fetchSecondary();
+    fetchAllAttachments();
   }, [selectedId, authState.token]);
 
   const handleSave = async () => {
@@ -86,8 +92,16 @@ const DashboardSolicitante: React.FC = () => {
         setBackgroundJobs(prev => [{ id: jobId, title: formData.title, status: 'Transmitindo arquivos...', progress: 50 }, ...prev]);
         sharepointService.triggerPowerAutomateUpload(itemId, formData.invoiceNumber || itemId, invoiceFiles, ticketFiles)
           .then(() => {
-             setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'Processando na nuvem (2 min)...', progress: 100 } : j));
-             setTimeout(() => { setBackgroundJobs(prev => prev.filter(j => j.id !== jobId)); syncData(); }, 125000);
+             setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'Processando na nuvem (1 min)...', progress: 100 } : j));
+             setTimeout(() => { 
+                setBackgroundJobs(prev => prev.filter(j => j.id !== jobId)); 
+                syncData(); 
+                if (selectedId === itemId) {
+                   // Forçar recarregamento de anexos se for o item atual
+                   setSelectedId(null);
+                   setTimeout(() => setSelectedId(itemId), 100);
+                }
+             }, 65000); // 1 minuto + margem
           });
       }
       setIsNew(false); setIsEditing(false); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); syncData();
@@ -120,7 +134,7 @@ const DashboardSolicitante: React.FC = () => {
             </div>
             <p className="text-[10px] text-blue-400 font-bold uppercase italic mb-2">{job.status}</p>
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-               <div className="bg-blue-600 h-full transition-all duration-[125s] ease-linear" style={{ width: job.progress === 100 ? '100%' : '50%' }} />
+               <div className="bg-blue-600 h-full transition-all duration-[65s] ease-linear" style={{ width: job.progress === 100 ? '100%' : '50%' }} />
             </div>
           </div>
         ))}
@@ -305,9 +319,9 @@ const DashboardSolicitante: React.FC = () => {
                    <div className="space-y-8">
                      <div>
                        <p className="text-xs font-black text-blue-500 uppercase tracking-widest mb-4 italic">Anexo da Lista Principal (NF):</p>
-                       {selectedRequest.attachments && selectedRequest.attachments.length > 0 ? (
+                       {mainAttachments.length > 0 ? (
                          <div className="space-y-3">
-                           {selectedRequest.attachments.map(att => (
+                           {mainAttachments.map(att => (
                              <div key={att.id} className="p-6 bg-blue-50/50 border border-blue-100 rounded-[2rem] flex items-center justify-between group shadow-sm">
                                <div className="flex items-center space-x-6">
                                  <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg group-hover:scale-110 transition-transform"><FileText size={24} /></div>

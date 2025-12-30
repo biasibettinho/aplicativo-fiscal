@@ -3,7 +3,7 @@ import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938'; // ID extraído dos logs de erro anteriores
+const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 
 const FIELD_MAP = {
   title: 'Title',
@@ -36,7 +36,7 @@ export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
-      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields,attachments&$top=999`;
+      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=999`;
 
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -69,13 +69,7 @@ export const sharepointService = {
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: item.createdBy?.user?.id || 'unknown',
           createdByName: item.createdBy?.user?.displayName || 'Sistema',
-          attachments: (item.attachments || []).map((a: any) => ({
-            id: a.id,
-            requestId: item.id,
-            fileName: a.name,
-            type: 'invoice_pdf',
-            storageUrl: a['@microsoft.graph.downloadUrl'] || ''
-          }))
+          attachments: [] // Buscaremos sob demanda para garantir precisão
         };
       });
     } catch (e) {
@@ -84,9 +78,32 @@ export const sharepointService = {
     }
   },
 
+  getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
+    try {
+      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const data = await response.json();
+      return (data.value || []).map((a: any) => ({
+        id: a.id,
+        requestId: itemId,
+        fileName: a.name,
+        type: 'invoice_pdf',
+        mimeType: 'application/pdf',
+        size: 0,
+        storageUrl: a['@microsoft.graph.downloadUrl'] || '',
+        createdAt: new Date().toISOString()
+      }));
+    } catch (e) {
+      console.error("Erro ao buscar anexos da lista principal:", e);
+      return [];
+    }
+  },
+
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
       // Busca itens na lista secundária onde ID_SOL == requestId
+      // Nota: Graph filter para campos customizados pode exigir indexação. 
+      // Se ID_SOL for número, remover as aspas simples.
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq '${requestId}'`;
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
