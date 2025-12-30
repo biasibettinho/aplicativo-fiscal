@@ -91,31 +91,28 @@ const DashboardSolicitante: React.FC = () => {
         itemId = newReq.id;
       }
 
-      if (!itemId) throw new Error("O servidor SharePoint não retornou um ID de item válido.");
+      if (!itemId) throw new Error("O servidor SharePoint não retornou um ID válido.");
 
-      // Renomeação automática baseada na NF
       const nfId = formData.invoiceNumber?.trim() || `ID_${itemId}`;
       const baseName = `NF_${nfId}`;
 
-      // Envio de NFs (Lista Principal)
+      // Envio para lista principal
       if (invoiceFiles.length > 0) {
-        const mainListId = await sharepointService.resolveListIdByName(authState.token, 'solicitacoes_sispag_v2', true);
         for (let i = 0; i < invoiceFiles.length; i++) {
-          const name = invoiceFiles.length > 1 ? `${baseName}_PARTE_${i + 1}` : baseName;
-          setUploadStatus(`Anexando NF ${i + 1}/${invoiceFiles.length}...`);
-          await sharepointService.uploadAttachment(authState.token, mainListId, itemId, invoiceFiles[i], name);
+          const name = invoiceFiles.length > 1 ? `${baseName}_P${i + 1}` : baseName;
+          setUploadStatus(`Enviando NF ${i + 1}/${invoiceFiles.length}...`);
+          await sharepointService.uploadAttachment(authState.token, 'solicitacoes_sispag_v2', itemId, invoiceFiles[i], name);
         }
       }
 
-      // Envio de Boletos (Lista Auxiliar)
+      // Envio para lista auxiliar
       if (ticketFiles.length > 0) {
-        setUploadStatus('Gerando registro de boletos...');
+        setUploadStatus('Gerando vínculo de boletos...');
         const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
-        const auxListId = await sharepointService.resolveListIdByName(authState.token, 'APP_Fiscal_AUX_ANEXOS', false);
         for (let i = 0; i < ticketFiles.length; i++) {
           const name = `BOLETO_${nfId}_${i + 1}`;
-          setUploadStatus(`Anexando Boleto ${i + 1}/${ticketFiles.length}...`);
-          await sharepointService.uploadAttachment(authState.token, auxListId, auxItem.id, ticketFiles[i], name);
+          setUploadStatus(`Enviando Boleto ${i + 1}/${ticketFiles.length}...`);
+          await sharepointService.uploadAttachment(authState.token, 'APP_Fiscal_AUX_ANEXOS', auxItem.id, ticketFiles[i], name);
         }
       }
 
@@ -224,10 +221,9 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* Lógica de Pagamento Dinâmica */}
               {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'PIX') && (
                 <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6 shadow-2xl">
-                  <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={18} className="mr-2" /> Dados Bancários</h3>
+                  <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={18} className="mr-2" /> Dados para Pagamento</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="md:col-span-2">
                        <label className="block text-[10px] font-black uppercase text-white/40 mb-2 italic tracking-widest">Favorecido (Nome/Razão Social)</label>
@@ -254,17 +250,16 @@ const DashboardSolicitante: React.FC = () => {
               )}
 
               <div className="md:col-span-2">
-                <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Observações Gerais</label>
+                <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Observações Detalhadas</label>
                 <textarea rows={3} value={formData.generalObservation} onChange={e => setFormData({...formData, generalObservation: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-2xl p-4 outline-none text-white resize-none" />
               </div>
 
-              {/* Anexos com Suporte a Renomeação */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={18} className="mr-2" /> Notas Fiscais (PDF)</h3>
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-8 hover:bg-white/10 cursor-pointer transition-all">
                     <Paperclip size={32} className="text-blue-300 mb-2 opacity-30" />
-                    <span className="text-[10px] font-black uppercase">Adicionar Arquivos</span>
+                    <span className="text-[10px] font-black uppercase">Adicionar Notas</span>
                     <input type="file" multiple className="hidden" onChange={e => setInvoiceFiles(Array.from(e.target.files || []))} />
                   </label>
                   <div className="space-y-2">
@@ -281,7 +276,7 @@ const DashboardSolicitante: React.FC = () => {
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><CreditCard size={18} className="mr-2" /> Boletos / Docs</h3>
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-8 hover:bg-white/10 cursor-pointer transition-all">
                     <Paperclip size={32} className="text-blue-300 mb-2 opacity-30" />
-                    <span className="text-[10px] font-black uppercase">Adicionar Arquivos</span>
+                    <span className="text-[10px] font-black uppercase">Adicionar Documentos</span>
                     <input type="file" multiple className="hidden" onChange={e => setTicketFiles(Array.from(e.target.files || []))} />
                   </label>
                   <div className="space-y-2">
@@ -295,11 +290,11 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center">
-                <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white">Cancelar</button>
-                <button onClick={handleSave} disabled={!isFormValid || isLoading} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30">
+              <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center pb-12">
+                <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
+                <button onClick={handleSave} disabled={!isFormValid || isLoading} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30 shadow-2xl transition-transform active:scale-95">
                   {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={18} className="mr-3" />}
-                  {isEditing ? 'Atualizar Solicitação' : 'Enviar Nota Fiscal'}
+                  {isEditing ? 'Atualizar Dados' : 'Enviar Solicitação'}
                 </button>
               </div>
             </div>
@@ -312,10 +307,10 @@ const DashboardSolicitante: React.FC = () => {
                   <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Protocolo: #{selectedRequest.id}</span>
                   <Badge status={selectedRequest.status} />
                 </div>
-                <h2 className="text-4xl font-black text-gray-900 tracking-tighter">{selectedRequest.title}</h2>
+                <h2 className="text-4xl font-black text-gray-900 tracking-tighter uppercase italic">{selectedRequest.title}</h2>
               </div>
               {selectedRequest.status.includes('Erro') && (
-                <button onClick={startEdit} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-xl flex items-center hover:bg-blue-700"><Edit3 size={18} className="mr-2" /> Corrigir Registro</button>
+                <button onClick={startEdit} className="bg-blue-600 text-white px-8 py-3 rounded-2xl font-black uppercase text-xs shadow-xl flex items-center hover:bg-blue-700 transition-all"><Edit3 size={18} className="mr-2" /> Corrigir Dados</button>
               )}
             </header>
             <div className="flex-1 overflow-y-auto p-12 space-y-8 custom-scrollbar">
@@ -329,8 +324,8 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
                 <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 italic">Pagamento</p>
-                  <p className="text-lg font-black text-gray-900 uppercase">{selectedRequest.paymentMethod}</p>
-                  <p className="text-sm font-bold text-gray-500 mt-2 uppercase">{selectedRequest.payee || '---'}</p>
+                  <p className="text-lg font-black text-gray-900 uppercase italic">{selectedRequest.paymentMethod}</p>
+                  <p className="text-sm font-bold text-gray-500 mt-2 uppercase truncate">{selectedRequest.payee || '---'}</p>
                 </div>
               </div>
             </div>
@@ -340,8 +335,8 @@ const DashboardSolicitante: React.FC = () => {
             <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl border border-gray-100 mb-8 flex flex-col items-center">
                <Banknote size={100} className="text-blue-100 animate-pulse duration-[3000ms]" />
             </div>
-            <h3 className="text-2xl font-black text-gray-900 tracking-tight">Painel do Solicitante</h3>
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2">Escolha uma nota ou crie uma nova solicitação.</p>
+            <h3 className="text-2xl font-black text-gray-900 tracking-tight italic">Fluxo de Notas</h3>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2">Nenhuma nota selecionada. Utilize o painel lateral.</p>
           </div>
         )}
       </div>

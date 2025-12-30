@@ -28,9 +28,8 @@ const Login: React.FC = () => {
       localStorage.setItem('sispag_session', JSON.stringify(authData));
       window.location.reload();
     } catch (err: any) {
-      // Se for erro de Redirect URI, damos a instrução clara
       if (err.message?.includes('AADSTS50011')) {
-        setError('URL não autorizada no Azure. Copie a URL abaixo e adicione em "SPA" no Portal do Azure.');
+        setError('URL não autorizada no Azure. Adicione a URL abaixo nas configurações do app.');
       } else {
         setError(err.message || 'Erro ao conectar com Microsoft');
       }
@@ -54,7 +53,7 @@ const Login: React.FC = () => {
         localStorage.setItem('sispag_session', JSON.stringify(newState));
         window.location.reload();
       } else {
-        throw new Error('Usuário não encontrado ou inativo.');
+        throw new Error('Credenciais inválidas ou conta inativa.');
       }
     } catch (err: any) {
       setError(err.message || 'Falha na autenticação');
@@ -66,17 +65,9 @@ const Login: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center mb-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <img 
-              src="https://viagroup.com.br/assets/via_group-22fac685.png" 
-              alt="Via Group" 
-              className="h-12 w-auto" 
-            />
-          </div>
-        </div>
-        <h2 className="mt-2 text-center text-3xl font-black text-gray-900 tracking-tight">App Fiscal</h2>
-        <p className="mt-2 text-center text-sm text-gray-600 font-medium uppercase tracking-widest">Acesso Corporativo</p>
+        <h1 className="text-4xl font-black text-blue-900 tracking-tighter uppercase italic text-center">VIA GROUP</h1>
+        <h2 className="mt-2 text-center text-xl font-bold text-gray-900 tracking-tight">App Fiscal</h2>
+        <p className="mt-2 text-center text-xs text-gray-400 font-bold uppercase tracking-widest">Acesso Restrito</p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -85,7 +76,7 @@ const Login: React.FC = () => {
           <button
             onClick={handleMicrosoftLogin}
             disabled={isMsLoading}
-            className="w-full flex items-center justify-center py-4 px-4 border border-gray-200 rounded-2xl shadow-sm text-sm font-black text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all mb-4 border-b-4 border-gray-300 active:border-b-0 active:translate-y-1"
+            className="w-full flex items-center justify-center py-4 px-4 border border-gray-200 rounded-2xl shadow-sm text-sm font-black text-gray-700 bg-white hover:bg-gray-50 focus:outline-none transition-all mb-4 border-b-4 border-gray-300 active:border-b-0 active:translate-y-1"
           >
             {isMsLoading ? (
               <Loader2 className="animate-spin h-5 w-5 mr-3" />
@@ -97,7 +88,7 @@ const Login: React.FC = () => {
 
           {error && error.includes('URL não autorizada') && (
             <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <p className="text-[10px] font-bold text-amber-800 uppercase mb-2">{error}</p>
+              <p className="text-[10px] font-bold text-amber-800 uppercase mb-2 leading-tight">{error}</p>
               <div className="flex items-center bg-white border border-amber-200 rounded-lg p-2">
                 <code className="text-[9px] flex-1 truncate font-mono text-amber-900">{currentUri}</code>
                 <button 
@@ -119,7 +110,7 @@ const Login: React.FC = () => {
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">Usuário</label>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 ml-1">E-mail</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
@@ -128,7 +119,7 @@ const Login: React.FC = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full pl-12 pr-4 py-4 bg-gray-50 border-0 rounded-2xl focus:ring-2 focus:ring-blue-500 font-medium outline-none"
-                  placeholder="seu@email.com"
+                  placeholder="exemplo@viagroup.com.br"
                 />
               </div>
             </div>
@@ -157,16 +148,16 @@ const Login: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-4 px-4 bg-gray-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-gray-200"
+              className="w-full flex justify-center py-4 px-4 bg-blue-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-950 transition-all shadow-lg"
             >
-              {isLoading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Acessar Sistema'}
+              {isLoading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Acessar Ambiente'}
             </button>
           </form>
 
           <div className="mt-8 flex justify-center">
              <div className="flex items-center space-x-2 text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
                 <ShieldCheck size={14} className="text-green-500" />
-                <span>Ambiente Seguro Via Group</span>
+                <span>Via Group Digital Security</span>
              </div>
           </div>
         </div>

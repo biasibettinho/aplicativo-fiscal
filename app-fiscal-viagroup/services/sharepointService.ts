@@ -2,8 +2,8 @@
 import { PaymentRequest, RequestStatus } from '../types';
 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
-let CACHED_MAIN_LIST_ID = ''; 
-let CACHED_AUX_LIST_ID = '';
+const MAIN_LIST_NAME = 'solicitacoes_sispag_v2';
+const AUX_LIST_NAME = 'APP_Fiscal_AUX_ANEXOS';
 
 const FIELD_MAP = {
   title: 'Title',
@@ -42,52 +42,19 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export const sharepointService = {
-  resolveListIdByName: async (accessToken: string, listName: string, isMain: boolean = true) => {
-    if (isMain && CACHED_MAIN_LIST_ID) return CACHED_MAIN_LIST_ID;
-    if (!isMain && CACHED_AUX_LIST_ID) return CACHED_AUX_LIST_ID;
-
-    try {
-      const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const data = await resp.json();
-      
-      if (data.value) {
-        // Tenta achar pelo displayName (que é o que aparece no SharePoint) ou pelo name (URL)
-        const list = data.value.find((l: any) => 
-          l.displayName === listName || 
-          l.name === listName ||
-          l.displayName.toLowerCase() === listName.toLowerCase() ||
-          (isMain && l.displayName.toLowerCase().includes('sispag')) ||
-          (!isMain && l.displayName.toLowerCase().includes('aux_anexos'))
-        );
-        
-        if (list) {
-          if (isMain) CACHED_MAIN_LIST_ID = list.id;
-          else CACHED_AUX_LIST_ID = list.id;
-          return list.id;
-        }
-      }
-      
-      throw new Error(`Lista '${listName}' não pôde ser resolvida.`);
-    } catch (e: any) {
-      console.error("Erro fatal ao resolver lista:", e);
-      throw e;
-    }
-  },
-
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
-      const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
       let allItems: any[] = [];
-      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
+      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_NAME}/items?expand=fields&$top=999`;
 
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok) throw new Error(`Erro ao buscar itens na lista principal: ${response.statusText}`);
         const data = await response.json();
         if (data.value) allItems = [...allItems, ...data.value];
         nextUrl = data['@odata.nextLink'] || null;
       }
+      
       return allItems.map((item: any) => {
         const f = item.fields || {};
         return {
@@ -114,12 +81,14 @@ export const sharepointService = {
           createdByName: item.createdBy?.user?.displayName || 'Sistema',
         };
       });
-    } catch (e) { return []; }
+    } catch (e) {
+      console.error("Erro no getRequests:", e);
+      return [];
+    }
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_NAME}/items`;
     
     const fields: any = {
       Title: data.title,
@@ -145,15 +114,15 @@ export const sharepointService = {
     });
     
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Falha na criação do item");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar item no SharePoint.");
     return result;
   },
 
-  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string) => {
+  uploadAttachment: async (accessToken: string, listName: string, itemId: string, file: File, customName: string) => {
     const extension = file.name.split('.').pop() || 'pdf';
     const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listName}/items/${itemId}/attachments`;
 
     const resp = await fetch(url, {
       method: 'POST',
@@ -163,28 +132,31 @@ export const sharepointService = {
 
     if (!resp.ok) {
       const err = await resp.json();
-      throw new Error(err.error?.message || "Falha no anexo");
+      throw new Error(err.error?.message || `Falha ao anexar '${fileName}'.`);
     }
     return true;
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
-    const listId = await sharepointService.resolveListIdByName(accessToken, 'APP_Fiscal_AUX_ANEXOS', false);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${AUX_LIST_NAME}/items`;
     
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
+      body: JSON.stringify({ 
+        fields: { 
+          Title: `Boleto Ref ID: ${mainRequestId}`, 
+          ID_SOLICITACAO: mainRequestId 
+        } 
+      })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Falha na lista auxiliar");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro na lista auxiliar.");
     return result;
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/fields`;
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_NAME}/items/${itemId}/fields`;
     const fields: any = {};
     Object.keys(data).forEach(key => {
       const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];

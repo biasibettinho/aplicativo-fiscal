@@ -26,7 +26,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <Link 
         to={to} 
         className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-          isActive ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+          isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'text-gray-600 hover:bg-gray-100'
         }`}
       >
         <Icon size={20} />
@@ -40,7 +40,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-8 border-b border-gray-100 flex flex-col">
-          <h1 className="text-xl font-black text-blue-800 tracking-tighter uppercase italic leading-none">
+          <h1 className="text-xl font-black text-blue-900 tracking-tighter uppercase italic leading-none">
             VIA GROUP
           </h1>
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mt-1 ml-0.5">
@@ -48,7 +48,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </span>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 mt-4">
           <NavItem to="/solicitante" icon={LayoutDashboard} label="Solicitante" roles={[UserRole.SOLICITANTE, UserRole.ADMIN_MASTER]} />
           <NavItem to="/fiscal" icon={ShieldCheck} label="Fiscal / Admin" roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]} />
           <NavItem to="/financeiro" icon={BadgeDollarSign} label="Financeiro" roles={[UserRole.FINANCEIRO, UserRole.FINANCEIRO_MASTER, UserRole.ADMIN_MASTER]} />
@@ -58,7 +58,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
         <div className="p-4 border-t border-gray-100">
           <div className="flex items-center space-x-3 px-4 py-2 mb-2">
-            <div className="bg-blue-100 p-2 rounded-full text-blue-600">
+            <div className="bg-blue-50 p-2 rounded-full text-blue-600">
               <UserCircle size={20} />
             </div>
             <div className="flex-1 min-w-0">
@@ -71,7 +71,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             className="flex items-center space-x-3 w-full px-4 py-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors font-bold text-sm"
           >
             <LogOut size={18} />
-            <span>Sair</span>
+            <span>Sair do Sistema</span>
           </button>
         </div>
       </aside>
