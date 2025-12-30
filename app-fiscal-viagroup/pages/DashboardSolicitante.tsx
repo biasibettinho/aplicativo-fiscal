@@ -6,12 +6,9 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle, Terminal, CheckCircle2
+  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2
 } from 'lucide-react';
 import Badge from '../components/Badge';
-
-const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
 const DashboardSolicitante: React.FC = () => {
   const { authState } = useAuth();
@@ -21,7 +18,6 @@ const DashboardSolicitante: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Fila de processamento visível ao usuário
   const [backgroundJobs, setBackgroundJobs] = useState<any[]>([]);
 
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
@@ -58,7 +54,7 @@ const DashboardSolicitante: React.FC = () => {
       const finalData = { 
         ...formData, 
         branch: authState.user?.department || 'Matriz SP',
-        status: RequestStatus.PROCESSANDO // Já criamos com o status visual de processamento
+        status: RequestStatus.PROCESSANDO 
       };
       
       let itemId = selectedId;
@@ -69,73 +65,41 @@ const DashboardSolicitante: React.FC = () => {
         itemId = newReq.id;
       }
 
-      if (!itemId) throw new Error("ID não gerado pelo SharePoint.");
+      if (!itemId) throw new Error("ID não gerado.");
 
-      // CAPTURA DE DADOS PARA O BACKGROUND
-      const currentToken = authState.token;
-      const filesToNF = [...invoiceFiles];
-      const filesToBoleto = [...ticketFiles];
-      const nfNum = formData.invoiceNumber || itemId;
       const reqTitle = formData.title;
+      const nfNum = formData.invoiceNumber || itemId;
 
-      // FECHAR FORMULÁRIO IMEDIATAMENTE - LIBERAR O USUÁRIO
+      // DISPARAR POWER AUTOMATE EM BACKGROUND COM ARRAYS SEPARADOS
+      if (invoiceFiles.length > 0 || ticketFiles.length > 0) {
+        const jobId = Math.random().toString(36).substr(2, 9);
+        setBackgroundJobs(prev => [{ id: jobId, title: reqTitle, status: 'Enviando arquivos...', progress: 50 }, ...prev]);
+        
+        sharepointService.triggerPowerAutomateUpload(itemId, nfNum, invoiceFiles, ticketFiles)
+          .then(() => {
+             setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'Processando na nuvem (2 min)...', progress: 100 } : j));
+             setTimeout(() => {
+                setBackgroundJobs(prev => prev.filter(j => j.id !== jobId));
+                syncData();
+             }, 125000); 
+          })
+          .catch(err => {
+             console.error(err);
+             alert("Erro no envio para nuvem.");
+          });
+      }
+
       setIsNew(false);
       setIsEditing(false);
       setFormData(initialFormData);
       setInvoiceFiles([]);
       setTicketFiles([]);
-      syncData(); // Atualiza a lista para o usuário ver o item como "Processando"
-
-      // INICIAR TASK EM BACKGROUND
-      processAttachmentsInBackground(itemId, reqTitle, nfNum, currentToken, filesToNF, filesToBoleto);
+      syncData();
 
     } catch (e: any) {
-      alert(`Falha ao registrar dados iniciais: ${e.message}`);
+      alert(`Falha: ${e.message}`);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const processAttachmentsInBackground = async (itemId: string, title: any, nf: any, token: string, nfFiles: File[], boletoFiles: File[]) => {
-    const jobId = Math.random().toString(36).substr(2, 9);
-    setBackgroundJobs(prev => [{ id: jobId, title, status: 'Aguardando SharePoint...', progress: 0 }, ...prev]);
-
-    const updateJobStatus = (msg: string, progress: number) => {
-      setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: msg, progress } : j));
-    };
-
-    try {
-      // 1. Upload das NFs
-      for (let i = 0; i < nfFiles.length; i++) {
-        updateJobStatus(`Enviando NF (${i+1}/${nfFiles.length})...`, 20 + (i * 10));
-        await sharepointService.uploadAttachment(token, MAIN_LIST_ID, itemId, nfFiles[i], `NF_${nf}`, (m) => updateJobStatus(m, 20 + (i * 10)));
-      }
-
-      // 2. Upload de Boletos
-      if (boletoFiles.length > 0) {
-        updateJobStatus('Provisionando área de boletos...', 60);
-        const aux = await sharepointService.createAuxiliaryItem(token, itemId);
-        for (let i = 0; i < boletoFiles.length; i++) {
-          updateJobStatus(`Enviando Boleto (${i+1}/${boletoFiles.length})...`, 70 + (i * 5));
-          await sharepointService.uploadAttachment(token, AUX_LIST_ID, aux.id, boletoFiles[i], `BOLETO_${nf}`, (m) => updateJobStatus(m, 70 + (i * 5)));
-        }
-      }
-
-      // 3. Finalizar Status no SharePoint
-      updateJobStatus('Finalizando registro...', 95);
-      await sharepointService.updateStatus(token, itemId, RequestStatus.PENDENTE);
-      
-      updateJobStatus('Concluído!', 100);
-      syncData(); // Atualiza para mudar de Processando para Pendente na lista
-
-      // Remove da lista de jobs após 5 segundos
-      setTimeout(() => {
-        setBackgroundJobs(prev => prev.filter(j => j.id !== jobId));
-      }, 5000);
-
-    } catch (err: any) {
-      console.error(err);
-      updateJobStatus(`ERRO: ${err.message}`, 0);
     }
   };
 
@@ -159,7 +123,6 @@ const DashboardSolicitante: React.FC = () => {
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 shadow-sm relative">
       
-      {/* NOTIFICAÇÕES DE BACKGROUND NO CANTO DA TELA */}
       <div className="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 pointer-events-none">
         {backgroundJobs.map(job => (
           <div key={job.id} className="w-80 bg-slate-900 border border-white/10 rounded-2xl p-4 shadow-2xl pointer-events-auto animate-in slide-in-from-right-10">
@@ -169,7 +132,7 @@ const DashboardSolicitante: React.FC = () => {
             </div>
             <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest italic mb-2">{job.status}</p>
             <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-               <div className="bg-blue-600 h-full transition-all duration-500" style={{ width: `${job.progress}%` }} />
+               <div className="bg-blue-600 h-full transition-all duration-[125s] ease-linear" style={{ width: job.progress === 100 ? '100%' : '50%' }} />
             </div>
           </div>
         ))}

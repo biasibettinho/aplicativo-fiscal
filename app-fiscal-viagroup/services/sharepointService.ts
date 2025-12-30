@@ -3,7 +3,9 @@ import { PaymentRequest, RequestStatus } from '../types';
 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
+
+// URL gerada pelo fluxo do Power Automate para processamento de anexos
+const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8'; 
 
 const FIELD_MAP = {
   title: 'Title',
@@ -23,16 +25,6 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const sanitizeFileName = (name: string) => {
-  return name.normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[#%*:<>?/|\\"]/g, '')
-    .replace(/\s+/g, '_')
-    .substring(0, 80);
-};
-
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -42,18 +34,6 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-async function parseGraphError(response: Response) {
-  const requestId = response.headers.get('request-id') || 'N/A';
-  let errorDetail = '';
-  try {
-    const body = await response.json();
-    errorDetail = body.error?.message || JSON.stringify(body);
-  } catch (e) {
-    errorDetail = await response.text();
-  }
-  return `[${response.status}] ${errorDetail} (ReqID: ${requestId})`;
-}
-
 export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
@@ -62,7 +42,6 @@ export const sharepointService = {
 
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-        if (!response.ok) throw new Error(await parseGraphError(response));
         const data = await response.json();
         if (data.value) allItems = [...allItems, ...data.value];
         nextUrl = data['@odata.nextLink'] || null;
@@ -99,7 +78,7 @@ export const sharepointService = {
           }))
         };
       });
-    } catch (e: any) {
+    } catch (e) {
       console.error(e);
       return [];
     }
@@ -130,84 +109,35 @@ export const sharepointService = {
       body: JSON.stringify({ fields })
     });
     
-    if (!resp.ok) throw new Error(await parseGraphError(resp));
+    if (!resp.ok) throw new Error("Falha ao criar item no SharePoint");
     return await resp.json();
   },
 
-  uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string, onLog?: (msg: string) => void) => {
-    const extension = file.name.split('.').pop() || 'pdf';
-    const fileName = `${sanitizeFileName(customName)}.${extension}`;
-    const base64 = await fileToBase64(file);
-    const attachmentEndpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
-
-    const log = (m: string) => { console.log(m); if (onLog) onLog(m); };
-
-    log(`Aguardando provisionamento de anexos para ${fileName}...`);
-
-    let ready = false;
-    const maxRetries = 20; // Aumentado para suportar até 2 min de espera total (20 * 6s)
-    
-    for (let i = 0; i < maxRetries; i++) {
-      const check = await fetch(attachmentEndpoint, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-
-      if (check.ok) {
-        ready = true;
-        break;
-      }
-
-      const status = check.status;
-      if (status === 404) {
-        log(`SharePoint Offline/Lento (Tentativa ${i+1}/${maxRetries}). Aguardando...`);
-        await delay(6000); // Espera 6 segundos entre tentativas
-      } else {
-        throw new Error(`Erro na API do Graph: ${await parseGraphError(check)}`);
-      }
+  triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, nfs: File[], boletos: File[]) => {
+    if (!POWER_AUTOMATE_URL || POWER_AUTOMATE_URL.includes('...')) {
+      console.warn("URL do Power Automate não configurada.");
+      return;
     }
 
-    if (!ready) throw new Error("Tempo limite de 2 minutos excedido. O SharePoint não liberou o espaço de anexos.");
+    const mapFiles = async (files: File[]) => {
+      return Promise.all(files.map(async (f) => ({
+        name: f.name,
+        content: await fileToBase64(f)
+      })));
+    };
 
-    log(`Enviando bytes do arquivo...`);
-    const resp = await fetch(attachmentEndpoint, {
+    const body = {
+      itemId,
+      invoiceNumber,
+      invoiceFiles: await mapFiles(nfs),
+      ticketFiles: await mapFiles(boletos)
+    };
+
+    return fetch(POWER_AUTOMATE_URL, {
       method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${accessToken}`, 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({ name: fileName, contentBytes: base64 })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
-
-    if (resp.ok) {
-      log(`Sucesso: ${fileName} anexado.`);
-      return true;
-    }
-    
-    const finalErr = await parseGraphError(resp);
-    throw new Error(finalErr);
-  },
-
-  async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${AUX_LIST_ID}/items`;
-    // Removemos ID_SOLICITACAO para evitar erro 400 e colocamos no Título como redundância
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: { Title: `BOLETO_REF_${mainRequestId}` } })
-    });
-    if (!resp.ok) throw new Error(await parseGraphError(resp));
-    return await resp.json();
-  },
-
-  updateStatus: async (accessToken: string, itemId: string, status: RequestStatus) => {
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
-    const resp = await fetch(url, {
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ Status: status })
-    });
-    if (!resp.ok) throw new Error(await parseGraphError(resp));
-    return true;
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
@@ -222,7 +152,6 @@ export const sharepointService = {
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(fields)
     });
-    if (!resp.ok) throw new Error(await parseGraphError(resp));
     return await resp.json();
   }
 };
