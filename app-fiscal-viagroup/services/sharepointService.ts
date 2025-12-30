@@ -24,7 +24,7 @@ const FIELD_MAP = {
 };
 
 /**
- * Função utilitária para chamadas ao Graph com lógica de retentativa e headers de preferência
+ * Motor de busca Graph com suporte a retentativas (Backoff) e Headers de Preferência
  */
 async function graphFetch(
   url: string,
@@ -32,11 +32,10 @@ async function graphFetch(
   options: RequestInit = {},
   retries = 3
 ) {
-  // Fix: Using 'any' for headers to prevent type mismatch with options.headers (HeadersInit)
   const headers: any = {
     Authorization: `Bearer ${accessToken}`,
     Accept: "application/json",
-    "Prefer": "HonorNonIndexedQueriesWarning", // Crucial para filtros em colunas não indexadas
+    "Prefer": "HonorNonIndexedQueriesWarning", // Essencial para listas grandes
     ...options.headers,
   };
 
@@ -49,15 +48,15 @@ async function graphFetch(
       const errorText = await res.text();
       lastError = new Error(`Graph API ${res.status}: ${errorText}`);
       
-      // Se for erro de rate limit ou servidor, espera um pouco antes de tentar de novo
-      if (res.status === 429 || res.status >= 500) {
-        await new Promise(r => setTimeout(r, 500 * attempt));
+      // Retry apenas em erros temporários (429, 5xx) ou 404/400 intermitentes
+      if (res.status === 429 || res.status >= 500 || res.status === 404) {
+        await new Promise(r => setTimeout(r, 600 * attempt));
         continue;
       }
       break; 
     } catch (e) {
       lastError = e;
-      await new Promise(r => setTimeout(r, 500 * attempt));
+      await new Promise(r => setTimeout(r, 600 * attempt));
     }
   }
   throw lastError;
@@ -125,7 +124,7 @@ export const sharepointService = {
       const blob = await response.blob();
       return URL.createObjectURL(blob);
     } catch (e) {
-      console.error(`Erro ao baixar binário do anexo ${attachmentId}:`, e);
+      console.error(`Falha no binário do anexo ${attachmentId}:`, e);
       return '';
     }
   },
@@ -163,12 +162,8 @@ export const sharepointService = {
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Tenta filtro por ID_SOL (String e Number como fallback)
       let items: any[] = [];
-      const filters = [
-        `fields/ID_SOL eq '${requestId}'`,
-        `fields/ID_SOL eq ${requestId}`
-      ];
+      const filters = [`fields/ID_SOL eq '${requestId}'`, `fields/ID_SOL eq ${requestId}`];
 
       for (const filter of filters) {
         const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
@@ -179,13 +174,10 @@ export const sharepointService = {
             items = data.value;
             break;
           }
-        } catch (e) {
-          continue;
-        }
+        } catch (e) { continue; }
       }
 
       const allAttachments: Attachment[] = [];
-
       for (const item of items) {
         const attUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`;
         const attRes = await graphFetch(attUrl, accessToken);
@@ -209,7 +201,6 @@ export const sharepointService = {
           allAttachments.push(...processed.filter(a => a !== null) as Attachment[]);
         }
       }
-      
       return allAttachments;
     } catch (e) {
       console.error(`Erro no lookup de boletos para ${requestId}:`, e);
@@ -241,32 +232,14 @@ export const sharepointService = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields })
     });
-    
     return await resp.json();
   },
 
   triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, nfs: File[], boletos: File[]) => {
     const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
-
-    const mapFiles = async (files: File[]) => {
-      return Promise.all(files.map(async (f) => ({
-        name: f.name,
-        content: await fileToBase64(f)
-      })));
-    };
-
-    const body = {
-      itemId,
-      invoiceNumber,
-      invoiceFiles: await mapFiles(nfs),
-      ticketFiles: await mapFiles(boletos)
-    };
-
-    return fetch(POWER_AUTOMATE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    const mapFiles = async (files: File[]) => Promise.all(files.map(async (f) => ({ name: f.name, content: await fileToBase64(f) })));
+    const body = { itemId, invoiceNumber, invoiceFiles: await mapFiles(nfs), ticketFiles: await mapFiles(boletos) };
+    return fetch(POWER_AUTOMATE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
@@ -276,13 +249,7 @@ export const sharepointService = {
       const spKey = FIELD_MAP[key as keyof typeof FIELD_MAP];
       if (spKey) fields[spKey] = (data as any)[key];
     });
-    
-    const resp = await graphFetch(url, accessToken, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fields)
-    });
-    
+    const resp = await graphFetch(url, accessToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
     return await resp.json();
   }
 };

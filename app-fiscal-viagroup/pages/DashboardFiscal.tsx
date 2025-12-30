@@ -1,17 +1,21 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { PaymentRequest, RequestStatus } from '../types';
+import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
+import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Info, Paperclip, MapPin, Filter, Banknote
+  Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2
 } from 'lucide-react';
 
 const DashboardFiscal: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
+  const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
+  const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -24,7 +28,31 @@ const DashboardFiscal: React.FC = () => {
     setRequests(data);
   };
 
-  useEffect(() => { loadData(); const t = setInterval(loadData, 20000); return () => clearInterval(t); }, [authState.user, authState.token]);
+  useEffect(() => { loadData(); }, [authState.user, authState.token]);
+
+  // Captura dinâmica de anexos ao selecionar item
+  useEffect(() => {
+    let isMounted = true;
+    const fetchAtts = async () => {
+      if (selectedId && authState.token) {
+        setIsFetchingAttachments(true);
+        try {
+          const [main, secondary] = await Promise.all([
+            sharepointService.getItemAttachments(authState.token, selectedId),
+            sharepointService.getSecondaryAttachments(authState.token, selectedId)
+          ]);
+          if (isMounted) {
+            setMainAttachments(main);
+            setSecondaryAttachments(secondary);
+          }
+        } catch (e) { console.error(e); } finally { if (isMounted) setIsFetchingAttachments(false); }
+      } else {
+        setMainAttachments([]); setSecondaryAttachments([]);
+      }
+    };
+    fetchAtts();
+    return () => { isMounted = false; };
+  }, [selectedId, authState.token]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -34,14 +62,7 @@ const DashboardFiscal: React.FC = () => {
     loadData(); setSelectedId(null);
   };
 
-  const handleViewFile = (storageUrl: string) => {
-    if (!storageUrl) return;
-    try {
-      const blob = new Blob([new Uint8Array(atob(storageUrl).split("").map(c => c.charCodeAt(0)))], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-    } catch { window.open(storageUrl, '_blank'); }
-  };
+  const handleViewFile = (url: string) => { if (url) window.open(url, '_blank'); };
 
   const filteredRequests = useMemo(() => {
     return requests.filter(r => 
@@ -99,15 +120,16 @@ const DashboardFiscal: React.FC = () => {
                   </div>
                 </section>
                 <section className="space-y-6">
-                  <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-4 mb-6 italic"><Paperclip size={20} className="mr-3" /> Documentos Anexados</h3>
+                  <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-4 mb-6 italic"><Paperclip size={20} className="mr-3" /> Documentos Anexados {isFetchingAttachments && <Loader2 size={16} className="ml-3 animate-spin text-blue-600" />}</h3>
                   <div className="space-y-4">
-                    {selectedRequest.attachments && selectedRequest.attachments.length > 0 ? selectedRequest.attachments.map(att => (
+                    {[...mainAttachments, ...secondaryAttachments].map(att => (
                       <div key={att.id} className="p-6 bg-white border-2 border-gray-100 rounded-[2.5rem] flex items-center shadow-lg group hover:border-blue-600 transition-all">
                         <div className="bg-blue-600 text-white p-5 rounded-3xl mr-6 group-hover:scale-110 transition-transform shadow-lg"><FileText size={28}/></div>
-                        <div className="flex-1 truncate"><span className="text-gray-900 font-black text-lg block truncate">{att.fileName}</span></div>
+                        <div className="flex-1 truncate"><span className="text-gray-900 font-black text-lg block truncate">{att.fileName}</span><span className="text-[10px] font-bold text-gray-400 uppercase">{att.type === 'boleto' ? 'Boleto/Lookup' : 'Nota Fiscal'}</span></div>
                         <button onClick={() => handleViewFile(att.storageUrl)} className="ml-6 px-10 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center"><ExternalLink size={18} className="mr-2" /> Abrir PDF</button>
                       </div>
-                    )) : <div className="p-16 border-4 border-dashed border-gray-100 rounded-[3rem] text-center text-gray-300 font-bold italic">Sem anexos para conferir.</div>}
+                    ))}
+                    {!isFetchingAttachments && mainAttachments.length === 0 && secondaryAttachments.length === 0 && <div className="p-16 border-4 border-dashed border-gray-100 rounded-[3rem] text-center text-gray-300 font-bold italic">Sem anexos para conferir.</div>}
                   </div>
                 </section>
               </div>
