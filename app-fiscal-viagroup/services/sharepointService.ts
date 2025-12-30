@@ -4,7 +4,7 @@ import { PaymentRequest, RequestStatus } from '../types';
 // Site ID global (hostname,siteCollectionId,siteId)
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
-// IDs das listas (GUIDs)
+// IDs das listas (GUIDs fornecidos)
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
@@ -44,11 +44,14 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
-      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=999`;
+      // Adicionamos expand=attachments para visualizar arquivos já enviados
+      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields,attachments&$top=999`;
 
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -88,7 +91,7 @@ export const sharepointService = {
           attachments: (item.attachments || []).map((a: any) => ({
             id: a.id,
             fileName: a.name,
-            storageUrl: a.contentBytes // O Graph retorna o conteúdo ou a URL dependendo da expansão
+            storageUrl: a.contentBytes 
           }))
         };
       });
@@ -130,13 +133,16 @@ export const sharepointService = {
   },
 
   uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string) => {
+    // IMPORTANTE: Adicionamos um pequeno delay antes do upload. 
+    // Itens recém-criados no SharePoint podem demorar alguns milissegundos para habilitar o segmento de anexos via Graph.
+    await delay(1500); 
+
     const extension = file.name.split('.').pop() || 'pdf';
     const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
     
-    // IMPORTANTE: O uso do endpoint 'beta' resolve o erro "Resource not found for the segment 'attachments'" 
-    // em muitos tenants do SharePoint onde o v1.0 falha na descoberta do sub-recurso.
-    const url = `https://graph.microsoft.com/beta/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+    // Voltamos para v1.0 que é mais estável para essa operação específica
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
     const resp = await fetch(url, {
       method: 'POST',
@@ -152,8 +158,7 @@ export const sharepointService = {
 
     if (!resp.ok) {
       const err = await resp.json();
-      // Caso o erro persista, informamos detalhadamente
-      throw new Error(err.error?.message || `Erro no upload do anexo ${fileName}`);
+      throw new Error(`Erro no anexo (${fileName}): ${err.error?.message || "Recurso não pronto"}`);
     }
     return true;
   },
