@@ -1,11 +1,9 @@
 
-import { PaymentRequest, RequestStatus } from '../types';
+import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-
-// URL gerada pelo fluxo do Power Automate para processamento de anexos
-const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8'; 
+const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938'; // ID extraído dos logs de erro anteriores
 
 const FIELD_MAP = {
   title: 'Title',
@@ -73,13 +71,48 @@ export const sharepointService = {
           createdByName: item.createdBy?.user?.displayName || 'Sistema',
           attachments: (item.attachments || []).map((a: any) => ({
             id: a.id,
+            requestId: item.id,
             fileName: a.name,
-            storageUrl: a.contentBytes 
+            type: 'invoice_pdf',
+            storageUrl: a['@microsoft.graph.downloadUrl'] || ''
           }))
         };
       });
     } catch (e) {
       console.error(e);
+      return [];
+    }
+  },
+
+  getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
+    try {
+      // Busca itens na lista secundária onde ID_SOL == requestId
+      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq '${requestId}'`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const data = await response.json();
+      
+      const attachments: Attachment[] = [];
+      if (data.value) {
+        data.value.forEach((item: any) => {
+          if (item.attachments) {
+            item.attachments.forEach((a: any) => {
+              attachments.push({
+                id: a.id,
+                requestId: requestId,
+                fileName: a.name,
+                type: 'boleto',
+                mimeType: 'application/pdf',
+                size: 0,
+                storageUrl: a['@microsoft.graph.downloadUrl'] || '',
+                createdAt: item.createdDateTime
+              });
+            });
+          }
+        });
+      }
+      return attachments;
+    } catch (e) {
+      console.error("Erro ao buscar anexos secundários:", e);
       return [];
     }
   },
@@ -114,10 +147,7 @@ export const sharepointService = {
   },
 
   triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, nfs: File[], boletos: File[]) => {
-    if (!POWER_AUTOMATE_URL || POWER_AUTOMATE_URL.includes('...')) {
-      console.warn("URL do Power Automate não configurada.");
-      return;
-    }
+    const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
 
     const mapFiles = async (files: File[]) => {
       return Promise.all(files.map(async (f) => ({

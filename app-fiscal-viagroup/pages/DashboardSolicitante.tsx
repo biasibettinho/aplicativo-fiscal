@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { PaymentRequest, RequestStatus } from '../types';
+import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
@@ -14,9 +14,11 @@ const DashboardSolicitante: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isNew, setIsNew] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [backgroundJobs, setBackgroundJobs] = useState<any[]>([]);
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
@@ -45,6 +47,26 @@ const DashboardSolicitante: React.FC = () => {
 
   useEffect(() => { syncData(); }, [authState.user, authState.token]);
 
+  // Efeito para buscar anexos da lista secundária quando selecionar um item
+  useEffect(() => {
+    const fetchSecondary = async () => {
+      if (selectedId && authState.token) {
+        setIsFetchingAttachments(true);
+        try {
+          const attachments = await sharepointService.getSecondaryAttachments(authState.token, selectedId);
+          setSecondaryAttachments(attachments);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setIsFetchingAttachments(false);
+        }
+      } else {
+        setSecondaryAttachments([]);
+      }
+    };
+    fetchSecondary();
+  }, [selectedId, authState.token]);
+
   const handleSave = async () => {
     if (!authState.user || !authState.token || !formData.title) return;
     setIsLoading(true);
@@ -72,17 +94,9 @@ const DashboardSolicitante: React.FC = () => {
     } catch (e: any) { alert(e.message); } finally { setIsLoading(false); }
   };
 
-  const handleViewFile = (storageUrl: string) => {
-    if (!storageUrl) return;
-    // O SharePoint retorna os bytes do arquivo em storageUrl (base64)
-    try {
-      const blob = new Blob([new Uint8Array(atob(storageUrl).split("").map(c => c.charCodeAt(0)))], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-    } catch {
-      // Fallback para URL direta se não for base64 puro
-      window.open(storageUrl, '_blank');
-    }
+  const handleViewFile = (url: string) => {
+    if (!url) return;
+    window.open(url, '_blank');
   };
 
   const filteredRequests = useMemo(() => {
@@ -97,7 +111,6 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 relative">
-      {/* Notificações de Processamento */}
       <div className="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 pointer-events-none">
         {backgroundJobs.map(job => (
           <div key={job.id} className="w-80 bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-2xl pointer-events-auto">
@@ -113,7 +126,6 @@ const DashboardSolicitante: React.FC = () => {
         ))}
       </div>
 
-      {/* Menu Lateral */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-6 border-b border-gray-100 bg-white z-10">
           <div className="flex items-center justify-between mb-6">
@@ -139,7 +151,6 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       </div>
 
-      {/* Área de Conteúdo */}
       <div className={`flex-1 flex flex-col transition-all ${isNew ? 'bg-slate-900 text-white' : 'bg-gray-50'}`}>
         {isNew ? (
           <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
@@ -155,14 +166,89 @@ const DashboardSolicitante: React.FC = () => {
                   <input type="text" value={formData.invoiceNumber} onChange={e => setFormData({...formData, invoiceNumber: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none text-white text-xl font-bold" />
                 </div>
                 <div>
+                  <label className="text-sm font-black uppercase text-blue-400 mb-3 block italic">Meio de Pagamento</label>
+                  <select value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})} className="w-full bg-white/10 border border-white/10 rounded-2xl p-5 outline-none text-white text-xl font-bold">
+                    {PAYMENT_METHODS.map(m => <option key={m} value={m} className="bg-slate-800">{m}</option>)}
+                  </select>
+                </div>
+                <div>
                   <label className="text-sm font-black uppercase text-blue-400 mb-3 block italic">Vencimento</label>
                   <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none text-white text-xl font-bold" />
                 </div>
+                <div>
+                  <label className="text-sm font-black uppercase text-blue-400 mb-3 block italic">Pedidos / Ordens de Compra</label>
+                  <input type="text" value={formData.orderNumbers} onChange={e => setFormData({...formData, orderNumbers: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none text-white text-xl font-bold" />
+                </div>
+
+                {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'PIX') && (
+                  <div className="md:col-span-2 bg-white/5 p-8 rounded-[2rem] border border-white/10 space-y-6">
+                    <h3 className="text-lg font-black uppercase tracking-widest text-blue-400 flex items-center italic"><Landmark size={24} className="mr-3" /> Detalhes do Favorecido</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="md:col-span-2">
+                        <input type="text" placeholder="Nome do Favorecido" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white text-lg" />
+                      </div>
+                      {formData.paymentMethod === 'PIX' ? (
+                        <div className="md:col-span-2">
+                          <input type="text" placeholder="Chave PIX" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white font-mono text-lg" />
+                        </div>
+                      ) : (
+                        <>
+                          <input type="text" placeholder="Banco" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="bg-white/5 p-4 rounded-xl border border-white/10 text-white" />
+                          <input type="text" placeholder="Agência" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="bg-white/5 p-4 rounded-xl border border-white/10 text-white" />
+                          <input type="text" placeholder="Conta" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="bg-white/5 p-4 rounded-xl border border-white/10 text-white" />
+                          <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="bg-white/5 p-4 rounded-xl border border-white/10 text-white">
+                            <option value="Conta Corrente" className="bg-slate-800">C. Corrente</option>
+                            <option value="Conta Poupança" className="bg-slate-800">C. Poupança</option>
+                          </select>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="md:col-span-2">
+                  <label className="text-sm font-black uppercase text-blue-400 mb-3 block italic">Observações</label>
+                  <textarea rows={3} value={formData.generalObservation} onChange={e => setFormData({...formData, generalObservation: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-5 outline-none text-white text-lg resize-none" />
+                </div>
+
+                <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 space-y-4">
+                  <h3 className="text-xs font-black uppercase text-blue-400 italic flex items-center"><FileText size={18} className="mr-2" /> Nota Fiscal (PDF)</h3>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-10 hover:bg-white/10 cursor-pointer transition-all">
+                    <Paperclip size={32} className="text-blue-400 mb-2 opacity-50" />
+                    <span className="text-[10px] font-black uppercase">Selecionar NF</span>
+                    <input type="file" multiple className="hidden" onChange={e => setInvoiceFiles(Array.from(e.target.files || []))} />
+                  </label>
+                  <div className="space-y-2">
+                    {invoiceFiles.map((f, i) => (
+                      <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5 text-xs">
+                        <span className="truncate flex-1 font-mono">{f.name}</span>
+                        <button onClick={() => setInvoiceFiles(invoiceFiles.filter((_, idx) => idx !== i))} className="text-red-400 ml-2"><X size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 space-y-4">
+                  <h3 className="text-xs font-black uppercase text-blue-400 italic flex items-center"><CreditCard size={18} className="mr-2" /> Boletos / Comprovantes</h3>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-10 hover:bg-white/10 cursor-pointer transition-all">
+                    <Paperclip size={32} className="text-blue-400 mb-2 opacity-50" />
+                    <span className="text-[10px] font-black uppercase">Selecionar Boletos</span>
+                    <input type="file" multiple className="hidden" onChange={e => setTicketFiles(Array.from(e.target.files || []))} />
+                  </label>
+                  <div className="space-y-2">
+                    {ticketFiles.map((f, i) => (
+                      <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5 text-xs">
+                        <span className="truncate flex-1 font-mono">{f.name}</span>
+                        <button onClick={() => setTicketFiles(ticketFiles.filter((_, idx) => idx !== i))} className="text-red-400 ml-2"><X size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <div className="pt-10 flex justify-end space-x-8 items-center border-t border-white/10">
+              <div className="pt-10 flex justify-end space-x-8 items-center border-t border-white/10 mb-12">
                 <button onClick={() => setIsNew(false)} className="font-black uppercase text-sm text-white/40 hover:text-white">Cancelar</button>
-                <button onClick={handleSave} disabled={isLoading || !formData.title} className="bg-blue-600 hover:bg-blue-500 text-white px-12 py-6 rounded-2xl font-black uppercase text-lg flex items-center shadow-2xl shadow-blue-900/40">
-                  {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={24} className="mr-3" />} Finalizar
+                <button onClick={handleSave} disabled={isLoading || !formData.title} className="bg-blue-600 hover:bg-blue-500 text-white px-12 py-6 rounded-2xl font-black uppercase text-lg flex items-center shadow-2xl shadow-blue-900/40 transition-all">
+                  {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={24} className="mr-3" />} Finalizar Lançamento
                 </button>
               </div>
             </div>
@@ -181,7 +267,6 @@ const DashboardSolicitante: React.FC = () => {
             
             <div className="flex-1 overflow-y-auto p-12 space-y-12 custom-scrollbar">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                {/* Card Informativo 1 */}
                 <div className="bg-white p-12 rounded-[3rem] border border-gray-100 shadow-xl">
                   <p className="text-sm font-black text-blue-500 uppercase mb-8 border-b pb-4 flex items-center italic"><Banknote size={20} className="mr-3"/> Dados Fiscais</p>
                   <div className="space-y-10">
@@ -196,7 +281,6 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Card Informativo 2 */}
                 <div className="bg-white p-12 rounded-[3rem] border border-gray-100 shadow-xl">
                   <p className="text-sm font-black text-blue-500 uppercase mb-8 border-b pb-4 flex items-center italic"><CreditCard size={20} className="mr-3"/> Informações de Pagamento</p>
                   <div className="space-y-10">
@@ -212,39 +296,50 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* Seção de Anexos - Destaque */}
               <div className="bg-white p-12 rounded-[3.5rem] border-2 border-gray-100 shadow-2xl">
                 <div className="flex items-center justify-between mb-10 border-b pb-6">
-                  <h3 className="text-2xl font-black text-gray-900 uppercase italic flex items-center"><FileText size={28} className="mr-4 text-blue-600"/> Documentação do Processo</h3>
-                  <span className="text-xs font-black text-gray-400 uppercase bg-gray-50 px-4 py-2 rounded-xl">Arquivos em Nuvem</span>
+                  <h3 className="text-2xl font-black text-gray-900 uppercase italic flex items-center"><FileText size={28} className="mr-4 text-blue-600"/> Documentação e Anexos</h3>
+                  {isFetchingAttachments && <Loader2 className="animate-spin text-blue-600" />}
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                   <div className="space-y-4">
-                     <p className="text-xs font-black text-gray-400 uppercase tracking-[0.2em] mb-4">Clique para Visualizar:</p>
-                     {selectedRequest.attachments && selectedRequest.attachments.length > 0 ? (
-                       <div className="space-y-4">
-                         {selectedRequest.attachments.map(att => (
-                           <div key={att.id} className="p-6 bg-gray-50 border border-gray-100 rounded-[2rem] flex items-center justify-between hover:border-blue-500 hover:bg-blue-50 transition-all group shadow-sm">
-                             <div className="flex items-center space-x-6">
-                               <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg group-hover:scale-110 transition-transform"><FileText size={24} /></div>
-                               <div className="flex flex-col">
-                                 <span className="text-lg font-black text-gray-800 max-w-[250px] truncate leading-tight">{att.fileName}</span>
-                                 <span className="text-[10px] font-black text-gray-400 uppercase">Documento Digital</span>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                   <div className="space-y-8">
+                     <div>
+                       <p className="text-xs font-black text-blue-500 uppercase tracking-widest mb-4 italic">Anexo da Lista Principal (NF):</p>
+                       {selectedRequest.attachments && selectedRequest.attachments.length > 0 ? (
+                         <div className="space-y-3">
+                           {selectedRequest.attachments.map(att => (
+                             <div key={att.id} className="p-6 bg-blue-50/50 border border-blue-100 rounded-[2rem] flex items-center justify-between group shadow-sm">
+                               <div className="flex items-center space-x-6">
+                                 <div className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg group-hover:scale-110 transition-transform"><FileText size={24} /></div>
+                                 <span className="text-lg font-black text-gray-800 max-w-[200px] truncate leading-tight">{att.fileName}</span>
                                </div>
+                               <button onClick={() => handleViewFile(att.storageUrl)} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black uppercase text-xs hover:bg-blue-700 transition-all shadow-md flex items-center"><ExternalLink size={16} className="mr-2" /> Abrir</button>
                              </div>
-                             <button onClick={() => handleViewFile(att.storageUrl)} className="bg-white border-2 border-blue-600 text-blue-600 px-8 py-3 rounded-2xl font-black uppercase text-xs hover:bg-blue-600 hover:text-white transition-all shadow-md flex items-center">
-                               <ExternalLink size={16} className="mr-2" /> Visualizar PDF
-                             </button>
-                           </div>
-                         ))}
-                       </div>
-                     ) : (
-                       <div className="p-16 border-4 border-dashed border-gray-50 rounded-[3rem] text-center text-gray-300 italic font-bold">Nenhum anexo disponível para este ID.</div>
-                     )}
+                           ))}
+                         </div>
+                       ) : <p className="text-sm text-gray-400 italic">Nenhuma NF anexada.</p>}
+                     </div>
+
+                     <div>
+                       <p className="text-xs font-black text-indigo-500 uppercase tracking-widest mb-4 italic">Anexos da Lista Auxiliar (Lookup ID_SOL):</p>
+                       {secondaryAttachments.length > 0 ? (
+                         <div className="space-y-3">
+                           {secondaryAttachments.map(att => (
+                             <div key={att.id} className="p-6 bg-indigo-50/50 border border-indigo-100 rounded-[2rem] flex items-center justify-between group shadow-sm">
+                               <div className="flex items-center space-x-6">
+                                 <div className="bg-indigo-600 text-white p-4 rounded-2xl shadow-lg group-hover:scale-110 transition-transform"><Paperclip size={24} /></div>
+                                 <span className="text-lg font-black text-gray-800 max-w-[200px] truncate leading-tight">{att.fileName}</span>
+                               </div>
+                               <button onClick={() => handleViewFile(att.storageUrl)} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black uppercase text-xs hover:bg-indigo-700 transition-all shadow-md flex items-center"><ExternalLink size={16} className="mr-2" /> Abrir</button>
+                             </div>
+                           ))}
+                         </div>
+                       ) : <p className="text-sm text-gray-400 italic">Nenhum boleto encontrado via lookup.</p>}
+                     </div>
                    </div>
                    <div className="bg-gray-50/50 p-10 rounded-[3rem] border border-gray-100">
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-4 italic">Notas e Instruções Internas</span>
-                      <p className="text-2xl font-medium text-gray-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Nenhuma observação informada pelo solicitante.'}"</p>
+                      <span className="text-xs font-black text-gray-400 uppercase block mb-4 italic">Observações Internas</span>
+                      <p className="text-2xl font-medium text-gray-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Nenhuma observação informada.'}"</p>
                    </div>
                 </div>
               </div>
