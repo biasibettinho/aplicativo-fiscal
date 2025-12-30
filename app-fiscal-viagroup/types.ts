@@ -16,7 +16,8 @@ export enum RequestStatus {
   ERRO_FINANCEIRO = 'Erro - Financeiro',
   LANCADO = 'Lançado',
   FATURADO = 'Faturado',
-  COMPARTILHADO = 'Compartilhado'
+  COMPARTILHADO = 'Compartilhado',
+  PROCESSANDO = 'Processando'
 }
 
 export interface User {
@@ -71,7 +72,7 @@ export interface PaymentRequest {
   orderNumbers: string;
   invoiceNumber: string;
   payee: string;
-  budgetValue?: number; // Agora opcional no formulário inicial
+  budgetValue?: number; 
   discountText?: string; 
   paymentMethod: string;
   bank?: string;

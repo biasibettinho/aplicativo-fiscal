@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle, Terminal
+  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle, Terminal, CheckCircle2
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -20,18 +20,9 @@ const DashboardSolicitante: React.FC = () => {
   const [isNew, setIsNew] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState('');
-  const [logs, setLogs] = useState<string[]>([]);
   
-  const logEndRef = useRef<HTMLDivElement>(null);
-
-  const addLog = (msg: string) => {
-    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-20));
-  };
-
-  useEffect(() => {
-    if (logEndRef.current) logEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+  // Fila de processamento visível ao usuário
+  const [backgroundJobs, setBackgroundJobs] = useState<any[]>([]);
 
   const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
   const [ticketFiles, setTicketFiles] = useState<File[]>([]);
@@ -59,6 +50,95 @@ const DashboardSolicitante: React.FC = () => {
 
   useEffect(() => { syncData(); }, [authState.user, authState.token]);
 
+  const handleSave = async () => {
+    if (!authState.user || !authState.token || !isFormValid) return;
+    setIsLoading(true);
+    
+    try {
+      const finalData = { 
+        ...formData, 
+        branch: authState.user?.department || 'Matriz SP',
+        status: RequestStatus.PROCESSANDO // Já criamos com o status visual de processamento
+      };
+      
+      let itemId = selectedId;
+      if (isEditing && selectedId) {
+        await sharepointService.updateRequest(authState.token, selectedId, finalData);
+      } else {
+        const newReq = await sharepointService.createRequest(authState.token, finalData);
+        itemId = newReq.id;
+      }
+
+      if (!itemId) throw new Error("ID não gerado pelo SharePoint.");
+
+      // CAPTURA DE DADOS PARA O BACKGROUND
+      const currentToken = authState.token;
+      const filesToNF = [...invoiceFiles];
+      const filesToBoleto = [...ticketFiles];
+      const nfNum = formData.invoiceNumber || itemId;
+      const reqTitle = formData.title;
+
+      // FECHAR FORMULÁRIO IMEDIATAMENTE - LIBERAR O USUÁRIO
+      setIsNew(false);
+      setIsEditing(false);
+      setFormData(initialFormData);
+      setInvoiceFiles([]);
+      setTicketFiles([]);
+      syncData(); // Atualiza a lista para o usuário ver o item como "Processando"
+
+      // INICIAR TASK EM BACKGROUND
+      processAttachmentsInBackground(itemId, reqTitle, nfNum, currentToken, filesToNF, filesToBoleto);
+
+    } catch (e: any) {
+      alert(`Falha ao registrar dados iniciais: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const processAttachmentsInBackground = async (itemId: string, title: any, nf: any, token: string, nfFiles: File[], boletoFiles: File[]) => {
+    const jobId = Math.random().toString(36).substr(2, 9);
+    setBackgroundJobs(prev => [{ id: jobId, title, status: 'Aguardando SharePoint...', progress: 0 }, ...prev]);
+
+    const updateJobStatus = (msg: string, progress: number) => {
+      setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: msg, progress } : j));
+    };
+
+    try {
+      // 1. Upload das NFs
+      for (let i = 0; i < nfFiles.length; i++) {
+        updateJobStatus(`Enviando NF (${i+1}/${nfFiles.length})...`, 20 + (i * 10));
+        await sharepointService.uploadAttachment(token, MAIN_LIST_ID, itemId, nfFiles[i], `NF_${nf}`, (m) => updateJobStatus(m, 20 + (i * 10)));
+      }
+
+      // 2. Upload de Boletos
+      if (boletoFiles.length > 0) {
+        updateJobStatus('Provisionando área de boletos...', 60);
+        const aux = await sharepointService.createAuxiliaryItem(token, itemId);
+        for (let i = 0; i < boletoFiles.length; i++) {
+          updateJobStatus(`Enviando Boleto (${i+1}/${boletoFiles.length})...`, 70 + (i * 5));
+          await sharepointService.uploadAttachment(token, AUX_LIST_ID, aux.id, boletoFiles[i], `BOLETO_${nf}`, (m) => updateJobStatus(m, 70 + (i * 5)));
+        }
+      }
+
+      // 3. Finalizar Status no SharePoint
+      updateJobStatus('Finalizando registro...', 95);
+      await sharepointService.updateStatus(token, itemId, RequestStatus.PENDENTE);
+      
+      updateJobStatus('Concluído!', 100);
+      syncData(); // Atualiza para mudar de Processando para Pendente na lista
+
+      // Remove da lista de jobs após 5 segundos
+      setTimeout(() => {
+        setBackgroundJobs(prev => prev.filter(j => j.id !== jobId));
+      }, 5000);
+
+    } catch (err: any) {
+      console.error(err);
+      updateJobStatus(`ERRO: ${err.message}`, 0);
+    }
+  };
+
   const filteredRequests = useMemo(() => {
     const filtered = requests.filter(req => {
       const s = searchTerm.toLowerCase();
@@ -70,72 +150,6 @@ const DashboardSolicitante: React.FC = () => {
   const selectedRequest = requests.find(r => r.id === selectedId);
   const isFormValid = useMemo(() => !!formData.title && !!formData.paymentMethod, [formData]);
 
-  const handleSave = async () => {
-    if (!authState.user || !authState.token || !isFormValid) return;
-    setIsLoading(true);
-    setUploadStatus('Processando...');
-    setLogs([]);
-    addLog('Iniciando submissão...');
-    
-    try {
-      const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
-      let itemId = selectedId;
-
-      if (isEditing && selectedId) {
-        addLog('Atualizando item existente...');
-        await sharepointService.updateRequest(authState.token, selectedId, finalData);
-      } else {
-        addLog('Criando novo item na lista principal...');
-        const newReq = await sharepointService.createRequest(authState.token, finalData);
-        itemId = newReq.id;
-        addLog(`Item criado com ID: ${itemId}`);
-      }
-
-      if (!itemId) throw new Error("ID do item não encontrado.");
-
-      const nfId = formData.invoiceNumber?.trim() || `SOLIC_${itemId}`;
-      
-      // Notas Fiscais
-      for (const file of invoiceFiles) {
-        try {
-          await sharepointService.uploadAttachment(authState.token, MAIN_LIST_ID, itemId, file, `NF_${nfId}`, addLog);
-        } catch (err: any) {
-          addLog(`ERRO NF: ${err.message}`);
-          alert(`O registro foi salvo, mas uma NF falhou.\nLog: ${err.message}`);
-        }
-      }
-
-      // Boletos
-      if (ticketFiles.length > 0) {
-        addLog('Provisionando lista auxiliar para boletos...');
-        const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId);
-        for (const file of ticketFiles) {
-          try {
-            await sharepointService.uploadAttachment(authState.token, AUX_LIST_ID, auxItem.id, file, `BOLETO_${nfId}`, addLog);
-          } catch (err: any) {
-            addLog(`ERRO BOLETO: ${err.message}`);
-            alert(`O registro foi salvo, mas um boleto falhou.\nLog: ${err.message}`);
-          }
-        }
-      }
-
-      addLog('Tudo pronto!');
-      setUploadStatus('Finalizado!');
-      setTimeout(() => {
-        setIsNew(false); setIsEditing(false); setFormData(initialFormData);
-        setInvoiceFiles([]); setTicketFiles([]); setUploadStatus('');
-        syncData();
-      }, 2000);
-
-    } catch (e: any) {
-      addLog(`FALHA CRÍTICA: ${e.message}`);
-      alert(`Erro no processo:\n${e.message}`);
-      setUploadStatus('Erro');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const startEdit = () => {
     if (!selectedRequest) return;
     setFormData({ ...selectedRequest, invoiceNumber: stripHtml(selectedRequest.invoiceNumber), orderNumbers: stripHtml(selectedRequest.orderNumbers), paymentDate: selectedRequest.paymentDate?.split('T')[0] });
@@ -143,14 +157,31 @@ const DashboardSolicitante: React.FC = () => {
   };
 
   return (
-    <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
+    <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 shadow-sm relative">
+      
+      {/* NOTIFICAÇÕES DE BACKGROUND NO CANTO DA TELA */}
+      <div className="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 pointer-events-none">
+        {backgroundJobs.map(job => (
+          <div key={job.id} className="w-80 bg-slate-900 border border-white/10 rounded-2xl p-4 shadow-2xl pointer-events-auto animate-in slide-in-from-right-10">
+            <div className="flex justify-between items-start mb-2">
+              <h4 className="text-[10px] font-black text-white uppercase truncate pr-4">{job.title}</h4>
+              {job.progress === 100 ? <CheckCircle2 className="text-green-500" size={14} /> : <Loader2 className="text-blue-500 animate-spin" size={14} />}
+            </div>
+            <p className="text-[9px] text-blue-400 font-bold uppercase tracking-widest italic mb-2">{job.status}</p>
+            <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
+               <div className="bg-blue-600 h-full transition-all duration-500" style={{ width: `${job.progress}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-lg font-black text-gray-800 uppercase tracking-tight">Solicitações</h1>
             <div className="flex items-center space-x-2">
               <button onClick={syncData} className="p-2 text-gray-400 hover:text-blue-600">{isLoading ? <Loader2 size={18} className="animate-spin" /> : <History size={18} />}</button>
-              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); setLogs([]); }} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md"><Plus size={20} /></button>
+              <button onClick={() => { setIsNew(true); setIsEditing(false); setSelectedId(null); setFormData(initialFormData); setInvoiceFiles([]); setTicketFiles([]); }} className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-md"><Plus size={20} /></button>
             </div>
           </div>
           <div className="relative">
@@ -161,7 +192,7 @@ const DashboardSolicitante: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {filteredRequests.map(req => (
             <button key={req.id} onClick={() => { setSelectedId(req.id); setIsNew(false); }} className={`w-full p-4 rounded-2xl transition-all text-left border-2 ${selectedId === req.id ? 'bg-blue-50 border-blue-600' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}>
-              <div className="flex justify-between items-start mb-2"><span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-2 py-0.5 rounded-md font-mono">#{req.id}</span><Badge status={req.status} /></div>
+              <div className="flex justify-between items-start mb-2"><span className="text-[10px] font-mono font-bold text-blue-600 uppercase tracking-widest bg-blue-100 px-2 py-0.5 rounded-md">#{req.id}</span><Badge status={req.status} /></div>
               <h3 className="font-bold text-gray-900 text-sm mb-1 truncate">{req.title}</h3>
               <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest space-x-3"><span className="flex items-center"><Clock size={12} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span><span className="text-blue-500 italic">{req.branch}</span></div>
             </button>
@@ -175,7 +206,6 @@ const DashboardSolicitante: React.FC = () => {
             <div className="max-w-4xl mx-auto space-y-10 animate-in fade-in duration-300">
               <header className="flex items-center justify-between border-b border-white/10 pb-8">
                 <h2 className="text-3xl font-black uppercase italic tracking-tight">{isEditing ? 'Ajustar Cadastro' : 'Novo Lançamento'}</h2>
-                {uploadStatus && <div className="text-blue-400 font-black uppercase text-[10px] tracking-widest flex items-center bg-white/5 px-4 py-2 rounded-full border border-white/10"><Loader2 className="mr-2 animate-spin" size={12} /> {uploadStatus}</div>}
               </header>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -271,14 +301,6 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
                 </div>
               </div>
-
-              {isLoading && logs.length > 0 && (
-                <div className="bg-black/50 border border-white/10 rounded-2xl p-6 space-y-2 font-mono text-[10px] text-blue-300">
-                  <div className="flex items-center mb-2 text-white font-black uppercase tracking-widest italic opacity-50"><Terminal size={14} className="mr-2" /> Monitor de Operação</div>
-                  {logs.map((log, i) => <div key={i} className="animate-in fade-in slide-in-from-left-1">{log}</div>)}
-                  <div ref={logEndRef} />
-                </div>
-              )}
 
               <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center pb-12">
                 <button onClick={() => setIsNew(false)} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>

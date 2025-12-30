@@ -142,37 +142,33 @@ export const sharepointService = {
 
     const log = (m: string) => { console.log(m); if (onLog) onLog(m); };
 
-    log(`Iniciando upload de ${fileName}...`);
+    log(`Aguardando provisionamento de anexos para ${fileName}...`);
 
     let ready = false;
-    const maxRetries = 10;
+    const maxRetries = 20; // Aumentado para suportar até 2 min de espera total (20 * 6s)
     
-    // LOOP DE PRONTIDÃO: Verifica se o endpoint /attachments existe antes de tentar o POST
     for (let i = 0; i < maxRetries; i++) {
-      log(`Checando prontidão do segmento (tentativa ${i+1}/${maxRetries})...`);
-      
       const check = await fetch(attachmentEndpoint, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
 
       if (check.ok) {
         ready = true;
-        log(`Segmento 'attachments' detectado e pronto.`);
         break;
       }
 
-      const errText = await check.text();
-      if (errText.toLowerCase().includes('not found') || check.status === 404) {
-        log(`SharePoint ainda não provisionou o recurso. Aguardando 5s...`);
-        await delay(5000);
+      const status = check.status;
+      if (status === 404) {
+        log(`SharePoint Offline/Lento (Tentativa ${i+1}/${maxRetries}). Aguardando...`);
+        await delay(6000); // Espera 6 segundos entre tentativas
       } else {
-        throw new Error(`Erro inesperado na verificação: ${await parseGraphError(check)}`);
+        throw new Error(`Erro na API do Graph: ${await parseGraphError(check)}`);
       }
     }
 
-    if (!ready) throw new Error("O SharePoint não liberou o espaço de anexos para este item a tempo.");
+    if (!ready) throw new Error("Tempo limite de 2 minutos excedido. O SharePoint não liberou o espaço de anexos.");
 
-    log(`Executando POST para envio do arquivo...`);
+    log(`Enviando bytes do arquivo...`);
     const resp = await fetch(attachmentEndpoint, {
       method: 'POST',
       headers: { 
@@ -183,25 +179,35 @@ export const sharepointService = {
     });
 
     if (resp.ok) {
-      log(`Sucesso: ${fileName} enviado.`);
+      log(`Sucesso: ${fileName} anexado.`);
       return true;
     }
     
     const finalErr = await parseGraphError(resp);
-    log(`Erro no upload final: ${finalErr}`);
     throw new Error(finalErr);
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${AUX_LIST_ID}/items`;
-    await delay(1000);
+    // Removemos ID_SOLICITACAO para evitar erro 400 e colocamos no Título como redundância
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
+      body: JSON.stringify({ fields: { Title: `BOLETO_REF_${mainRequestId}` } })
     });
     if (!resp.ok) throw new Error(await parseGraphError(resp));
     return await resp.json();
+  },
+
+  updateStatus: async (accessToken: string, itemId: string, status: RequestStatus) => {
+    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
+    const resp = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Status: status })
+    });
+    if (!resp.ok) throw new Error(await parseGraphError(resp));
+    return true;
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {

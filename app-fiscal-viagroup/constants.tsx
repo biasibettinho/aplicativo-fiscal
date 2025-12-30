@@ -11,6 +11,7 @@ export const STATUS_COLORS: Record<RequestStatus, string> = {
   [RequestStatus.LANCADO]: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   [RequestStatus.FATURADO]: 'bg-blue-100 text-blue-700 border-blue-200',
   [RequestStatus.COMPARTILHADO]: 'bg-purple-100 text-purple-700 border-purple-200',
+  [RequestStatus.PROCESSANDO]: 'bg-indigo-100 text-indigo-700 border-indigo-200 animate-pulse',
 };
 
 export const BRANCHES = ['Matriz SP', 'Filial RJ', 'Filial MG', 'Filial RS', 'Filial BA'];
