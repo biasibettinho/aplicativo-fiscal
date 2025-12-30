@@ -50,7 +50,6 @@ export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
-      // Adicionamos expand=attachments para visualizar arquivos já enviados
       let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields,attachments&$top=999`;
 
       while (nextUrl) {
@@ -133,34 +132,51 @@ export const sharepointService = {
   },
 
   uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName: string) => {
-    // IMPORTANTE: Adicionamos um pequeno delay antes do upload. 
-    // Itens recém-criados no SharePoint podem demorar alguns milissegundos para habilitar o segmento de anexos via Graph.
-    await delay(1500); 
-
     const extension = file.name.split('.').pop() || 'pdf';
     const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
-    
-    // Voltamos para v1.0 que é mais estável para essa operação específica
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${accessToken}`, 
-        'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({ 
-        name: fileName, 
-        contentBytes: base64 
-      })
-    });
+    let lastError = '';
+    const maxRetries = 3;
 
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(`Erro no anexo (${fileName}): ${err.error?.message || "Recurso não pronto"}`);
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        // 1. Pequeno delay antes da tentativa (exponencial)
+        await delay(2000 * (i + 1));
+
+        // 2. Tenta "acordar" o item consultando-o primeiro (isso ajuda o Graph a indexar o segmento de attachments)
+        await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        // 3. Tenta o upload
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${accessToken}`, 
+            'Content-Type': 'application/json' 
+          },
+          body: JSON.stringify({ 
+            name: fileName, 
+            contentBytes: base64 
+          })
+        });
+
+        if (resp.ok) return true;
+
+        const err = await resp.json();
+        lastError = err.error?.message || "Erro desconhecido";
+        
+        // Se o erro não for de "segmento não encontrado", não adianta tentar de novo
+        if (!lastError.includes('attachments')) break;
+
+      } catch (e: any) {
+        lastError = e.message;
+      }
     }
-    return true;
+
+    throw new Error(`Falha definitiva no anexo ${fileName}: ${lastError}. O SharePoint ainda não liberou o espaço de arquivos para este item.`);
   },
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string) {
