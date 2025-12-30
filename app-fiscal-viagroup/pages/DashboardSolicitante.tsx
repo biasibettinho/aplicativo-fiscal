@@ -1,184 +1,148 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../App';
-import { PaymentRequest, RequestStatus } from '../types';
 import { requestService } from '../services/requestService';
-import { PAYMENT_METHODS } from '../constants';
-import { 
-  Plus, Search, History, ChevronRight, Clock, Loader2, Calendar, User, CreditCard, Hash, Landmark, Info
-} from 'lucide-react';
+import { PaymentRequest } from '../types';
+import { Layout } from '../components/Layout';
 import Badge from '../components/Badge';
+import { Plus, Search, Paperclip, FileText, Calendar, MapPin } from 'lucide-react';
 
 const DashboardSolicitante: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [isNew, setIsNew] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  
-  const todayStr = new Date().toISOString().split('T')[0];
-
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Carregar dados iniciais
   useEffect(() => {
-    const load = async () => {
-      if (authState.user && authState.token) {
-        const data = await requestService.getRequestsFiltered(authState.user, authState.token);
-        setRequests(data);
+    const loadRequests = async () => {
+      try {
+        setLoading(true);
+        if (authState.user && authState.token) {
+          // Utiliza o serviço filtrado para trazer apenas os pedidos do usuário
+          const data = await requestService.getRequestsFiltered(authState.user, authState.token);
+          setRequests(data);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar pedidos:', error);
+      } finally {
+        setLoading(false);
       }
     };
-    load();
+    loadRequests();
   }, [authState.user, authState.token]);
 
-  // --- LÓGICA DE FILTRO E ORDENAÇÃO CORRIGIDA ---
-  const filteredRequests = useMemo(() => {
-    // 1. Filtragem
-    const filtered = requests.filter(req => {
-      const searchLower = searchTerm.toLowerCase();
-      const matchesSearch = 
-        (req.title?.toLowerCase() || '').includes(searchLower) || 
-        (req.invoiceNumber?.toLowerCase() || '').includes(searchLower) ||
-        (req.id?.toString() || '').includes(searchLower);
-      
-      const reqDate = req.paymentDate; 
-      const matchesDate = (!startDate || reqDate >= startDate) && 
-                          (!endDate || reqDate <= endDate);
-      
-      return matchesSearch && matchesDate;
-    });
-
-    // 2. Ordenação Decrescente Garantida (Maior ID primeiro)
-    return [...filtered].sort((a, b) => {
-      // Força a conversão para número para evitar ordenação de texto (ex: "10" vindo antes de "2")
-      const idA = parseInt(String(a.id), 10) || 0;
-      const idB = parseInt(String(b.id), 10) || 0;
-      
-      // b - a = Ordem Decrescente (Ex: 150, 149, 148...)
-      return idB - idA;
-    });
-  }, [requests, searchTerm, startDate, endDate]);
-
-  const selectedRequest = requests.find(r => r.id === selectedId);
+  const filteredRequests = requests.filter(req => 
+    req.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    req.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div className="flex h-full bg-gray-50 overflow-hidden">
-      {/* Lista Lateral */}
-      <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-xl">
-        <div className="p-6 border-b border-gray-100 bg-white sticky top-0 z-10">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-black text-gray-900 tracking-tighter italic">SISPAG</h1>
-            <button 
-              onClick={() => { setIsNew(true); setSelectedId(null); }}
-              className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-            >
-              <Plus size={20} />
-            </button>
+    <Layout>
+      <div className="p-8 space-y-6 max-w-7xl mx-auto">
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Minhas Solicitações</h1>
+            <p className="text-sm font-medium text-gray-500">Gerencie seus pedidos de pagamento enviados ao fiscal.</p>
           </div>
+          
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-blue-100"
+          >
+            <Plus size={20} />
+            <span>Novo Pedido</span>
+          </button>
+        </div>
 
-          <div className="space-y-3">
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors" size={16} />
-              <input 
-                type="text" 
-                placeholder="Buscar nota ou ID..." 
-                className="w-full pl-11 pr-4 py-3 bg-gray-50 border-0 rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-inner"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-              />
-            </div>
+        {/* Filters & Search */}
+        <div className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center space-x-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+              type="text"
+              placeholder="Pesquisar por Título ou NF..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+            />
+          </div>
+          <div className="text-sm font-bold text-gray-400 px-4">
+            {filteredRequests.length} itens
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-          {filteredRequests.length > 0 ? (
-            filteredRequests.map(req => (
-              <button
-                key={req.id}
-                onClick={() => { setSelectedId(req.id); setIsNew(false); }}
-                className={`w-full p-4 rounded-3xl transition-all text-left border-2 ${
-                  selectedId === req.id 
-                    ? 'bg-white border-blue-600 shadow-xl shadow-blue-50/50 scale-[1.02]' 
-                    : 'bg-white border-transparent hover:border-gray-100 hover:bg-gray-50 shadow-sm'
-                }`}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded-full">
-                    ID #{req.id}
-                  </span>
-                  <Badge status={req.status} />
-                </div>
-                <h3 className="font-bold text-gray-900 text-sm mb-1 truncate">{req.title}</h3>
-                <div className="flex items-center text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
-                  <Calendar size={12} className="mr-1" />
-                  {new Date(req.paymentDate).toLocaleDateString('pt-BR')}
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="py-20 text-center">
-              <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Nenhum resultado</p>
-            </div>
-          )}
+        {/* Tabela de Pedidos - DESIGN RESTAURADO */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">ID / Data</th>
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Descrição NF</th>
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Filial</th>
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-5 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Anexos</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-20 text-center">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      <p className="mt-2 text-sm font-bold text-gray-400 uppercase">Carregando dados...</p>
+                    </td>
+                  </tr>
+                ) : filteredRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-20 text-center text-gray-400 font-medium">
+                      Nenhuma solicitação encontrada.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredRequests.map((req) => (
+                    <tr key={req.id} className="hover:bg-gray-50/80 transition-colors group">
+                      <td className="px-6 py-5">
+                        <div className="text-xs font-mono font-bold text-blue-600">#{req.id}</div>
+                        <div className="flex items-center text-[11px] text-gray-400 mt-1 font-bold">
+                          <Calendar size={12} className="mr-1" />
+                          {new Date(req.createdAt).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{req.title}</div>
+                        <div className="flex items-center text-xs text-gray-500 mt-1">
+                          <FileText size={12} className="mr-1 text-gray-400" />
+                          NF: {req.invoiceNumber}
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <div className="flex items-center text-xs font-bold text-gray-600">
+                          <MapPin size={12} className="mr-1 text-gray-400" />
+                          {req.branch}
+                        </div>
+                      </td>
+                      <td className="px-6 py-5">
+                        <Badge status={req.status} />
+                      </td>
+                      <td className="px-6 py-5">
+                        {/* Indicador de Anexo Inteligente */}
+                        <div className={`flex items-center space-x-1 px-3 py-1 rounded-full w-fit ${req.hasAttachments ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-gray-50 text-gray-400 border border-gray-100'}`}>
+                          <Paperclip size={14} />
+                          <span className="text-[10px] font-black uppercase tracking-tighter">
+                            {req.hasAttachments ? 'Vinculado' : 'Sem Doc'}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
-
-      {/* Área de Conteúdo / Detalhes */}
-      <div className="flex-1 flex flex-col bg-gray-50">
-        {selectedRequest ? (
-          <div className="flex-1 overflow-y-auto p-12">
-            <div className="max-w-4xl mx-auto space-y-8">
-              <div className="flex justify-between items-end border-b border-gray-200 pb-8">
-                <div>
-                  <h2 className="text-4xl font-black text-gray-900 tracking-tighter mb-2">{selectedRequest.title}</h2>
-                  <div className="flex items-center space-x-4">
-                     <Badge status={selectedRequest.status} className="px-4 py-1.5 text-xs" />
-                     <span className="text-sm text-gray-400 font-medium">Lançada em {new Date(selectedRequest.createdAt).toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Grid de Informações */}
-              <div className="grid grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Dados da Nota</p>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-500">NF:</span>
-                      <span className="text-sm font-bold text-gray-900">{selectedRequest.invoiceNumber}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-500">Favorecido:</span>
-                      <span className="text-sm font-bold text-gray-900">{selectedRequest.payee}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Pagamento</p>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-500">Método:</span>
-                      <span className="text-sm font-bold text-gray-900">{selectedRequest.paymentMethod}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-500">Data Prevista:</span>
-                      <span className="text-sm font-bold text-gray-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
-             <h3 className="text-xl font-black text-gray-900 tracking-tight">Selecione uma solicitação</h3>
-             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">A nota mais recente aparecerá no topo da lista à esquerda.</p>
-          </div>
-        )}
-      </div>
-    </div>
+    </Layout>
   );
 };
 
