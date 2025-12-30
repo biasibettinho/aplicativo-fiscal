@@ -32,7 +32,7 @@ const sanitizeFileName = (name: string) => {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[#%*:<>?/|\\"]/g, '')
     .replace(/\s+/g, '_')
-    .substring(0, 100) + '.' + extension;
+    .substring(0, 80) + '.' + extension;
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -48,31 +48,41 @@ export const sharepointService = {
   resolveListIdByName: async (accessToken: string, listName: string, isMain: boolean = true) => {
     if (isMain && CACHED_MAIN_LIST_ID) return CACHED_MAIN_LIST_ID;
     if (!isMain && CACHED_AUX_LIST_ID) return CACHED_AUX_LIST_ID;
+
     try {
       const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists`, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
       const data = await resp.json();
-      const list = data.value?.find((l: any) => 
-        l.displayName.toLowerCase() === listName.toLowerCase() || 
-        l.name.toLowerCase() === listName.toLowerCase() ||
-        (isMain && l.displayName.toLowerCase().includes('sispag'))
+      if (!data.value) throw new Error("Não foi possível listar as tabelas do SharePoint.");
+
+      // Busca flexível: tenta nome exato ou termo contido
+      const list = data.value.find((l: any) => 
+        l.displayName === listName || 
+        l.name === listName ||
+        l.displayName.toLowerCase().includes(listName.toLowerCase()) ||
+        (isMain && l.displayName.toLowerCase().includes('sispag')) ||
+        (!isMain && l.displayName.toLowerCase().includes('aux_anexos'))
       );
+      
       if (list) {
         if (isMain) CACHED_MAIN_LIST_ID = list.id;
         else CACHED_AUX_LIST_ID = list.id;
         return list.id;
       }
-    } catch (e) { console.error(e); }
-    return '';
+      throw new Error(`Lista '${listName}' não encontrada no site.`);
+    } catch (e: any) {
+      console.error("Erro ao resolver lista:", e);
+      throw e;
+    }
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
-    const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
-    if (!listId) return [];
-    let allItems: any[] = [];
-    let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
     try {
+      const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
+      let allItems: any[] = [];
+      let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
+
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
         const data = await response.json();
@@ -111,6 +121,7 @@ export const sharepointService = {
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
     const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    
     const fields: any = {
       Title: data.title,
       [FIELD_MAP.invoiceNumber]: data.invoiceNumber || '',
@@ -127,13 +138,14 @@ export const sharepointService = {
       [FIELD_MAP.generalObservation]: data.generalObservation || '',
       [FIELD_MAP.pixKey]: data.pixKey || '',
     };
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar item no SharePoint");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao salvar no SharePoint");
     return result;
   },
 
@@ -142,11 +154,13 @@ export const sharepointService = {
     const fileName = sanitizeFileName(customName ? `${customName}.${extension}` : file.name);
     const base64 = await fileToBase64(file);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: fileName, contentBytes: base64 })
     });
+
     if (!resp.ok) {
       const err = await resp.json();
       throw new Error(err.error?.message || "Erro no upload do anexo");
@@ -156,15 +170,15 @@ export const sharepointService = {
 
   async createAuxiliaryItem(accessToken: string, mainRequestId: string, title: string) {
     const listId = await sharepointService.resolveListIdByName(accessToken, 'APP_Fiscal_AUX_ANEXOS', false);
-    if (!listId) throw new Error("Lista auxiliar não encontrada.");
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
+    
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
     });
     const result = await resp.json();
-    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro auxiliar");
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro auxiliar de anexos");
     return result;
   },
 

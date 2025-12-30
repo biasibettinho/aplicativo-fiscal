@@ -76,7 +76,7 @@ const DashboardSolicitante: React.FC = () => {
   const handleSave = async () => {
     if (!authState.user || !authState.token || !isFormValid) return;
     setIsLoading(true);
-    setUploadStatus('Iniciando processamento...');
+    setUploadStatus('Processando...');
     
     try {
       const finalData = { ...formData, branch: authState.user?.department || 'Matriz SP' };
@@ -91,35 +91,33 @@ const DashboardSolicitante: React.FC = () => {
         itemId = newReq.id;
       }
 
-      if (!itemId) throw new Error("O servidor não retornou um ID válido. Verifique os campos.");
+      if (!itemId) throw new Error("ID não gerado pelo SharePoint. Verifique as permissões.");
 
-      // Nome base: NF_[Numero] ou SOLIC_[Titulo]
-      const nfNum = formData.invoiceNumber?.trim() || "SEM_NF";
-      const fileNameBase = `NF_${nfNum}`;
+      const nfPrefix = formData.invoiceNumber?.trim() || "SEM_NF";
 
       // Upload Notas Fiscais (Lista Principal)
       if (invoiceFiles.length > 0) {
         const mainListId = await sharepointService.resolveListIdByName(authState.token, 'solicitacoes_sispag_v2', true);
         for (let i = 0; i < invoiceFiles.length; i++) {
-          const customName = invoiceFiles.length > 1 ? `${fileNameBase}_NF_${i + 1}` : `${fileNameBase}_NF`;
-          setUploadStatus(`Enviando NF ${i + 1} de ${invoiceFiles.length}...`);
-          await sharepointService.uploadAttachment(authState.token, mainListId, itemId, invoiceFiles[i], customName);
+          const name = invoiceFiles.length > 1 ? `NF_${nfPrefix}_${i + 1}` : `NF_${nfPrefix}`;
+          setUploadStatus(`Enviando NF ${i + 1}/${invoiceFiles.length}...`);
+          await sharepointService.uploadAttachment(authState.token, mainListId, itemId, invoiceFiles[i], name);
         }
       }
 
       // Upload Boletos (Lista Auxiliar)
       if (ticketFiles.length > 0) {
-        setUploadStatus('Gerando item auxiliar para boletos...');
+        setUploadStatus('Preparando lista de boletos...');
         const auxItem = await sharepointService.createAuxiliaryItem(authState.token, itemId, formData.title || '');
         const auxListId = await sharepointService.resolveListIdByName(authState.token, 'APP_Fiscal_AUX_ANEXOS', false);
         for (let i = 0; i < ticketFiles.length; i++) {
-          const customName = ticketFiles.length > 1 ? `${fileNameBase}_BOLETO_${i + 1}` : `${fileNameBase}_BOLETO`;
-          setUploadStatus(`Enviando Boleto ${i + 1} de ${ticketFiles.length}...`);
-          await sharepointService.uploadAttachment(authState.token, auxListId, auxItem.id, ticketFiles[i], customName);
+          const name = ticketFiles.length > 1 ? `BOLETO_${nfPrefix}_${i + 1}` : `BOLETO_${nfPrefix}`;
+          setUploadStatus(`Enviando Boleto ${i + 1}/${ticketFiles.length}...`);
+          await sharepointService.uploadAttachment(authState.token, auxListId, auxItem.id, ticketFiles[i], name);
         }
       }
 
-      setUploadStatus('Solicitação finalizada com sucesso!');
+      setUploadStatus('Concluído!');
       setTimeout(() => {
         setIsNew(false);
         setIsEditing(false);
@@ -128,12 +126,12 @@ const DashboardSolicitante: React.FC = () => {
         setTicketFiles([]);
         setUploadStatus('');
         syncData();
-      }, 1500);
+      }, 1000);
 
     } catch (e: any) {
       console.error(e);
       alert(`Erro no processo: ${e.message}`);
-      setUploadStatus('Erro ao processar. Tente novamente.');
+      setUploadStatus('Erro no envio');
     } finally {
       setIsLoading(false);
     }
@@ -196,10 +194,15 @@ const DashboardSolicitante: React.FC = () => {
       {/* Conteúdo Principal */}
       <div className={`flex-1 flex flex-col transition-all ${isNew ? 'bg-[#0a0f2b] text-white' : 'bg-gray-50'}`}>
         {isNew ? (
-          <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-            <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex-1 overflow-y-auto p-12 custom-scrollbar relative">
+            {/* LOGO NO TOPO CONFORME SOLICITADO */}
+            <div className="absolute top-8 left-12">
+               <img src="https://viagroup.com.br/assets/via_group-22fac685.png" alt="Via Group" className="h-8 w-auto brightness-200 opacity-60" />
+            </div>
+
+            <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pt-10">
               <header className="flex items-center justify-between border-b border-white/10 pb-6">
-                <h2 className="text-4xl font-black tracking-tighter uppercase italic">{isEditing ? 'Editar Solicitação' : 'Nova Solicitação'}</h2>
+                <h2 className="text-4xl font-black tracking-tighter uppercase italic">{isEditing ? 'Editar Nota' : 'Nova Solicitação'}</h2>
                 {uploadStatus && <div className="flex items-center text-blue-300 font-black animate-pulse uppercase text-xs tracking-widest bg-white/5 px-4 py-2 rounded-full border border-white/10"><Loader2 className="mr-2 animate-spin" size={14} /> {uploadStatus}</div>}
               </header>
 
@@ -220,7 +223,7 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Data de Vencimento</label>
-                  <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-2xl p-4 outline-none text-white" />
+                  <input type="date" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-2xl p-4 outline-none text-white cursor-pointer" />
                 </div>
                 <div>
                   <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Nº Pedidos / Ordens</label>
@@ -228,26 +231,26 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* Campos de Pagamento Dinâmicos */}
+              {/* DADOS BANCÁRIOS COMPLETOS */}
               {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'PIX') && (
-                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6 animate-in fade-in duration-300">
-                  <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={18} className="mr-2" /> Dados de Recebimento</h3>
+                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6 animate-in fade-in duration-300 shadow-2xl">
+                  <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><Landmark size={18} className="mr-2" /> Dados Bancários do Recebedor</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="md:col-span-2">
                        <label className="block text-[10px] font-black uppercase text-white/40 mb-2 italic">Favorecido (Nome/Razão Social)</label>
-                       <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none text-white" />
+                       <input type="text" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} className="w-full bg-white/10 border border-white/10 rounded-xl p-3 outline-none text-white" />
                     </div>
                     {formData.paymentMethod === 'PIX' ? (
                        <div className="md:col-span-2">
                           <label className="block text-[10px] font-black uppercase text-white/40 mb-2 italic">Chave PIX</label>
-                          <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 outline-none text-white font-mono" placeholder="CPF, E-mail, Celular ou Aleatória" />
+                          <input type="text" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} className="w-full bg-white/10 border border-white/10 rounded-xl p-3 outline-none text-white font-mono" placeholder="CPF, E-mail, Celular ou Aleatória" />
                        </div>
                     ) : (
                       <>
-                        <input type="text" placeholder="Banco" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="bg-white/5 p-3 rounded-xl border border-white/10 text-white outline-none" />
-                        <input type="text" placeholder="Agência" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="bg-white/5 p-3 rounded-xl border border-white/10 text-white outline-none" />
-                        <input type="text" placeholder="Conta" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="bg-white/5 p-3 rounded-xl border border-white/10 text-white outline-none" />
-                        <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="bg-white/5 p-3 rounded-xl border border-white/10 text-white outline-none">
+                        <input type="text" placeholder="Banco" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} className="bg-white/10 p-3 rounded-xl border border-white/10 text-white outline-none" />
+                        <input type="text" placeholder="Agência" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} className="bg-white/10 p-3 rounded-xl border border-white/10 text-white outline-none" />
+                        <input type="text" placeholder="Conta" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} className="bg-white/10 p-3 rounded-xl border border-white/10 text-white outline-none" />
+                        <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="bg-white/10 p-3 rounded-xl border border-white/10 text-white outline-none">
                            <option value="Conta Corrente" className="bg-slate-900">Conta Corrente</option>
                            <option value="Conta Poupança" className="bg-slate-900">Conta Poupança</option>
                         </select>
@@ -259,39 +262,39 @@ const DashboardSolicitante: React.FC = () => {
 
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-black uppercase text-blue-300 mb-2 italic tracking-widest">Observações Adicionais</label>
-                <textarea rows={3} value={formData.generalObservation} onChange={e => setFormData({...formData, generalObservation: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-2xl p-4 outline-none text-white resize-none" />
+                <textarea rows={3} value={formData.generalObservation} onChange={e => setFormData({...formData, generalObservation: e.target.value})} className="w-full bg-white/5 border border-white/20 rounded-2xl p-4 outline-none text-white resize-none" placeholder="Informe qualquer detalhe relevante para o fiscal/financeiro..." />
               </div>
 
-              {/* Seção de Anexos */}
+              {/* SEÇÃO DE ANEXOS COM RENOMEAÇÃO */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
+                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4 shadow-xl">
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><FileText size={18} className="mr-2" /> Notas Fiscais (PDF)</h3>
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-8 hover:bg-white/10 cursor-pointer transition-all">
                     <Paperclip size={32} className="text-blue-300 mb-2 opacity-30" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Adicionar Arquivos</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Clique para Adicionar</span>
                     <input type="file" multiple className="hidden" onChange={e => setInvoiceFiles(Array.from(e.target.files || []))} />
                   </label>
                   <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
                     {invoiceFiles.map((f, i) => (
                       <div key={i} className="flex justify-between items-center text-[10px] bg-white/5 p-3 rounded-xl border border-white/10">
-                        <span className="truncate flex-1">{f.name}</span>
+                        <span className="truncate flex-1 font-mono">{f.name}</span>
                         <button onClick={() => setInvoiceFiles(invoiceFiles.filter((_, idx) => idx !== i))} className="ml-2 text-red-400 hover:text-red-300"><X size={14} /></button>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4">
+                <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-4 shadow-xl">
                   <h3 className="text-xs font-black uppercase tracking-widest flex items-center text-blue-300 italic"><CreditCard size={18} className="mr-2" /> Boletos / Comprovantes</h3>
                   <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-8 hover:bg-white/10 cursor-pointer transition-all">
                     <Paperclip size={32} className="text-blue-300 mb-2 opacity-30" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Adicionar Arquivos</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Clique para Adicionar</span>
                     <input type="file" multiple className="hidden" onChange={e => setTicketFiles(Array.from(e.target.files || []))} />
                   </label>
                   <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
                     {ticketFiles.map((f, i) => (
                       <div key={i} className="flex justify-between items-center text-[10px] bg-white/5 p-3 rounded-xl border border-white/10">
-                        <span className="truncate flex-1">{f.name}</span>
+                        <span className="truncate flex-1 font-mono">{f.name}</span>
                         <button onClick={() => setTicketFiles(ticketFiles.filter((_, idx) => idx !== i))} className="ml-2 text-red-400 hover:text-red-300"><X size={14} /></button>
                       </div>
                     ))}
@@ -299,21 +302,25 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center">
+              <div className="pt-8 border-t border-white/10 flex justify-end space-x-6 items-center pb-10">
                 <button onClick={() => { setIsNew(false); }} className="font-black uppercase text-[10px] tracking-widest text-white/40 hover:text-white transition-colors">Cancelar</button>
                 <button onClick={handleSave} disabled={!isFormValid || isLoading} className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs flex items-center disabled:opacity-30 shadow-2xl transition-all active:scale-95">
                   {isLoading ? <Loader2 className="animate-spin mr-3" /> : <Send size={18} className="mr-3" />}
-                  {isEditing ? 'Atualizar Dados' : 'Enviar Solicitação'}
+                  {isEditing ? 'Atualizar Solicitação' : 'Enviar Solicitação'}
                 </button>
               </div>
             </div>
           </div>
         ) : selectedRequest ? (
-          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
-            <header className="p-12 border-b border-gray-200 bg-white flex justify-between items-end shadow-sm">
+          <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300 relative">
+             <div className="absolute top-8 left-12">
+               <img src="https://viagroup.com.br/assets/via_group-22fac685.png" alt="Via Group" className="h-6 w-auto opacity-20 grayscale" />
+            </div>
+
+            <header className="p-12 pt-20 border-b border-gray-200 bg-white flex justify-between items-end shadow-sm">
               <div>
                 <div className="flex items-center space-x-3 mb-4">
-                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Protocolo: #{selectedRequest.id}</span>
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest font-mono">Protocolo: #{selectedRequest.id}</span>
                   <Badge status={selectedRequest.status} />
                 </div>
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">{selectedRequest.title}</h2>
@@ -347,10 +354,14 @@ const DashboardSolicitante: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-300 text-center animate-in fade-in duration-700">
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-300 text-center animate-in fade-in duration-700 relative">
+            <div className="absolute top-8 left-12">
+               <img src="https://viagroup.com.br/assets/via_group-22fac685.png" alt="Via Group" className="h-8 w-auto opacity-10" />
+            </div>
+            
             <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl border border-gray-100 mb-8 flex flex-col items-center">
                <img src="https://viagroup.com.br/assets/via_group-22fac685.png" alt="Via Group" className="h-12 w-auto mb-8 opacity-20 grayscale" />
-               <Banknote size={100} className="text-blue-100 animate-bounce duration-[3000ms]" />
+               <Banknote size={100} className="text-blue-100 animate-pulse duration-[3000ms]" />
             </div>
             <h3 className="text-2xl font-black text-gray-900 tracking-tight">Painel do Solicitante</h3>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-2 max-w-xs">Selecione uma nota à esquerda para gerenciar ou clique em Novo para iniciar um fluxo.</p>
