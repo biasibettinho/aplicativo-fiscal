@@ -33,6 +33,33 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export const sharepointService = {
+  /**
+   * Captura o binário do anexo e gera uma URL local segura.
+   * Utilizamos o endpoint /$value para obter os bytes diretos.
+   */
+  getAttachmentBlobUrl: async (accessToken: string, listId: string, itemId: string, attachmentId: string): Promise<string> => {
+    try {
+      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
+      const response = await fetch(url, { 
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          'Accept': '*/*' 
+        } 
+      });
+      
+      if (!response.ok) {
+        console.warn(`Falha ao baixar binário do anexo ${attachmentId} (Status: ${response.status})`);
+        return '';
+      }
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.error("Erro técnico ao processar download do anexo:", e);
+      return '';
+    }
+  },
+
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
@@ -78,40 +105,26 @@ export const sharepointService = {
     }
   },
 
-  getAttachmentUrl: async (accessToken: string, listId: string, itemId: string, attachment: any): Promise<string> => {
-    try {
-      // Tenta conteúdo binário primeiro (Geralmente mais estável para PDF)
-      const valueUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachment.id}/$value`;
-      const response = await fetch(valueUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-      
-      if (response.ok) {
-        const blob = await response.blob();
-        return URL.createObjectURL(blob);
-      }
-      
-      // Se falhar o binário, tenta a URL de download que às vezes vem no objeto
-      if (attachment['@microsoft.graph.downloadUrl']) {
-        return attachment['@microsoft.graph.downloadUrl'];
-      }
-      
-      return '';
-    } catch (e) {
-      console.error("Erro ao processar anexo:", attachment.name, e);
-      return '';
-    }
-  },
-
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
+      // Endpoint oficial de anexos para itens de lista
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
       
-      if (!data.value || data.value.length === 0) return [];
+      if (!data.value || data.value.length === 0) {
+        console.log(`Nenhum anexo encontrado para o item ${itemId} via Graph API.`);
+        return [];
+      }
 
       const attachments = await Promise.all(data.value.map(async (a: any) => {
-        const finalUrl = await sharepointService.getAttachmentUrl(accessToken, MAIN_LIST_ID, itemId, a);
+        const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, MAIN_LIST_ID, itemId, a.id);
+        
+        // Fallback: se o binário falhar, usamos a URL de download original se disponível
+        const finalUrl = blobUrl || a['@microsoft.graph.downloadUrl'] || '';
+        
         if (!finalUrl) return null;
+
         return {
           id: a.id,
           requestId: itemId,
@@ -126,22 +139,27 @@ export const sharepointService = {
       
       return attachments.filter(a => a !== null) as Attachment[];
     } catch (e) {
-      console.error(`Erro ao buscar anexos do item ${itemId}:`, e);
+      console.error(`Erro crítico ao buscar anexos do item ${itemId}:`, e);
       return [];
     }
   },
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Lookup ID_SOL
+      // Lookup na lista de boletos pelo campo ID_SOL
       const filterStr = `fields/ID_SOL eq '${requestId}'`;
       const lookupUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterStr}`;
       
-      const response = await fetch(lookupUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const response = await fetch(lookupUrl, { 
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          'Prefer': 'HonorNonIndexedQueriesWarningMayFail'
+        } 
+      });
       const data = await response.json();
       let items = data.value || [];
 
-      // Fallback numérico
+      // Fallback para filtro numérico se string falhar (coluna Number no SharePoint)
       if (items.length === 0) {
         const filterNum = `fields/ID_SOL eq ${requestId}`;
         const resNum = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterNum}`, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -152,13 +170,14 @@ export const sharepointService = {
       const allAttachments: Attachment[] = [];
 
       for (const item of items) {
-        // Para cada item encontrado no lookup, buscamos os anexos dele
         const attRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`, { headers: { Authorization: `Bearer ${accessToken}` } });
         const attData = await attRes.json();
         
         if (attData.value) {
           const processed = await Promise.all(attData.value.map(async (a: any) => {
-            const finalUrl = await sharepointService.getAttachmentUrl(accessToken, SECONDARY_LIST_ID, item.id, a);
+            const blobUrl = await sharepointService.getAttachmentBlobUrl(accessToken, SECONDARY_LIST_ID, item.id, a.id);
+            const finalUrl = blobUrl || a['@microsoft.graph.downloadUrl'] || '';
+
             if (!finalUrl) return null;
             return {
               id: a.id,
@@ -177,7 +196,7 @@ export const sharepointService = {
       
       return allAttachments;
     } catch (e) {
-      console.error(`Erro no lookup secundário para ${requestId}:`, e);
+      console.error(`Erro crítico no lookup de anexos secundários para ${requestId}:`, e);
       return [];
     }
   },
