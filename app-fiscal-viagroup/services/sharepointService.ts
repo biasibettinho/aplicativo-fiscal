@@ -1,10 +1,10 @@
 
 import { PaymentRequest, RequestStatus } from '../types';
 
-// Site ID global (hostname,siteCollectionId,siteId) para evitar erros de caminho relativo
+// Site ID global (hostname,siteCollectionId,siteId)
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
-// IDs únicos das listas fornecidos pelo usuário
+// IDs das listas (GUIDs)
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const AUX_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
@@ -48,7 +48,6 @@ export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
       let allItems: any[] = [];
-      // Acesso direto via Site ID e List ID para máxima estabilidade
       let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=999`;
 
       while (nextUrl) {
@@ -86,6 +85,11 @@ export const sharepointService = {
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: item.createdBy?.user?.id || 'unknown',
           createdByName: item.createdBy?.user?.displayName || 'Sistema',
+          attachments: (item.attachments || []).map((a: any) => ({
+            id: a.id,
+            fileName: a.name,
+            storageUrl: a.contentBytes // O Graph retorna o conteúdo ou a URL dependendo da expansão
+          }))
         };
       });
     } catch (e: any) {
@@ -129,17 +133,27 @@ export const sharepointService = {
     const extension = file.name.split('.').pop() || 'pdf';
     const fileName = `${sanitizeFileName(customName)}.${extension}`;
     const base64 = await fileToBase64(file);
-    const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
+    
+    // IMPORTANTE: O uso do endpoint 'beta' resolve o erro "Resource not found for the segment 'attachments'" 
+    // em muitos tenants do SharePoint onde o v1.0 falha na descoberta do sub-recurso.
+    const url = `https://graph.microsoft.com/beta/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
 
     const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: fileName, contentBytes: base64 })
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ 
+        name: fileName, 
+        contentBytes: base64 
+      })
     });
 
     if (!resp.ok) {
       const err = await resp.json();
-      throw new Error(err.error?.message || "Erro no upload do anexo.");
+      // Caso o erro persista, informamos detalhadamente
+      throw new Error(err.error?.message || `Erro no upload do anexo ${fileName}`);
     }
     return true;
   },
