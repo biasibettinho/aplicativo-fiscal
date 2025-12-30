@@ -48,8 +48,7 @@ const Login: React.FC = () => {
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-gray-50/50 py-12 px-10 shadow-2xl rounded-[3.5rem] border border-gray-100 flex flex-col items-center relative overflow-hidden">
-          {/* Decorative element */}
+        <div className="bg-gray-50 py-12 px-10 shadow-2xl rounded-[3.5rem] border border-gray-100 flex flex-col items-center relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-blue-600/5 rounded-full -mr-12 -mt-12"></div>
           
           <button
@@ -65,7 +64,7 @@ const Login: React.FC = () => {
             ENTRAR COM CONTA MICROSOFT
           </button>
 
-          {error && error.includes('URL não autorizada') && (
+          {error && (
             <div className="w-full mb-6 bg-amber-50 border border-amber-200 rounded-2xl p-4">
               <p className="text-[10px] font-bold text-amber-700 uppercase mb-2 leading-tight">{error}</p>
               <div className="flex items-center bg-white rounded-lg p-2 border border-amber-100">
@@ -82,7 +81,7 @@ const Login: React.FC = () => {
 
           {!error && (
             <p className="text-center text-gray-400 text-[10px] font-bold uppercase tracking-widest max-w-[280px] leading-relaxed">
-              Autenticação obrigatória via Microsoft 365 para acesso ao portal de lançamentos.
+              Autenticação obrigatória via Microsoft 365 para acesso ao portal.
             </p>
           )}
 

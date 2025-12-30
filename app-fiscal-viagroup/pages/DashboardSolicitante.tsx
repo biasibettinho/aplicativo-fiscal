@@ -52,17 +52,19 @@ const DashboardSolicitante: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
     const fetchAllAttachments = async () => {
+      // Limpa Blobs antigos
+      mainAttachments.forEach(a => URL.revokeObjectURL(a.storageUrl));
+      secondaryAttachments.forEach(a => URL.revokeObjectURL(a.storageUrl));
+
       if (selectedId && authState.token) {
         setIsFetchingAttachments(true);
         try {
-          // Chamadas em paralelo para otimizar tempo
           const [main, secondary] = await Promise.all([
             sharepointService.getItemAttachments(authState.token, selectedId),
             sharepointService.getSecondaryAttachments(authState.token, selectedId)
           ]);
           
           if (isMounted) {
-            console.log(`Anexos carregados para ${selectedId}:`, { main, secondary });
             setMainAttachments(main || []);
             setSecondaryAttachments(secondary || []);
           }
@@ -101,11 +103,10 @@ const DashboardSolicitante: React.FC = () => {
         
         sharepointService.triggerPowerAutomateUpload(itemId, formData.invoiceNumber || itemId, invoiceFiles, ticketFiles)
           .then(() => {
-             setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'Integrando ao SharePoint (1 min)...', progress: 100 } : j));
+             setBackgroundJobs(prev => prev.map(j => j.id === jobId ? { ...j, status: 'Sincronizando (1 min)...', progress: 100 } : j));
              setTimeout(() => { 
                 setBackgroundJobs(prev => prev.filter(j => j.id !== jobId)); 
                 syncData(); 
-                // Se o item enviado for o selecionado, recarrega anexos
                 if (selectedId === itemId) {
                    setSelectedId(null);
                    setTimeout(() => setSelectedId(itemId), 500);
@@ -119,7 +120,7 @@ const DashboardSolicitante: React.FC = () => {
 
   const handleViewFile = (url: string) => {
     if (!url) {
-      alert("URL do anexo não disponível.");
+      alert("Arquivo ainda não disponível ou sendo baixado.");
       return;
     }
     window.open(url, '_blank');
@@ -331,7 +332,7 @@ const DashboardSolicitante: React.FC = () => {
               <div className="bg-white p-12 rounded-[3.5rem] border-2 border-gray-100 shadow-2xl relative">
                 <div className="flex items-center justify-between mb-10 border-b pb-6">
                   <h3 className="text-2xl font-black text-slate-900 uppercase italic flex items-center"><FileText size={28} className="mr-4 text-blue-600"/> Documentação e Anexos</h3>
-                  {isFetchingAttachments && <div className="flex items-center text-blue-600 font-bold uppercase text-xs animate-pulse"><Loader2 className="animate-spin mr-2" /> Carregando arquivos...</div>}
+                  {isFetchingAttachments && <div className="flex items-center text-blue-600 font-bold uppercase text-xs animate-pulse"><Loader2 className="animate-spin mr-2" /> Baixando arquivos da nuvem...</div>}
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
                    <div className="space-y-12">
@@ -349,7 +350,7 @@ const DashboardSolicitante: React.FC = () => {
                              </div>
                            ))}
                          </div>
-                       ) : !isFetchingAttachments ? <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 font-bold italic uppercase text-[10px]">Nenhuma NF vinculada no SharePoint</div> : null}
+                       ) : !isFetchingAttachments ? <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 font-bold italic uppercase text-[10px]">Nenhuma NF disponível</div> : null}
                      </div>
 
                      <div>
@@ -366,12 +367,12 @@ const DashboardSolicitante: React.FC = () => {
                              </div>
                            ))}
                          </div>
-                       ) : !isFetchingAttachments ? <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 font-bold italic uppercase text-[10px]">Sem boletos pendentes via lookup</div> : null}
+                       ) : !isFetchingAttachments ? <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 font-bold italic uppercase text-[10px]">Sem boletos vinculados</div> : null}
                      </div>
                    </div>
                    <div className="bg-gray-50/50 p-10 rounded-[3rem] border border-gray-100 shadow-inner">
                       <span className="text-xs font-black text-gray-400 uppercase block mb-4 italic">Observações Internas</span>
-                      <p className="text-2xl font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Nenhuma instrução adicional.'}"</p>
+                      <p className="text-2xl font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
                    </div>
                 </div>
               </div>
@@ -381,7 +382,7 @@ const DashboardSolicitante: React.FC = () => {
           <div className="flex-1 flex flex-col items-center justify-center text-center p-20 animate-pulse">
             <div className="bg-white p-16 rounded-[4.5rem] shadow-2xl border border-gray-50 mb-10"><Banknote size={120} className="text-blue-100" /></div>
             <h3 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter">Fluxo de Notas</h3>
-            <p className="text-lg font-bold text-gray-400 uppercase tracking-widest mt-6 max-w-sm leading-relaxed">Acesse o menu lateral para conferir o status e os documentos das suas solicitações.</p>
+            <p className="text-lg font-bold text-gray-400 uppercase tracking-widest mt-6 max-w-sm leading-relaxed">Selecione uma nota fiscal no painel à esquerda.</p>
           </div>
         )}
       </div>

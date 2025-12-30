@@ -8,7 +8,7 @@ const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 const FIELD_MAP = {
   title: 'Title',
   invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
-  orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
+  orderNumbers: 'Qualopedido_x0028_x0029__x003f', // Corrigido encoding
   status: 'Status',
   branch: 'Filial',
   generalObservation: 'Observa_x00e7__x00e3_o',
@@ -53,7 +53,7 @@ export const sharepointService = {
           title: f.Title || 'Sem Título',
           branch: f[FIELD_MAP.branch] || '',
           status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
-          orderNumbers: f[FIELD_MAP.orderNumbers] || '',
+          orderNumbers: f['Qualopedido_x0028_s_x0029__x003f'] || f[FIELD_MAP.orderNumbers] || '',
           invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
           payee: f[FIELD_MAP.payee] || '',
           paymentMethod: f[FIELD_MAP.paymentMethod] || '',
@@ -78,26 +78,42 @@ export const sharepointService = {
     }
   },
 
+  getAttachmentBlob: async (accessToken: string, listId: string, itemId: string, attachmentId: string): Promise<string> => {
+    try {
+      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments/${attachmentId}/$value`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!response.ok) throw new Error("Falha no download");
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      console.error("Erro ao gerar Blob de anexo:", e);
+      return '';
+    }
+  },
+
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
-      // O endpoint de attachments do item retorna metadados, incluindo a URL de download
       const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
       
       if (!data.value) return [];
 
-      return data.value.map((a: any) => ({
-        id: a.id,
-        requestId: itemId,
-        fileName: a.name,
-        type: 'invoice_pdf',
-        mimeType: 'application/pdf',
-        size: 0,
-        // O Graph retorna '@microsoft.graph.downloadUrl' para o conteúdo direto
-        storageUrl: a['@microsoft.graph.downloadUrl'] || '',
-        createdAt: new Date().toISOString()
+      const attachments = await Promise.all(data.value.map(async (a: any) => {
+        const blobUrl = await sharepointService.getAttachmentBlob(accessToken, MAIN_LIST_ID, itemId, a.id);
+        return {
+          id: a.id,
+          requestId: itemId,
+          fileName: a.name,
+          type: 'invoice_pdf',
+          mimeType: 'application/pdf',
+          size: 0,
+          storageUrl: blobUrl,
+          createdAt: new Date().toISOString()
+        };
       }));
+      
+      return attachments.filter(a => !!a.storageUrl) as Attachment[];
     } catch (e) {
       console.error(`Erro ao buscar anexos do item ${itemId}:`, e);
       return [];
@@ -106,42 +122,48 @@ export const sharepointService = {
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // Busca exata por ID_SOL na lista secundária
-      // Tentamos o filtro com aspas (String)
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq '${requestId}'`;
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-      const data = await response.json();
-      
-      let items = data.value || [];
+      // Lookup ID_SOL (tenta como string e como número)
+      let items: any[] = [];
+      const filterStr = `fields/ID_SOL eq '${requestId}'`;
+      const filterNum = `fields/ID_SOL eq ${requestId}`;
 
-      // Fallback: Tentamos sem aspas (caso o campo ID_SOL seja do tipo Number no SharePoint)
+      const resStr = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterStr}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const dataStr = await resStr.json();
+      items = dataStr.value || [];
+
       if (items.length === 0) {
-        const urlNum = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=fields/ID_SOL eq ${requestId}`;
-        const respNum = await fetch(urlNum, { headers: { Authorization: `Bearer ${accessToken}` } });
-        const dataNum = await respNum.json();
+        const resNum = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filterNum}`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const dataNum = await resNum.json();
         items = dataNum.value || [];
       }
-      
-      const attachments: Attachment[] = [];
-      items.forEach((item: any) => {
-        if (item.attachments) {
-          item.attachments.forEach((a: any) => {
-            attachments.push({
+
+      const allAttachments: Attachment[] = [];
+
+      for (const item of items) {
+        const attRes = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`, { headers: { Authorization: `Bearer ${accessToken}` } });
+        const attData = await attRes.json();
+        
+        if (attData.value) {
+          const processed = await Promise.all(attData.value.map(async (a: any) => {
+            const blobUrl = await sharepointService.getAttachmentBlob(accessToken, SECONDARY_LIST_ID, item.id, a.id);
+            return {
               id: a.id,
               requestId: requestId,
               fileName: a.name,
               type: 'boleto',
               mimeType: 'application/pdf',
               size: 0,
-              storageUrl: a['@microsoft.graph.downloadUrl'] || '',
+              storageUrl: blobUrl,
               createdAt: item.createdDateTime
-            });
-          });
+            };
+          }));
+          allAttachments.push(...processed.filter(a => !!a.storageUrl));
         }
-      });
-      return attachments;
+      }
+      
+      return allAttachments;
     } catch (e) {
-      console.error(`Erro no lookup de anexos secundários para ${requestId}:`, e);
+      console.error(`Erro no lookup secundário para ${requestId}:`, e);
       return [];
     }
   },
@@ -151,7 +173,7 @@ export const sharepointService = {
     const fields: any = {
       Title: data.title,
       [FIELD_MAP.invoiceNumber]: data.invoiceNumber || '',
-      [FIELD_MAP.orderNumbers]: data.orderNumbers || '',
+      'Qualopedido_x0028_s_x0029__x003f': data.orderNumbers || '',
       [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
       [FIELD_MAP.branch]: data.branch || 'Matriz SP',
       [FIELD_MAP.paymentMethod]: data.paymentMethod,
