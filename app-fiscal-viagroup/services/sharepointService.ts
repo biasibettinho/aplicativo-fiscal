@@ -17,31 +17,22 @@ const FIELD_MAP = {
   paymentDate: 'DATA_PAG',
   payee: 'PESSOA',
   statusManual: 'STATUS_ESPELHO_MANUAL',
-  errorType: 'OBS_ERRO',
-  errorObservation: 'OBS_CRIACAO',
-  sharedWithUserId: 'SHARED_WITH',
-  shareComment: 'COMENT_SHARE',
   bank: 'BANCO',
   agency: 'AGENCIA',
   account: 'CONTA',
   accountType: 'TIPO_CONTA'
 };
 
-/**
- * Sanitiza o nome do arquivo para o SharePoint
- */
 const sanitizeFileName = (name: string) => {
   const parts = name.split('.');
   const extension = parts.length > 1 ? parts.pop() : 'pdf';
   const baseName = parts.join('.');
-  
   return baseName
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove acentos
-    .replace(/[#%*:<>?/|\\"]/g, '') // Caracteres proibidos no SharePoint
-    .replace(/\s+/g, '_')           // Espaços por underline
-    .substring(0, 100)              // Limite de caracteres
-    + '.' + extension;
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[#%*:<>?/|\\"]/g, '')
+    .replace(/\s+/g, '_')
+    .substring(0, 100) + '.' + extension;
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -57,7 +48,6 @@ export const sharepointService = {
   resolveListIdByName: async (accessToken: string, listName: string, isMain: boolean = true) => {
     if (isMain && CACHED_MAIN_LIST_ID) return CACHED_MAIN_LIST_ID;
     if (!isMain && CACHED_AUX_LIST_ID) return CACHED_AUX_LIST_ID;
-
     try {
       const resp = await fetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists`, {
         headers: { Authorization: `Bearer ${accessToken}` }
@@ -68,25 +58,20 @@ export const sharepointService = {
         l.name.toLowerCase() === listName.toLowerCase() ||
         (isMain && l.displayName.toLowerCase().includes('sispag'))
       );
-      
       if (list) {
         if (isMain) CACHED_MAIN_LIST_ID = list.id;
         else CACHED_AUX_LIST_ID = list.id;
         return list.id;
       }
-    } catch (e) {
-      console.error(`Erro ao resolver lista ${listName}:`, e);
-    }
+    } catch (e) { console.error(e); }
     return '';
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
     if (!listId) return [];
-    
     let allItems: any[] = [];
     let nextUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items?expand=fields&$top=999`;
-
     try {
       while (nextUrl) {
         const response = await fetch(nextUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
@@ -126,47 +111,42 @@ export const sharepointService = {
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
     const listId = await sharepointService.resolveListIdByName(accessToken, 'solicitacoes_sispag_v2', true);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
-    
     const fields: any = {
       Title: data.title,
-      [FIELD_MAP.invoiceNumber]: data.invoiceNumber,
-      [FIELD_MAP.orderNumbers]: data.orderNumbers,
+      [FIELD_MAP.invoiceNumber]: data.invoiceNumber || '',
+      [FIELD_MAP.orderNumbers]: data.orderNumbers || '',
       [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
-      [FIELD_MAP.branch]: data.branch,
+      [FIELD_MAP.branch]: data.branch || 'Matriz SP',
       [FIELD_MAP.paymentMethod]: data.paymentMethod,
       [FIELD_MAP.paymentDate]: data.paymentDate,
-      [FIELD_MAP.payee]: data.payee,
-      [FIELD_MAP.bank]: data.bank,
-      [FIELD_MAP.agency]: data.agency,
-      [FIELD_MAP.account]: data.account,
-      [FIELD_MAP.accountType]: data.accountType,
-      [FIELD_MAP.generalObservation]: data.generalObservation,
-      [FIELD_MAP.pixKey]: data.pixKey,
+      [FIELD_MAP.payee]: data.payee || '',
+      [FIELD_MAP.bank]: data.bank || '',
+      [FIELD_MAP.agency]: data.agency || '',
+      [FIELD_MAP.account]: data.account || '',
+      [FIELD_MAP.accountType]: data.accountType || 'Conta Corrente',
+      [FIELD_MAP.generalObservation]: data.generalObservation || '',
+      [FIELD_MAP.pixKey]: data.pixKey || '',
     };
-
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields })
     });
-    return resp.json();
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar item no SharePoint");
+    return result;
   },
 
   uploadAttachment: async (accessToken: string, listId: string, itemId: string, file: File, customName?: string) => {
-    // Se customName for passado, usa ele preservando a extensão original
     const extension = file.name.split('.').pop();
-    const fileNameToSanitize = customName ? `${customName}.${extension}` : file.name;
-    const fileName = sanitizeFileName(fileNameToSanitize);
-    
+    const fileName = sanitizeFileName(customName ? `${customName}.${extension}` : file.name);
     const base64 = await fileToBase64(file);
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items/${itemId}/attachments`;
-
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: fileName, contentBytes: base64 })
     });
-
     if (!resp.ok) {
       const err = await resp.json();
       throw new Error(err.error?.message || "Erro no upload do anexo");
@@ -177,14 +157,15 @@ export const sharepointService = {
   async createAuxiliaryItem(accessToken: string, mainRequestId: string, title: string) {
     const listId = await sharepointService.resolveListIdByName(accessToken, 'APP_Fiscal_AUX_ANEXOS', false);
     if (!listId) throw new Error("Lista auxiliar não encontrada.");
-    
     const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${listId}/items`;
     const resp = await fetch(url, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { Title: `Boleto Ref ID: ${mainRequestId}`, ID_SOLICITACAO: mainRequestId } })
     });
-    return resp.json();
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error?.message || "Erro ao criar registro auxiliar");
+    return result;
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
