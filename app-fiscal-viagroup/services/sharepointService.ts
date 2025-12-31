@@ -2,15 +2,12 @@
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
 const TENANT = 'vialacteoscombr.sharepoint.com';
-// CORREÇÃO: O site real descoberto no log é /sites/Powerapps
 const SITE_PATH = '/sites/Powerapps'; 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
-// IDs das Listas (GUIDs)
+// IDs das Listas
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
-
-// Nome Interno verificado no log
 const MAIN_LIST_TITLE = 'Lista APP Fiscal'; 
 
 const FIELD_MAP = {
@@ -46,13 +43,12 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
   return res;
 }
 
-/**
- * Utilitário SharePoint REST atualizado com o SITE_PATH correto
- */
 async function spFetch(endpoint: string, accessToken: string, options: RequestInit = {}) {
   const baseUrl = `https://${TENANT}${SITE_PATH}`;
   const url = `${baseUrl}${endpoint}`;
   
+  console.log(`%c[SP REST CALL] ${url}`, "color: #8b5cf6; font-size: 10px;");
+
   const headers: any = {
     Authorization: `Bearer ${accessToken}`,
     "Accept": "application/json;odata=verbose",
@@ -72,8 +68,13 @@ export const sharepointService = {
       const data = await response.json();
       return (data.value || []).map((item: any) => {
         const f = item.fields || {};
-        const numericId = f.id || f.ID || parseInt(item.id, 10);
+        // IMPORTANTE: f.ID é o ID numérico do SharePoint. item.id é o ID do Graph.
+        const numericId = f.ID || f.id || parseInt(item.id, 10);
         const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || '';
+
+        // Parsing seguro de data
+        let pDate = f[FIELD_MAP.paymentDate] || '';
+        if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
         return {
           id: numericId.toString(),
@@ -86,7 +87,7 @@ export const sharepointService = {
           payee: f[FIELD_MAP.payee] || '',
           paymentMethod: f[FIELD_MAP.paymentMethod] || '',
           pixKey: f[FIELD_MAP.pixKey] || '',
-          paymentDate: f[FIELD_MAP.paymentDate] || '',
+          paymentDate: pDate,
           bank: f[FIELD_MAP.bank] || '',
           agency: f[FIELD_MAP.agency] || '',
           account: f[FIELD_MAP.account] || '',
@@ -101,6 +102,7 @@ export const sharepointService = {
         };
       });
     } catch (e) {
+      console.error("Erro getRequests:", e);
       return [];
     }
   },
@@ -108,24 +110,25 @@ export const sharepointService = {
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
-      // TENTATIVA 1: Via GUID (Agora no path /sites/Powerapps)
+      // Tenta via GUID primeiro
       let endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
       let response = await spFetch(endpoint, accessToken);
       
-      // TENTATIVA 2: Fallback via Nome Interno
       if (!response.ok) {
+        console.warn(`Falha no anexo via GUID (${itemId}). Tentando via Nome...`);
         endpoint = `/_api/web/lists/getbytitle('${MAIN_LIST_TITLE}')/items(${itemId})/AttachmentFiles`;
         response = await spFetch(endpoint, accessToken);
       }
 
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.error(`Anexos não encontrados para o ID ${itemId}. Status: ${response.status}`);
+        return [];
+      }
       
       const data = await response.json();
       const files = data.d?.results || [];
 
       return await Promise.all(files.map(async (file: any) => {
-        const fileNameEncoded = encodeURIComponent(file.FileName);
-        // Construímos a URL absoluta usando o domínio e o caminho relativo do SharePoint
         const binaryUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
         
         try {
@@ -145,7 +148,9 @@ export const sharepointService = {
               createdAt: new Date().toISOString()
             };
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error("Erro download blob anexo:", e);
+        }
         
         return {
           id: file.FileName,
@@ -159,6 +164,7 @@ export const sharepointService = {
         };
       }));
     } catch (e) {
+      console.error("Erro getItemAttachments:", e);
       return [];
     }
   },
@@ -176,8 +182,8 @@ export const sharepointService = {
       const results: Attachment[] = [];
 
       for (const item of items) {
-        const numericSecondaryId = item.fields.id || item.fields.ID;
-        // Chama a REST API no site correto (/sites/Powerapps)
+        const f = item.fields || {};
+        const numericSecondaryId = f.ID || f.id;
         const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${numericSecondaryId})/AttachmentFiles`;
         const spRes = await spFetch(endpointAtts, accessToken);
         
