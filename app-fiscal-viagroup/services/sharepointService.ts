@@ -1,7 +1,11 @@
 
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
-const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
+/**
+ * CONFIGURAÇÕES REAIS DO AMBIENTE VIA LACTEOS
+ */
+const SITE_URL = 'https://vialacteoscombr.sharepoint.com/sites/Powerapps';
+const GRAPH_SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 
@@ -23,6 +27,26 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
+function mapRequestToFields(data: Partial<PaymentRequest>) {
+  const fields: any = {};
+  if (data.title !== undefined) fields[FIELD_MAP.title] = data.title;
+  if (data.invoiceNumber !== undefined) fields[FIELD_MAP.invoiceNumber] = data.invoiceNumber;
+  if (data.orderNumbers !== undefined) fields[FIELD_MAP.orderNumbers] = data.orderNumbers;
+  if (data.status !== undefined) fields[FIELD_MAP.status] = data.status;
+  if (data.branch !== undefined) fields[FIELD_MAP.branch] = data.branch;
+  if (data.generalObservation !== undefined) fields[FIELD_MAP.generalObservation] = data.generalObservation;
+  if (data.paymentMethod !== undefined) fields[FIELD_MAP.paymentMethod] = data.paymentMethod;
+  if (data.pixKey !== undefined) fields[FIELD_MAP.pixKey] = data.pixKey;
+  if (data.paymentDate !== undefined) fields[FIELD_MAP.paymentDate] = data.paymentDate;
+  if (data.payee !== undefined) fields[FIELD_MAP.payee] = data.payee;
+  if (data.statusManual !== undefined) fields[FIELD_MAP.statusManual] = data.statusManual;
+  if (data.bank !== undefined) fields[FIELD_MAP.bank] = data.bank;
+  if (data.agency !== undefined) fields[FIELD_MAP.agency] = data.agency;
+  if (data.account !== undefined) fields[FIELD_MAP.account] = data.account;
+  if (data.accountType !== undefined) fields[FIELD_MAP.accountType] = data.accountType;
+  return fields;
+}
+
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
   const headers: any = {
     Authorization: `Bearer ${accessToken}`,
@@ -32,7 +56,25 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const txt = await res.text();
-    console.warn(`[GRAPH WARN] ${url}`, txt);
+    console.error(`[MS GRAPH ERROR] URL: ${url}`, { status: res.status, errorBody: txt });
+    return res;
+  }
+  return res;
+}
+
+/**
+ * Função auxiliar para chamadas à API REST nativa do SharePoint
+ */
+async function spRestFetch(url: string, accessToken: string, options: RequestInit = {}) {
+  const headers: any = {
+    Authorization: `Bearer ${accessToken}`,
+    'Accept': 'application/json;odata=verbose',
+    ...options.headers,
+  };
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error(`[SP REST ERROR] URL: ${url}`, { status: res.status, errorBody: txt });
     return res;
   }
   return res;
@@ -41,11 +83,12 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
 export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
       const response = await graphFetch(endpoint, accessToken);
       if (!response.ok) return [];
       
       const data = await response.json();
+      
       return (data.value || []).map((item: any) => {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
@@ -86,30 +129,66 @@ export const sharepointService = {
     }
   },
 
-  getItemAttachments: async (accessToken: string, graphId: string): Promise<Attachment[]> => {
-    if (!graphId) return [];
+  createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
-      // Usamos expand=attachments para pegar a downloadUrl diretamente
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}?expand=attachments`;
-      const response = await graphFetch(endpoint, accessToken);
+      const fields = mapRequestToFields(data);
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items`;
+      const response = await graphFetch(endpoint, accessToken, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (e) {
+      console.error("Erro createRequest:", e);
+      return null;
+    }
+  },
+
+  updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
+    try {
+      const fields = mapRequestToFields(data);
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
+      const response = await graphFetch(endpoint, accessToken, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields)
+      });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch (e) {
+      console.error("Erro updateRequest:", e);
+      return null;
+    }
+  },
+
+  getItemAttachments: async (accessToken: string, numericId: string): Promise<Attachment[]> => {
+    if (!numericId) return [];
+    try {
+      // Usando a API REST nativa do SharePoint conforme solicitado
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${numericId})/AttachmentFiles`;
+      console.debug(`[DEBUG] Buscando anexos (SP REST): ${endpoint}`);
+      
+      const response = await spRestFetch(endpoint, accessToken);
       if (!response.ok) return [];
       
-      const itemData = await response.json();
-      const files = itemData.attachments || [];
+      const data = await response.json();
+      const files = data.d?.results || [];
 
       return files.map((file: any) => ({
-        id: file.id,
-        requestId: graphId,
-        fileName: file.name,
+        id: file.FileName, // Usamos o nome como ID único do anexo
+        requestId: numericId,
+        fileName: file.FileName,
         type: 'invoice_pdf',
-        mimeType: file.contentType || 'application/pdf',
-        size: file.size || 0,
-        // Esta URL é temporária e pré-autorizada pelo Graph
-        storageUrl: file['@microsoft.graph.downloadUrl'] || '',
-        createdAt: file.lastModifiedDateTime || new Date().toISOString()
+        mimeType: 'application/pdf',
+        size: 0,
+        // Construção da URL absoluta do SharePoint
+        storageUrl: `https://vialacteoscombr.sharepoint.com${file.ServerRelativeUrl}`,
+        createdAt: new Date().toISOString()
       }));
     } catch (e) {
-      console.error("Erro getItemAttachments:", e);
+      console.error("Erro getItemAttachments (SP REST):", e);
       return [];
     }
   },
@@ -117,71 +196,46 @@ export const sharepointService = {
   getSecondaryAttachments: async (accessToken: string, numericId: string): Promise<Attachment[]> => {
     if (!numericId) return [];
     try {
-      const filter = encodeURIComponent(`fields/ID_SOL eq '${numericId}'`);
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=${filter}`;
-      const response = await graphFetch(endpoint, accessToken);
+      // 1. Primeiro, encontrar o(s) item(ns) na lista secundária que possuem o ID_SOL correspondente
+      const filter = `ID_SOL eq '${numericId}'`;
+      const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
       
-      if (!response.ok) return [];
-      const data = await response.json();
-      const items = data.value || [];
+      const findResponse = await spRestFetch(findItemUrl, accessToken);
+      if (!findResponse.ok) return [];
+      
+      const findData = await findResponse.json();
+      const secondaryItems = findData.d?.results || [];
+      
       const results: Attachment[] = [];
 
-      for (const item of items) {
-        const files = item.attachments || [];
-        for (const file of files) {
-          results.push({
-            id: file.id,
-            requestId: numericId,
-            fileName: file.name,
-            type: 'boleto',
-            mimeType: file.contentType || 'application/pdf',
-            size: file.size || 0,
-            storageUrl: file['@microsoft.graph.downloadUrl'] || '',
-            createdAt: item.createdDateTime
+      // 2. Para cada item encontrado, buscar seus anexos via API REST
+      for (const item of secondaryItems) {
+        const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
+        const attResponse = await spRestFetch(attUrl, accessToken);
+        
+        if (attResponse.ok) {
+          const attData = await attResponse.json();
+          const files = attData.d?.results || [];
+          
+          files.forEach((file: any) => {
+            results.push({
+              id: file.FileName,
+              requestId: numericId,
+              fileName: file.FileName,
+              type: 'boleto',
+              mimeType: 'application/pdf',
+              size: 0,
+              storageUrl: `https://vialacteoscombr.sharepoint.com${file.ServerRelativeUrl}`,
+              createdAt: new Date().toISOString()
+            });
           });
         }
       }
+
       return results;
     } catch (e) {
+      console.error("Erro getSecondaryAttachments (SP REST):", e);
       return [];
     }
-  },
-
-  createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const fields: any = {};
-    Object.entries(data).forEach(([key, value]) => {
-      const fieldName = (FIELD_MAP as any)[key];
-      if (fieldName && value !== undefined) {
-        fields[fieldName] = value;
-      }
-    });
-
-    const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`;
-    const response = await graphFetch(endpoint, accessToken, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields })
-    });
-    if (!response.ok) throw new Error("Erro ao criar item");
-    return await response.json();
-  },
-
-  updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const fields: any = {};
-    Object.entries(data).forEach(([key, value]) => {
-      const fieldName = (FIELD_MAP as any)[key];
-      if (fieldName && value !== undefined) {
-        fields[fieldName] = value;
-      }
-    });
-    
-    const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
-    const response = await graphFetch(endpoint, accessToken, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fields)
-    });
-    if (!response.ok) throw new Error("Erro ao atualizar");
-    return await response.json();
   }
 };
