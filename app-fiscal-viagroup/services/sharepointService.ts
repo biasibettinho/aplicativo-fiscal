@@ -5,9 +5,12 @@ const TENANT = 'vialacteoscombr.sharepoint.com';
 const SITE_PATH = '/sites/Vialacteos'; 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
-// IDs das Listas (GUIDs)
-const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
+// Configurações das Listas
+const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b'; // Usado no Graph
+const MAIN_LIST_TITLE = 'Lista APP Fiscal';               // Usado no REST API
+
+const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938'; // Usado no Graph
+const SECONDARY_LIST_TITLE = 'Boletos';                         // Usado no REST API
 
 const FIELD_MAP = {
   title: 'Title',
@@ -78,6 +81,7 @@ export const sharepointService = {
    */
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
+      // Usamos SITE_ID e MAIN_LIST_ID (GUID) que já provaram funcionar no seu console
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
       const response = await graphFetch(endpoint, accessToken);
       if (!response.ok) return [];
@@ -86,10 +90,10 @@ export const sharepointService = {
       return (data.value || []).map((item: any) => {
         const f = item.fields || {};
         
-        // CRITICAL: A REST API só aceita o ID numérico que está dentro de fields
+        // No seu console, item.id é '4327'. Esse é o ID interno necessário para a REST API.
         const numericId = f.id || f.ID || parseInt(item.id, 10);
         
-        // Se o criador não vier no objeto user.id, tentamos pegar de campos auxiliares do SharePoint
+        // Identificação do criador (GUID do Azure AD)
         const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || '';
 
         return {
@@ -124,13 +128,13 @@ export const sharepointService = {
   },
 
   /**
-   * Busca anexos usando SharePoint REST API (Híbrido: Parte 2)
+   * Busca anexos usando SharePoint REST API por Title (Híbrido: Parte 2)
    */
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
-      // Usamos o ID NUMÉRICO (inteiro) que a REST API exige
-      const endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
+      // Mudança crítica: Usando getbytitle para evitar 404 do GUID no REST
+      const endpoint = `/_api/web/lists/getbytitle('${MAIN_LIST_TITLE}')/items(${itemId})/AttachmentFiles`;
       const response = await spFetch(endpoint, accessToken);
       
       if (!response.ok) return [];
@@ -139,9 +143,9 @@ export const sharepointService = {
       const files = data.d?.results || [];
 
       return await Promise.all(files.map(async (file: any) => {
-        // Para baixar o conteúdo binário via REST API com Bearer Token (/$value)
         const fileNameEncoded = encodeURIComponent(file.FileName);
-        const binaryEndpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles('${fileNameEncoded}')/$value`;
+        // Endpoint binário /$value para download direto com o Token
+        const binaryEndpoint = `/_api/web/lists/getbytitle('${MAIN_LIST_TITLE}')/items(${itemId})/AttachmentFiles('${fileNameEncoded}')/$value`;
         const binaryUrl = `https://${TENANT}${SITE_PATH}${binaryEndpoint}`;
         
         try {
@@ -163,7 +167,7 @@ export const sharepointService = {
             };
           }
         } catch (e) {
-          console.warn(`Erro no download REST de ${file.FileName}, usando URL relativa.`);
+          console.warn(`Erro no download REST de ${file.FileName}`);
         }
         
         return {
@@ -184,12 +188,12 @@ export const sharepointService = {
   },
 
   /**
-   * Busca anexos da lista secundária (Boletos) usando Graph para filtro e REST para arquivos
+   * Busca anexos da lista secundária (Boletos) usando Graph + REST Title
    */
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     if (!requestId) return [];
     try {
-      // 1. Filtragem por ID_SOL usando Graph (Mapeamento)
+      // 1. Localização do item via Graph
       const filter = encodeURIComponent(`fields/ID_SOL eq '${requestId}'`);
       const graphUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
       const res = await graphFetch(graphUrl, accessToken);
@@ -200,11 +204,10 @@ export const sharepointService = {
       const results: Attachment[] = [];
 
       for (const item of items) {
-        // ID NUMÉRICO do item da lista secundária
         const numericSecondaryId = item.fields.id || item.fields.ID;
         
-        // 2. Busca de arquivos via REST API
-        const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${numericSecondaryId})/AttachmentFiles`;
+        // 2. Busca de arquivos via REST API por Title
+        const endpointAtts = `/_api/web/lists/getbytitle('${SECONDARY_LIST_TITLE}')/items(${numericSecondaryId})/AttachmentFiles`;
         const spRes = await spFetch(endpointAtts, accessToken);
         
         if (spRes.ok) {
@@ -213,7 +216,7 @@ export const sharepointService = {
           
           for (const file of files) {
             const fileNameEncoded = encodeURIComponent(file.FileName);
-            const binaryEndpoint = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${numericSecondaryId})/AttachmentFiles('${fileNameEncoded}')/$value`;
+            const binaryEndpoint = `/_api/web/lists/getbytitle('${SECONDARY_LIST_TITLE}')/items(${numericSecondaryId})/AttachmentFiles('${fileNameEncoded}')/$value`;
             const binaryUrl = `https://${TENANT}${SITE_PATH}${binaryEndpoint}`;
             
             let finalUrl = binaryUrl;
