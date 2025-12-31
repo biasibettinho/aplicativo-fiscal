@@ -4,9 +4,9 @@ import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
-import { PAYMENT_METHODS, BRANCHES } from '../constants';
+import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone
+  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -20,12 +20,16 @@ const DashboardSolicitante: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Filtros de Lista
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Estados do Formulário Refinados
   const [formData, setFormData] = useState({
     title: '',
-    branch: '',
     invoiceNumber: '',
     orderNumbers: '',
     paymentMethod: PAYMENT_METHODS[0],
@@ -38,15 +42,6 @@ const DashboardSolicitante: React.FC = () => {
     accountType: 'Corrente',
     generalObservation: ''
   });
-
-  // Efeito para pré-preencher a filial com base no perfil
-  useEffect(() => {
-    if (isCreating && authState.user) {
-      // Prioriza branchDefault do usuário, caso contrário usa a Matriz
-      const defaultBranch = authState.user.branchDefault || BRANCHES[0];
-      setFormData(prev => ({ ...prev, branch: defaultBranch }));
-    }
-  }, [isCreating, authState.user]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -97,7 +92,6 @@ const DashboardSolicitante: React.FC = () => {
     
     setIsSubmitting(true);
     try {
-      // Conforme solicitado: Status inicial 'Em Processamento' para o fluxo do Automate
       const newRequest: Partial<PaymentRequest> = {
         ...formData,
         status: RequestStatus.PROCESSANDO,
@@ -107,13 +101,11 @@ const DashboardSolicitante: React.FC = () => {
       
       const result = await requestService.createRequest(newRequest, authState.token);
       if (result) {
-        // Simula o tempo de processamento informado (UX)
         await new Promise(resolve => setTimeout(resolve, 2000));
         await syncData();
         setIsCreating(false);
         setFormData({
           title: '',
-          branch: BRANCHES[0],
           invoiceNumber: '',
           orderNumbers: '',
           paymentMethod: PAYMENT_METHODS[0],
@@ -129,19 +121,40 @@ const DashboardSolicitante: React.FC = () => {
       }
     } catch (e) {
       console.error("Erro ao criar solicitação:", e);
-      alert("Falha ao criar solicitação. Verifique os dados e tente novamente.");
+      alert("Falha ao criar solicitação.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const filteredRequests = useMemo(() => {
-    return requests.filter(r => 
-      r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.id.toString().includes(searchTerm)
-    ).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [requests, searchTerm]);
+    return requests.filter(r => {
+      const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                           r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           r.id.toString().includes(searchTerm);
+      
+      const matchesStatus = statusFilter === '' || r.status === statusFilter;
+      
+      const requestDate = new Date(r.createdAt);
+      requestDate.setHours(0, 0, 0, 0);
+      
+      let matchesStartDate = true;
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0,0,0,0);
+        matchesStartDate = requestDate.getTime() >= start.getTime();
+      }
+
+      let matchesEndDate = true;
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        matchesEndDate = requestDate.getTime() <= end.getTime();
+      }
+
+      return matchesSearch && matchesStatus && matchesStartDate && matchesEndDate;
+    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [requests, searchTerm, statusFilter, startDate, endDate]);
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 relative">
@@ -158,10 +171,10 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       )}
 
-      {/* Sidebar de Listagem */}
+      {/* Sidebar de Listagem com Filtros Refinados */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-        <div className="p-6 border-b border-gray-100 bg-white z-10">
-          <div className="flex items-center justify-between mb-6">
+        <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4">
+          <div className="flex items-center justify-between">
             <h1 className="text-xl font-black text-gray-800 uppercase italic">Minhas Notas</h1>
             <button 
               onClick={() => { setIsCreating(true); setSelectedId(null); }} 
@@ -170,15 +183,57 @@ const DashboardSolicitante: React.FC = () => {
               <Plus size={24} />
             </button>
           </div>
+          
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
               placeholder="Pesquisar..." 
-              className="w-full pl-11 pr-4 py-4 bg-gray-50 border-0 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" 
+              className="w-full pl-11 pr-4 py-3 bg-gray-50 border-0 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" 
               value={searchTerm} 
               onChange={e => setSearchTerm(e.target.value)} 
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 pt-2">
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Filtrar por Status</label>
+              <select 
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+                className="w-full p-2.5 bg-gray-50 border-0 rounded-xl text-[10px] font-bold uppercase outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Todos os Status</option>
+                <option value={RequestStatus.PROCESSANDO}>Processamento</option>
+                <option value={RequestStatus.ANALISE}>Análise</option>
+                <option value={RequestStatus.FATURADO}>Faturado</option>
+                <option value={RequestStatus.PENDENTE}>Pendente</option>
+                <option value={RequestStatus.APROVADO}>Aprovado</option>
+                <option value={RequestStatus.ERRO_FISCAL}>Erro - Fiscal</option>
+                <option value={RequestStatus.ERRO_FINANCEIRO}>Erro - Financeiro</option>
+              </select>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Data Início</label>
+                <input 
+                  type="date" 
+                  value={startDate}
+                  onChange={e => setStartDate(e.target.value)}
+                  className="w-full p-2 bg-gray-50 border-0 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Data Fim</label>
+                <input 
+                  type="date" 
+                  value={endDate}
+                  onChange={e => setEndDate(e.target.value)}
+                  className="w-full p-2 bg-gray-50 border-0 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </div>
         </div>
         
@@ -194,15 +249,15 @@ const DashboardSolicitante: React.FC = () => {
                 <span className="text-xs font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-lg">#{req.id}</span>
                 <Badge status={req.status} />
               </div>
-              <h3 className="font-black text-gray-900 text-lg mb-2 leading-tight uppercase truncate">{req.title}</h3>
-              <div className="flex items-center text-[10px] font-black text-gray-400 uppercase tracking-widest space-x-4">
+              <h3 className="font-black text-gray-900 text-sm mb-2 leading-tight uppercase truncate">{req.title}</h3>
+              <div className="flex items-center text-[9px] font-black text-gray-400 uppercase tracking-widest space-x-4">
                 <span className="flex items-center"><Clock size={12} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span>
                 <span className="text-blue-500 italic truncate max-w-[100px]">{req.branch}</span>
               </div>
             </button>
           ))}
           {!isLoading && filteredRequests.length === 0 && (
-            <div className="text-center py-20 text-gray-400 font-bold italic">Nenhuma solicitação encontrada.</div>
+            <div className="text-center py-20 text-gray-400 font-bold italic">Nenhum resultado encontrado.</div>
           )}
         </div>
       </div>
@@ -210,7 +265,7 @@ const DashboardSolicitante: React.FC = () => {
       {/* Área Principal de Conteúdo */}
       <div className="flex-1 flex flex-col bg-gray-50 relative overflow-hidden">
         
-        {/* Caso: Criando Nova Solicitação com Estilização Gradiente Profissional */}
+        {/* Formulário de Nova Solicitação com Background Gradiente Azul Escuro Profissional */}
         {isCreating ? (
           <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
             <header className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm">
@@ -229,7 +284,7 @@ const DashboardSolicitante: React.FC = () => {
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-12 custom-scrollbar">
               <div className="max-w-4xl mx-auto space-y-12 pb-20">
                 
-                {/* Seção 1: Identificação */}
+                {/* Seção 1: Identificação (Filial removida - Automática via Fluxo) */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="col-span-2">
                     <label className="text-xs font-black text-blue-400 uppercase tracking-widest mb-3 block italic">Título / Descrição Curta</label>
@@ -242,16 +297,8 @@ const DashboardSolicitante: React.FC = () => {
                       onChange={e => setFormData({...formData, title: e.target.value})}
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Filial Destino (Auto-preenchida)</label>
-                    <select 
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white appearance-none"
-                      value={formData.branch}
-                      onChange={e => setFormData({...formData, branch: e.target.value})}
-                    >
-                      {BRANCHES.map(b => <option key={b} value={b} className="text-slate-900">{b}</option>)}
-                    </select>
-                  </div>
+                  
+                  {/* Reorganização NF e Pedido lado a lado para facilitar preenchimento */}
                   <div>
                     <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número da NF / Documento</label>
                     <input 
@@ -261,6 +308,16 @@ const DashboardSolicitante: React.FC = () => {
                       className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
                       value={formData.invoiceNumber}
                       onChange={e => setFormData({...formData, invoiceNumber: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número de Pedido (OC)</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: 4567, 8910..."
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
+                      value={formData.orderNumbers}
+                      onChange={e => setFormData({...formData, orderNumbers: e.target.value})}
                     />
                   </div>
                 </div>
@@ -306,16 +363,16 @@ const DashboardSolicitante: React.FC = () => {
                     />
                   </div>
 
-                  {/* Campos Condicionais baseados no método */}
-                  {formData.paymentMethod === 'PIX' && (
+                  {/* Campos Condicionais: PIX e A Vista seguem a mesma regra de simplicidade */}
+                  {(formData.paymentMethod === 'PIX' || formData.paymentMethod === 'A Vista') && (
                     <div className="col-span-2 animate-in fade-in slide-in-from-top-4 duration-300">
                       <label className="text-xs font-black text-blue-400 uppercase mb-3 block flex items-center">
-                        <Smartphone size={14} className="mr-2" /> Chave PIX
+                        <Smartphone size={14} className="mr-2" /> Chave PIX / Comprovante Referência
                       </label>
                       <input 
                         required
                         type="text" 
-                        placeholder="E-mail, CPF, CNPJ ou Chave Aleatória"
+                        placeholder="Chave PIX ou Referência de Pagamento Direto"
                         className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
                         value={formData.pixKey}
                         onChange={e => setFormData({...formData, pixKey: e.target.value})}
@@ -323,56 +380,43 @@ const DashboardSolicitante: React.FC = () => {
                     </div>
                   )}
 
-                  {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'Transferência') && (
-                    <>
-                      <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
-                        <div className="col-span-2">
-                          <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Banco</label>
-                          <input 
-                            required
-                            type="text" 
-                            placeholder="Ex: Itaú, Bradesco..."
-                            className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
-                            value={formData.bank}
-                            onChange={e => setFormData({...formData, bank: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Agência</label>
-                          <input 
-                            required
-                            type="text" 
-                            placeholder="0000"
-                            className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
-                            value={formData.agency}
-                            onChange={e => setFormData({...formData, agency: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Conta</label>
-                          <input 
-                            required
-                            type="text" 
-                            placeholder="00000-0"
-                            className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
-                            value={formData.account}
-                            onChange={e => setFormData({...formData, account: e.target.value})}
-                          />
-                        </div>
+                  {formData.paymentMethod === 'TED/DEPOSITO' && (
+                    <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                      <div className="col-span-2">
+                        <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Banco</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="Ex: Itaú, Bradesco..."
+                          className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
+                          value={formData.bank}
+                          onChange={e => setFormData({...formData, bank: e.target.value})}
+                        />
                       </div>
-                    </>
+                      <div>
+                        <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Agência</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="0000"
+                          className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
+                          value={formData.agency}
+                          onChange={e => setFormData({...formData, agency: e.target.value})}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Conta</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="00000-0"
+                          className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
+                          value={formData.account}
+                          onChange={e => setFormData({...formData, account: e.target.value})}
+                        />
+                      </div>
+                    </div>
                   )}
-
-                  <div className="col-span-2">
-                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Número de Pedido (OC)</label>
-                    <input 
-                      type="text" 
-                      placeholder="Ex: 4567, 8910..."
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
-                      value={formData.orderNumbers}
-                      onChange={e => setFormData({...formData, orderNumbers: e.target.value})}
-                    />
-                  </div>
                 </div>
 
                 {/* Seção 3: Upload de Arquivos */}
