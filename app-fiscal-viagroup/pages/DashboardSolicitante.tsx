@@ -65,7 +65,7 @@ const DashboardSolicitante: React.FC = () => {
   // Sincronia inicial
   useEffect(() => { syncData(); }, [authState.user, authState.token]);
 
-  // Polling de 60 segundos para atualização em tempo real
+  // Polling de 60 segundos para atualização em tempo real (Status Update)
   useEffect(() => {
     const interval = setInterval(() => {
       syncData(true);
@@ -121,7 +121,7 @@ const DashboardSolicitante: React.FC = () => {
         createdByName: authState.user.name
       };
       
-      // Envio para o endpoint (criação via Graph + Upload de Anexos)
+      // Envio para o endpoint (criação via Graph + Gatilho Power Automate com Arquivos)
       const result = await requestService.createRequest(authState.token, newRequest, { 
         invoice: invoiceFile, 
         ticket: ticketFile 
@@ -196,17 +196,17 @@ const DashboardSolicitante: React.FC = () => {
             <Loader2 className="animate-spin text-blue-400 mb-6" size={60} />
             <h2 className="text-2xl font-black text-white uppercase italic mb-4">Processando Requisição</h2>
             <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest">
-              Isso pode levar aproximadamente 1 minuto enquanto o fluxo automatizado valida os dados e processa os arquivos.
+              Isso pode levar aproximadamente 1 minuto enquanto o fluxo automatizado valida os dados e processa os arquivos para as listas correspondentes.
             </p>
           </div>
         </div>
       )}
 
-      {/* Sidebar de Listagem - Largura Aumentada */}
-      <div className="w-[450px] bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300">
+      {/* Sidebar de Listagem - Largura Aumentada para 500px conforme solicitado */}
+      <div className="w-[500px] bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300">
         <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-black text-gray-800 uppercase italic">Minhas Notas</h1>
+            <h1 className="text-lg font-black text-gray-800 uppercase italic">Minhas Notas</h1>
             <button 
               onClick={() => { setIsCreating(true); setSelectedId(null); }} 
               className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl transition-all active:scale-95"
@@ -299,12 +299,12 @@ const DashboardSolicitante: React.FC = () => {
         {/* Formulário de Nova Solicitação */}
         {isCreating ? (
           <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-            <header className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm">
+            <header className="p-8 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm">
               <div className="flex items-center space-x-6">
-                <button onClick={() => setIsCreating(false)} className="p-3 bg-white/10 text-white border border-white/10 rounded-xl hover:bg-white/20 transition-colors">
-                  <ChevronLeft size={20} />
+                <button onClick={() => setIsCreating(false)} className="p-2.5 bg-white/10 text-white border border-white/10 rounded-xl hover:bg-white/20 transition-colors">
+                  <ChevronLeft size={18} />
                 </button>
-                <h2 className="text-3xl font-black text-white uppercase italic leading-none tracking-tighter">Nova Solicitação</h2>
+                <h2 className="text-2xl font-black text-white uppercase italic leading-none tracking-tighter">Nova Solicitação</h2>
               </div>
               <div className="flex items-center space-x-2 text-blue-400 font-black text-[10px] uppercase tracking-widest">
                 <Info size={14} />
@@ -312,57 +312,57 @@ const DashboardSolicitante: React.FC = () => {
               </div>
             </header>
 
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-              <div className="max-w-4xl mx-auto space-y-12 pb-20">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+              <div className="max-w-4xl mx-auto space-y-10 pb-20">
                 
                 {/* Seção 1: Identificação */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="col-span-2">
-                    <label className="text-xs font-black text-blue-400 uppercase tracking-widest mb-3 block italic">Título / Descrição Curta</label>
+                    <label className="text-xs font-black text-blue-400 uppercase tracking-widest mb-2 block italic">Título / Descrição Curta</label>
                     <input 
                       required
                       type="text" 
                       placeholder="Ex: Pagamento de Frete - NF 123..."
-                      className="w-full p-6 bg-white/10 border-2 border-transparent rounded-[1.5rem] focus:border-blue-400 focus:bg-white/20 outline-none text-xl font-bold transition-all text-white placeholder:text-blue-300/30"
+                      className="w-full p-5 bg-white/10 border-2 border-transparent rounded-[1.2rem] focus:border-blue-400 focus:bg-white/20 outline-none text-lg font-bold transition-all text-white placeholder:text-blue-300/30"
                       value={formData.title}
                       onChange={e => setFormData({...formData, title: e.target.value})}
                     />
                   </div>
                   
                   <div>
-                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número da NF / Documento</label>
+                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-2 block">Número da NF</label>
                     <input 
                       required
                       type="text" 
                       placeholder="000.000.000"
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
+                      className="w-full p-4 bg-white/10 border border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
                       value={formData.invoiceNumber}
                       onChange={e => setFormData({...formData, invoiceNumber: e.target.value})}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número de Pedido (OC)</label>
+                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-2 block">Pedido (OC)</label>
                     <input 
                       type="text" 
                       placeholder="Ex: 4567, 8910..."
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
+                      className="w-full p-4 bg-white/10 border border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
                       value={formData.orderNumbers}
                       onChange={e => setFormData({...formData, orderNumbers: e.target.value})}
                     />
                   </div>
                 </div>
 
-                {/* Seção 2: Detalhes de Pagamento Dinâmicos */}
-                <div className="bg-white/5 p-10 rounded-[3rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-8 shadow-2xl">
-                  <div className="col-span-2 flex items-center mb-2">
-                    <CreditCard className="text-blue-400 mr-3" size={24} />
-                    <h3 className="text-xl font-black text-white uppercase italic tracking-tight">Dados Financeiros</h3>
+                {/* Seção 2: Detalhes de Pagamento */}
+                <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6 shadow-2xl">
+                  <div className="col-span-2 flex items-center mb-1">
+                    <CreditCard className="text-blue-400 mr-3" size={20} />
+                    <h3 className="text-lg font-black text-white uppercase italic tracking-tight">Dados Financeiros</h3>
                   </div>
                   
                   <div>
-                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Método de Pagamento</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-2 block">Método</label>
                     <select 
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white appearance-none"
+                      className="w-full p-4 bg-white/10 border border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white appearance-none"
                       value={formData.paymentMethod}
                       onChange={e => setFormData({...formData, paymentMethod: e.target.value})}
                     >
@@ -371,38 +371,38 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Data de Vencimento</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-2 block">Vencimento</label>
                     <input 
                       required
                       type="date" 
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white"
+                      className="w-full p-4 bg-white/10 border border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white"
                       value={formData.paymentDate}
                       onChange={e => setFormData({...formData, paymentDate: e.target.value})}
                     />
                   </div>
 
                   <div className="col-span-2">
-                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Favorecido (Pessoa/Empresa)</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-2 block">Favorecido</label>
                     <input 
                       required
                       type="text" 
                       placeholder="Nome completo ou Razão Social"
-                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white placeholder:text-white/20"
+                      className="w-full p-4 bg-white/10 border border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white placeholder:text-white/20"
                       value={formData.payee}
                       onChange={e => setFormData({...formData, payee: e.target.value})}
                     />
                   </div>
 
                   {(formData.paymentMethod === 'PIX' || formData.paymentMethod === 'A Vista') && (
-                    <div className="col-span-2 animate-in fade-in slide-in-from-top-4 duration-300">
-                      <label className="text-xs font-black text-blue-400 uppercase mb-3 block flex items-center">
-                        <Smartphone size={14} className="mr-2" /> Chave PIX / Comprovante Referência
+                    <div className="col-span-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                      <label className="text-xs font-black text-blue-400 uppercase mb-2 block flex items-center">
+                        <Smartphone size={14} className="mr-2" /> Chave PIX / Ref. Pagamento
                       </label>
                       <input 
                         required
                         type="text" 
-                        placeholder="Chave PIX ou Referência de Pagamento Direto"
-                        className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
+                        placeholder="Chave PIX ou Referência Direta"
+                        className="w-full p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
                         value={formData.pixKey}
                         onChange={e => setFormData({...formData, pixKey: e.target.value})}
                       />
@@ -410,36 +410,36 @@ const DashboardSolicitante: React.FC = () => {
                   )}
 
                   {formData.paymentMethod === 'TED/DEPOSITO' && (
-                    <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                    <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
                       <div className="col-span-2">
-                        <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Banco</label>
+                        <label className="text-xs font-black text-blue-400 uppercase mb-2 block">Banco</label>
                         <input 
                           required
                           type="text" 
                           placeholder="Ex: Itaú, Bradesco..."
-                          className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
+                          className="w-full p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
                           value={formData.bank}
                           onChange={e => setFormData({...formData, bank: e.target.value})}
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Agência</label>
+                        <label className="text-xs font-black text-blue-400 uppercase mb-2 block">Ag.</label>
                         <input 
                           required
                           type="text" 
                           placeholder="0000"
-                          className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
+                          className="w-full p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
                           value={formData.agency}
                           onChange={e => setFormData({...formData, agency: e.target.value})}
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Conta</label>
+                        <label className="text-xs font-black text-blue-400 uppercase mb-2 block">Conta</label>
                         <input 
                           required
                           type="text" 
                           placeholder="00000-0"
-                          className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
+                          className="w-full p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
                           value={formData.account}
                           onChange={e => setFormData({...formData, account: e.target.value})}
                         />
@@ -449,8 +449,8 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
 
                 {/* Seção 3: Upload de Arquivos */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                   <div className={`p-8 rounded-[2rem] border border-dashed transition-all relative group ${invoiceFile ? 'bg-blue-600/20 border-blue-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${invoiceFile ? 'bg-blue-600/20 border-blue-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
                       <input 
                         id="invoice-upload"
                         type="file" 
@@ -459,28 +459,28 @@ const DashboardSolicitante: React.FC = () => {
                         onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
                       />
                       <label htmlFor="invoice-upload" className="flex flex-col items-center text-center cursor-pointer">
-                         <div className={`p-4 rounded-2xl text-white mb-4 shadow-lg ${invoiceFile ? 'bg-blue-500' : 'bg-blue-600'}`}>
-                           <FileText size={24} />
+                         <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${invoiceFile ? 'bg-blue-500' : 'bg-blue-600'}`}>
+                           <FileText size={20} />
                          </div>
-                         <p className="text-sm font-black text-white uppercase italic truncate max-w-full px-4">
-                           {invoiceFile ? invoiceFile.name : 'Nota Fiscal (PDF/JPG)'}
+                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">
+                           {invoiceFile ? invoiceFile.name : 'Nota Fiscal (Obrigatório)'}
                          </p>
-                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">
-                           {invoiceFile ? 'Arquivo Selecionado - Clique p/ alterar' : 'Clique para selecionar'}
+                         <p className="text-[9px] text-white/40 mt-1 uppercase font-bold tracking-widest">
+                           {invoiceFile ? 'Arquivo Carregado' : 'Clique para selecionar'}
                          </p>
                       </label>
                       {invoiceFile && (
                         <button 
                           type="button"
                           onClick={() => setInvoiceFile(null)}
-                          className="absolute top-4 right-4 text-white/40 hover:text-red-400 transition-colors"
+                          className="absolute top-3 right-3 text-white/40 hover:text-red-400 transition-colors"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={14} />
                         </button>
                       )}
                    </div>
 
-                   <div className={`p-8 rounded-[2rem] border border-dashed transition-all relative group ${ticketFile ? 'bg-indigo-600/20 border-indigo-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                   <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${ticketFile ? 'bg-indigo-600/20 border-indigo-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
                       <input 
                         id="ticket-upload"
                         type="file" 
@@ -489,23 +489,23 @@ const DashboardSolicitante: React.FC = () => {
                         onChange={(e) => setTicketFile(e.target.files?.[0] || null)}
                       />
                       <label htmlFor="ticket-upload" className="flex flex-col items-center text-center cursor-pointer">
-                         <div className={`p-4 rounded-2xl text-white mb-4 shadow-lg ${ticketFile ? 'bg-indigo-500' : 'bg-indigo-600'}`}>
-                           <Paperclip size={24} />
+                         <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${ticketFile ? 'bg-indigo-500' : 'bg-indigo-600'}`}>
+                           <Paperclip size={20} />
                          </div>
-                         <p className="text-sm font-black text-white uppercase italic truncate max-w-full px-4">
+                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">
                            {ticketFile ? ticketFile.name : 'Boleto / Comprovante'}
                          </p>
-                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">
-                           {ticketFile ? 'Arquivo Selecionado - Clique p/ alterar' : 'Opcional'}
+                         <p className="text-[9px] text-white/40 mt-1 uppercase font-bold tracking-widest">
+                           {ticketFile ? 'Arquivo Carregado' : 'Opcional'}
                          </p>
                       </label>
                       {ticketFile && (
                         <button 
                           type="button"
                           onClick={() => setTicketFile(null)}
-                          className="absolute top-4 right-4 text-white/40 hover:text-red-400 transition-colors"
+                          className="absolute top-3 right-3 text-white/40 hover:text-red-400 transition-colors"
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={14} />
                         </button>
                       )}
                    </div>
@@ -513,30 +513,30 @@ const DashboardSolicitante: React.FC = () => {
 
                 {/* Seção 4: Observações */}
                 <div>
-                  <label className="text-xs font-black text-white/50 uppercase mb-3 block italic">Observações Internas</label>
+                  <label className="text-xs font-black text-white/50 uppercase mb-2 block italic">Observações</label>
                   <textarea 
-                    rows={4}
-                    className="w-full p-6 bg-white/5 border-0 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-400 font-medium italic text-white placeholder:text-white/20"
-                    placeholder="Informações adicionais para o faturamento..."
+                    rows={3}
+                    className="w-full p-5 bg-white/5 border-0 rounded-[1.2rem] outline-none focus:ring-2 focus:ring-blue-400 font-medium italic text-white placeholder:text-white/20"
+                    placeholder="Detalhes adicionais..."
                     value={formData.generalObservation}
                     onChange={e => setFormData({...formData, generalObservation: e.target.value})}
                   />
                 </div>
 
                 {/* Rodapé de Ações */}
-                <div className="flex items-center justify-end space-x-6 pt-10 border-t border-white/5">
+                <div className="flex items-center justify-end space-x-4 pt-6 border-t border-white/5">
                   <button 
                     type="button" 
                     onClick={() => setIsCreating(false)}
-                    className="px-8 py-5 text-white/40 font-black text-xs uppercase hover:text-white transition-colors tracking-widest"
+                    className="px-6 py-4 text-white/40 font-black text-xs uppercase hover:text-white transition-colors tracking-widest"
                   >
                     Descartar
                   </button>
                   <button 
                     disabled={isSubmitting}
-                    className="px-16 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-sm uppercase italic shadow-2xl hover:bg-blue-700 transition-all flex items-center shadow-blue-900/40 active:scale-95 disabled:opacity-50"
+                    className="px-12 py-4 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase italic shadow-2xl hover:bg-blue-700 transition-all flex items-center shadow-blue-900/40 active:scale-95 disabled:opacity-50"
                   >
-                    {isSubmitting ? <Loader2 className="animate-spin mr-3" /> : <Send className="mr-3" />}
+                    {isSubmitting ? <Loader2 className="animate-spin mr-3" size={16} /> : <Send className="mr-3" size={16} />}
                     Submeter p/ Fluxo
                   </button>
                 </div>
@@ -546,84 +546,84 @@ const DashboardSolicitante: React.FC = () => {
         ) : selectedRequest ? (
           /* Visualização de Solicitação Existente */
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
-            <header className="p-10 bg-white border-b flex justify-between items-end shadow-sm">
+            <header className="p-8 bg-white border-b flex justify-between items-end shadow-sm">
               <div>
-                <div className="flex items-center space-x-6 mb-4">
-                  <span className="text-sm font-black text-gray-400 bg-gray-50 px-4 py-1.5 rounded-xl border">ID: {selectedRequest.id}</span>
-                  <Badge status={selectedRequest.status} className="scale-110 ml-2" />
+                <div className="flex items-center space-x-6 mb-3">
+                  <span className="text-xs font-black text-gray-400 bg-gray-50 px-3 py-1 rounded-lg border">ID: {selectedRequest.id}</span>
+                  <Badge status={selectedRequest.status} className="scale-100 ml-1" />
                 </div>
-                <h2 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[700px]">{selectedRequest.title}</h2>
+                <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[600px]">{selectedRequest.title}</h2>
               </div>
             </header>
             
-            <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-lg">
-                  <p className="text-sm font-black text-blue-600 uppercase mb-6 border-b pb-3 flex items-center italic"><Banknote size={18} className="mr-3"/> Dados Fiscais</p>
-                  <div className="space-y-8">
+            <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-lg">
+                  <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><Banknote size={16} className="mr-3"/> Dados Fiscais</p>
+                  <div className="space-y-6">
                     <div>
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-1">Número da Nota Fiscal</span>
-                      <p className="text-3xl font-black text-slate-900 leading-none">{selectedRequest.invoiceNumber || '---'}</p>
+                      <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Número da Nota Fiscal</span>
+                      <p className="text-2xl font-black text-slate-900 leading-none">{selectedRequest.invoiceNumber || '---'}</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-6">
-                      <div><span className="text-xs font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-xl font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
-                      <div><span className="text-xs font-black text-gray-400 uppercase block mb-1">Pedidos</span><p className="text-xl font-black text-slate-900">{selectedRequest.orderNumbers || '---'}</p></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-lg font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Pedidos</span><p className="text-lg font-black text-slate-900">{selectedRequest.orderNumbers || '---'}</p></div>
                     </div>
                   </div>
                 </div>
-                <div className="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-lg">
-                  <p className="text-sm font-black text-blue-600 uppercase mb-6 border-b pb-3 flex items-center italic"><CreditCard size={18} className="mr-3"/> Pagamento</p>
-                  <div className="space-y-8">
+                <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-lg">
+                  <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><CreditCard size={16} className="mr-3"/> Pagamento</p>
+                  <div className="space-y-6">
                     <div>
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-1">Modalidade</span>
-                      <p className="text-2xl font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p>
+                      <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Modalidade</span>
+                      <p className="text-xl font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p>
                     </div>
                     <div>
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-1">Favorecido</span>
-                      <p className="text-xl font-bold text-slate-800 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
+                      <span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Favorecido</span>
+                      <p className="text-lg font-bold text-slate-800 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Seção de Anexos */}
-              <div className="bg-white p-10 rounded-[3rem] border-2 border-gray-100 shadow-xl relative">
-                <div className="flex items-center justify-between mb-8 border-b pb-4">
-                  <h3 className="text-xl font-black text-slate-900 uppercase italic flex items-center"><FileText size={24} className="mr-3 text-blue-600"/> Documentação e Anexos</h3>
-                  {isFetchingAttachments && <div className="flex items-center text-blue-600 font-bold uppercase text-[9px] animate-pulse"><Loader2 className="animate-spin mr-2" /> Sincronizando arquivos...</div>}
+              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-gray-100 shadow-xl relative">
+                <div className="flex items-center justify-between mb-6 border-b pb-3">
+                  <h3 className="text-lg font-black text-slate-900 uppercase italic flex items-center"><FileText size={20} className="mr-3 text-blue-600"/> Documentação e Anexos</h3>
+                  {isFetchingAttachments && <div className="flex items-center text-blue-600 font-bold uppercase text-[8px] animate-pulse"><Loader2 className="animate-spin mr-2" size={12} /> Sincronizando...</div>}
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                   <div className="space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                   <div className="space-y-6">
                      <div>
-                       <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 italic">Nota Fiscal Principal:</p>
+                       <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest mb-2 italic">Nota Fiscal Principal:</p>
                        {mainAttachments.map(att => (
-                         <div key={att.id} className="p-4 bg-blue-50/40 border border-blue-100 rounded-2xl flex items-center justify-between mb-2 group">
-                           <div className="flex items-center space-x-4">
-                             <div className="bg-blue-600 text-white p-3 rounded-xl"><FileText size={20} /></div>
-                             <span className="text-sm font-black text-slate-800 max-w-[150px] truncate">{att.fileName}</span>
+                         <div key={att.id} className="p-3 bg-blue-50/40 border border-blue-100 rounded-xl flex items-center justify-between mb-2 group">
+                           <div className="flex items-center space-x-3">
+                             <div className="bg-blue-600 text-white p-2.5 rounded-lg"><FileText size={16} /></div>
+                             <span className="text-xs font-black text-slate-800 max-w-[120px] truncate">{att.fileName}</span>
                            </div>
-                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase active:scale-95"><ExternalLink size={14} /></button>
+                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase active:scale-95"><ExternalLink size={12} /></button>
                          </div>
                        ))}
-                       {mainAttachments.length === 0 && !isFetchingAttachments && <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl text-center text-gray-400 italic text-xs">Nenhuma NF anexada diretamente no SharePoint.</div>}
+                       {mainAttachments.length === 0 && !isFetchingAttachments && <div className="p-4 border-2 border-dashed border-gray-200 rounded-xl text-center text-gray-400 italic text-xs">Nenhum anexo encontrado.</div>}
                      </div>
                      <div>
-                       <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3 italic">Boletos e Comprovantes:</p>
+                       <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-2 italic">Boletos e Comprovantes:</p>
                        {secondaryAttachments.map(att => (
-                         <div key={att.id} className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between mb-2">
-                           <div className="flex items-center space-x-4">
-                             <div className="bg-indigo-600 text-white p-3 rounded-xl"><Paperclip size={20} /></div>
-                             <span className="text-sm font-black text-slate-800 max-w-[150px] truncate">{att.fileName}</span>
+                         <div key={att.id} className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl flex items-center justify-between mb-2">
+                           <div className="flex items-center space-x-3">
+                             <div className="bg-indigo-600 text-white p-2.5 rounded-lg"><Paperclip size={16} /></div>
+                             <span className="text-xs font-black text-slate-800 max-w-[120px] truncate">{att.fileName}</span>
                            </div>
-                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase active:scale-95"><ExternalLink size={14} /></button>
+                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg font-black text-[9px] uppercase active:scale-95"><ExternalLink size={12} /></button>
                          </div>
                        ))}
-                       {secondaryAttachments.length === 0 && !isFetchingAttachments && <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl text-center text-gray-400 italic text-xs">Sem boletos vinculados na lista secundária.</div>}
+                       {secondaryAttachments.length === 0 && !isFetchingAttachments && <div className="p-4 border-2 border-dashed border-gray-200 rounded-xl text-center text-gray-400 italic text-xs">Sem boletos vinculados.</div>}
                      </div>
                    </div>
-                   <div className="bg-gray-50/50 p-8 rounded-[2.5rem] border border-gray-100">
-                      <span className="text-[10px] font-black text-gray-400 uppercase block mb-3 italic tracking-widest">Observações Internas</span>
-                      <p className="text-lg font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
+                   <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100">
+                      <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic tracking-widest">Observações</span>
+                      <p className="text-base font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Sem observações registradas.'}"</p>
                    </div>
                 </div>
               </div>
@@ -632,16 +632,16 @@ const DashboardSolicitante: React.FC = () => {
         ) : (
           /* Estado Vazio */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-40">
-            <div className="w-32 h-32 bg-blue-50 rounded-full flex items-center justify-center mb-6">
-              <Banknote size={60} className="text-blue-600" />
+            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-6">
+              <Banknote size={48} className="text-blue-600" />
             </div>
-            <h3 className="text-2xl font-black uppercase italic tracking-widest text-slate-800 mb-4">Painel de Notas</h3>
-            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em] mb-10 max-w-xs leading-loose">Selecione uma solicitação ao lado para ver os detalhes ou crie uma nova nota agora mesmo.</p>
+            <h3 className="text-xl font-black uppercase italic tracking-widest text-slate-800 mb-3">Painel de Notas</h3>
+            <p className="text-gray-400 font-bold uppercase text-[9px] tracking-[0.2em] mb-10 max-w-xs leading-loose">Selecione uma solicitação ao lado para gerenciar seus dados.</p>
             <button 
               onClick={() => setIsCreating(true)}
-              className="px-10 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase italic tracking-widest flex items-center shadow-xl hover:bg-blue-700 transition-all active:scale-95"
+              className="px-8 py-3.5 bg-blue-600 text-white rounded-xl font-black uppercase italic tracking-widest flex items-center shadow-lg hover:bg-blue-700 transition-all active:scale-95"
             >
-              <Plus size={20} className="mr-3" /> Abrir Chamado
+              <Plus size={18} className="mr-2" /> Abrir Chamado
             </button>
           </div>
         )}

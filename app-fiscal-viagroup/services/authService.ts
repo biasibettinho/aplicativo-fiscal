@@ -2,6 +2,7 @@
 import { User, AuthState, UserRole } from '../types';
 import { db } from './db';
 import { msalInstance, loginRequest } from './msalConfig';
+import { sharepointService } from './sharepointService';
 
 export const authService = {
   login: async (email: string, password: string): Promise<AuthState> => {
@@ -22,17 +23,20 @@ export const authService = {
       
       if (!account) throw new Error("Falha ao obter conta Microsoft.");
 
-      const users = db.getUsers();
-      let user = users.find(u => u.email.toLowerCase() === account.username.toLowerCase());
+      const email = account.username.toLowerCase();
+      
+      // Busca Role do Usuário no SharePoint (App_Gestao_Usuarios) para RLS
+      const role = await sharepointService.getUserRoleFromSharePoint(email);
 
-      const isAdmin = account.username.toLowerCase() === 'felipe.gabriel@viagroup.com.br';
+      const users = db.getUsers();
+      let user = users.find(u => u.email.toLowerCase() === email);
 
       if (!user) {
         user = {
           id: account.localAccountId,
-          email: account.username,
-          name: account.name || account.username.split('@')[0],
-          role: isAdmin ? UserRole.ADMIN_MASTER : UserRole.SOLICITANTE,
+          email: email,
+          name: account.name || email.split('@')[0],
+          role: role,
           isActive: true,
           department: (account.idTokenClaims as any)?.department || '',
           createdAt: new Date().toISOString(),
@@ -40,18 +44,10 @@ export const authService = {
         };
         db.saveUsers([...users, user]);
       } else {
-        let changed = false;
-        if (isAdmin && user.role !== UserRole.ADMIN_MASTER) {
-          user.role = UserRole.ADMIN_MASTER;
-          changed = true;
-        }
-        if (user.id !== account.localAccountId) {
-          user.id = account.localAccountId;
-          changed = true;
-        }
-        
-        if (changed) {
-          db.saveUsers(users.map(u => u.email.toLowerCase() === user?.email.toLowerCase() ? user! : u));
+        // Atualiza role se mudou no SharePoint
+        if (user.role !== role) {
+          user.role = role;
+          db.saveUsers(users.map(u => u.email.toLowerCase() === email ? user! : u));
         }
       }
 
@@ -67,16 +63,11 @@ export const authService = {
       return state;
     } catch (error: any) {
       console.error("MS Login Error:", error);
-      // Fornece detalhes sobre o erro de escopo se disponível
       const errorMessage = error.errorMessage || error.message || "Erro na autenticação Microsoft.";
       throw new Error(errorMessage);
     }
   },
   
-  /**
-   * Obtém um token específico para o recurso SharePoint (audiência correta).
-   * Resolve o erro AudienceUriValidationFailedException ao acessar _api/web.
-   */
   getSharePointToken: async (): Promise<string | null> => {
     try {
       const accounts = msalInstance.getAllAccounts();
@@ -88,11 +79,9 @@ export const authService = {
       };
 
       try {
-        // Tenta obter o token silenciosamente (cache)
         const response = await msalInstance.acquireTokenSilent(request);
         return response.accessToken;
       } catch (silentError) {
-        // Se falhar (ex: interação necessária), tenta via popup
         console.warn("Silent token acquisition failed for SharePoint, trying popup...", silentError);
         const response = await msalInstance.acquireTokenPopup(request);
         return response.accessToken;

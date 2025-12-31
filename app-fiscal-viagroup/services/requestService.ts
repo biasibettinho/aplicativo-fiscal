@@ -9,21 +9,16 @@ export const requestService = {
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      if (
-        user.role === UserRole.ADMIN_MASTER || 
-        user.role === UserRole.FISCAL_ADMIN || 
-        user.role === UserRole.FISCAL_COMUM
-      ) {
+      if (user.role === UserRole.ADMIN_MASTER) return all;
+
+      if (user.role === UserRole.SOLICITANTE) {
+        return all.filter(r => r.createdByUserId === user.id); 
+      }
+      
+      if (user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
         return all;
       }
 
-      if (user.role === UserRole.SOLICITANTE) {
-        return all.filter(r => 
-          r.createdByUserId === user.id || 
-          r.createdByName.toLowerCase().includes(user.name.split(' ')[0].toLowerCase())
-        ); 
-      }
-      
       if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
         const financeAllowed = [
           RequestStatus.APROVADO, 
@@ -42,17 +37,51 @@ export const requestService = {
     }
   },
 
-  // Fixed parameter ordering to match the call site in DashboardSolicitante.tsx (accessToken, data, files)
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<any> => {
+    // 1. Cria o item no SharePoint via Graph para persistência
     const item = await sharepointService.createRequest(accessToken, data);
-    if (item && item.id && files) {
-      // Usa o ID numérico (fields.id) retornado pelo Graph se disponível, senão tenta extrair
-      const numericId = item.fields?.id || item.fields?.ID;
-      if (numericId) {
-        if (files.invoice) await sharepointService.addAttachment(accessToken, numericId.toString(), files.invoice);
-        if (files.ticket) await sharepointService.addAttachment(accessToken, numericId.toString(), files.ticket);
+    
+    if (item && item.fields) {
+      const numericId = item.fields.id || item.fields.ID;
+      
+      // 2. Prepara o payload para o Power Automate
+      const flowPayload: any = {
+        ...data,
+        id: numericId.toString(),
+        invoiceFile: null,
+        ticketFile: null
+      };
+
+      // Função auxiliar para converter arquivo em Base64
+      const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result?.toString().split(',')[1] || '');
+        reader.onerror = error => reject(error);
+      });
+
+      // 3. Processa os anexos para o Fluxo
+      if (files?.invoice) {
+        flowPayload.invoiceFile = {
+          name: files.invoice.name,
+          content: await toBase64(files.invoice)
+        };
+        // Adiciona anexo também no SharePoint (Redundância)
+        await sharepointService.addAttachment(accessToken, numericId.toString(), files.invoice);
       }
+
+      if (files?.ticket) {
+        flowPayload.ticketFile = {
+          name: files.ticket.name,
+          content: await toBase64(files.ticket)
+        };
+        await sharepointService.addAttachment(accessToken, numericId.toString(), files.ticket);
+      }
+
+      // 4. Dispara o Gatilho do Power Automate
+      await sharepointService.triggerPowerAutomateFlow(flowPayload);
     }
+    
     return item;
   },
 
