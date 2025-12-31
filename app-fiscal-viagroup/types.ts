@@ -56,6 +56,7 @@ export interface AuditLog {
 
 export interface PaymentRequest {
   id: string;
+  graphId: string; // ID único do Microsoft Graph
   mirrorId: number;
   title: string;
   branch: string;
