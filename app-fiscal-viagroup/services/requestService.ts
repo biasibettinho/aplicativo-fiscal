@@ -9,7 +9,6 @@ export const requestService = {
     try {
       const all = await sharepointService.getRequests(accessToken);
       
-      // REGRA MESTRE: Admin Master (Felipe Gabriel) e Fiscais visualizam 100% dos dados
       if (
         user.role === UserRole.ADMIN_MASTER || 
         user.role === UserRole.FISCAL_ADMIN || 
@@ -18,7 +17,6 @@ export const requestService = {
         return all;
       }
 
-      // Solicitantes comuns: vêm apenas o que criaram
       if (user.role === UserRole.SOLICITANTE) {
         return all.filter(r => 
           r.createdByUserId === user.id || 
@@ -26,7 +24,6 @@ export const requestService = {
         ); 
       }
       
-      // Financeiro: vêm apenas o que já passou pelo fiscal ou foi compartilhado
       if (user.role === UserRole.FINANCEIRO || user.role === UserRole.FINANCEIRO_MASTER) {
         const financeAllowed = [
           RequestStatus.APROVADO, 
@@ -45,8 +42,18 @@ export const requestService = {
     }
   },
 
-  createRequest: async (data: Partial<PaymentRequest>, accessToken: string): Promise<any> => {
-    return await sharepointService.createRequest(accessToken, data);
+  // Fixed parameter ordering to match the call site in DashboardSolicitante.tsx (accessToken, data, files)
+  createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<any> => {
+    const item = await sharepointService.createRequest(accessToken, data);
+    if (item && item.id && files) {
+      // Usa o ID numérico (fields.id) retornado pelo Graph se disponível, senão tenta extrair
+      const numericId = item.fields?.id || item.fields?.ID;
+      if (numericId) {
+        if (files.invoice) await sharepointService.addAttachment(accessToken, numericId.toString(), files.invoice);
+        if (files.ticket) await sharepointService.addAttachment(accessToken, numericId.toString(), files.ticket);
+      }
+    }
+    return item;
   },
 
   updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string): Promise<any> => {

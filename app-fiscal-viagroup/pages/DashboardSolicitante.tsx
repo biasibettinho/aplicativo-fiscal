@@ -31,7 +31,7 @@ const DashboardSolicitante: React.FC = () => {
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [ticketFile, setTicketFile] = useState<File | null>(null);
 
-  // Estados do Formulário Refinados
+  // Estados do Formulário
   const [formData, setFormData] = useState({
     title: '',
     invoiceNumber: '',
@@ -49,16 +49,29 @@ const DashboardSolicitante: React.FC = () => {
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
-  const syncData = async () => {
+  const syncData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id));
-    } catch (e) { console.error(e); } finally { setIsLoading(false); }
+    } catch (e) { 
+      console.error("Erro ao sincronizar dados:", e); 
+    } finally { 
+      if (!silent) setIsLoading(false); 
+    }
   };
 
+  // Sincronia inicial
   useEffect(() => { syncData(); }, [authState.user, authState.token]);
+
+  // Polling de 60 segundos para atualização em tempo real
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncData(true);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [authState.user, authState.token]);
 
   useEffect(() => {
     let isMounted = true;
@@ -94,7 +107,6 @@ const DashboardSolicitante: React.FC = () => {
     e.preventDefault();
     if (!authState.token || !authState.user) return;
     
-    // Validação básica de arquivo obrigatório
     if (!invoiceFile) {
       alert("A Nota Fiscal é obrigatória para prosseguir.");
       return;
@@ -109,15 +121,18 @@ const DashboardSolicitante: React.FC = () => {
         createdByName: authState.user.name
       };
       
-      // O result cria o item na lista. O Power Automate é disparado pelo status 'Processando'
-      const result = await requestService.createRequest(newRequest, authState.token);
+      // Envio para o endpoint (criação via Graph + Upload de Anexos)
+      const result = await requestService.createRequest(authState.token, newRequest, { 
+        invoice: invoiceFile, 
+        ticket: ticketFile 
+      });
+
       if (result) {
-        // Simulação de processamento UX (aproximadamente 1 minuto no aviso, mas aqui aguardamos sincronia inicial)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        await syncData();
+        // Garantir que o usuário veja a nova solicitação imediatamente
+        await syncData(true);
         setIsCreating(false);
         
-        // Reset de formulário e arquivos
+        // Reset de estados
         setInvoiceFile(null);
         setTicketFile(null);
         setFormData({
@@ -187,8 +202,8 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       )}
 
-      {/* Sidebar de Listagem */}
-      <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+      {/* Sidebar de Listagem - Largura Aumentada */}
+      <div className="w-[450px] bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300">
         <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-xl font-black text-gray-800 uppercase italic">Minhas Notas</h1>
@@ -268,7 +283,7 @@ const DashboardSolicitante: React.FC = () => {
               <h3 className="font-black text-gray-900 text-sm mb-2 leading-tight uppercase truncate">{req.title}</h3>
               <div className="flex items-center text-[9px] font-black text-gray-400 uppercase tracking-widest space-x-4">
                 <span className="flex items-center"><Clock size={12} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span>
-                <span className="text-blue-500 italic truncate max-w-[100px]">{req.branch}</span>
+                <span className="text-blue-500 italic truncate max-w-[150px]">{req.branch}</span>
               </div>
             </button>
           ))}
@@ -278,7 +293,7 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Principal de Conteúdo */}
+      {/* Área Principal de Conteúdo - Reduzida Proporcionalmente */}
       <div className="flex-1 flex flex-col bg-gray-50 relative overflow-hidden">
         
         {/* Formulário de Nova Solicitação */}
@@ -289,7 +304,7 @@ const DashboardSolicitante: React.FC = () => {
                 <button onClick={() => setIsCreating(false)} className="p-3 bg-white/10 text-white border border-white/10 rounded-xl hover:bg-white/20 transition-colors">
                   <ChevronLeft size={20} />
                 </button>
-                <h2 className="text-4xl font-black text-white uppercase italic leading-none tracking-tighter">Nova Solicitação</h2>
+                <h2 className="text-3xl font-black text-white uppercase italic leading-none tracking-tighter">Nova Solicitação</h2>
               </div>
               <div className="flex items-center space-x-2 text-blue-400 font-black text-[10px] uppercase tracking-widest">
                 <Info size={14} />
@@ -314,7 +329,6 @@ const DashboardSolicitante: React.FC = () => {
                     />
                   </div>
                   
-                  {/* NF e Pedido Lado a Lado */}
                   <div>
                     <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número da NF / Documento</label>
                     <input 
@@ -434,7 +448,7 @@ const DashboardSolicitante: React.FC = () => {
                   )}
                 </div>
 
-                {/* Seção 3: Upload de Arquivos Restaurada */}
+                {/* Seção 3: Upload de Arquivos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                    <div className={`p-8 rounded-[2rem] border border-dashed transition-all relative group ${invoiceFile ? 'bg-blue-600/20 border-blue-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
                       <input 
@@ -448,7 +462,7 @@ const DashboardSolicitante: React.FC = () => {
                          <div className={`p-4 rounded-2xl text-white mb-4 shadow-lg ${invoiceFile ? 'bg-blue-500' : 'bg-blue-600'}`}>
                            <FileText size={24} />
                          </div>
-                         <p className="text-sm font-black text-white uppercase italic">
+                         <p className="text-sm font-black text-white uppercase italic truncate max-w-full px-4">
                            {invoiceFile ? invoiceFile.name : 'Nota Fiscal (PDF/JPG)'}
                          </p>
                          <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">
@@ -478,7 +492,7 @@ const DashboardSolicitante: React.FC = () => {
                          <div className={`p-4 rounded-2xl text-white mb-4 shadow-lg ${ticketFile ? 'bg-indigo-500' : 'bg-indigo-600'}`}>
                            <Paperclip size={24} />
                          </div>
-                         <p className="text-sm font-black text-white uppercase italic">
+                         <p className="text-sm font-black text-white uppercase italic truncate max-w-full px-4">
                            {ticketFile ? ticketFile.name : 'Boleto / Comprovante'}
                          </p>
                          <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">
@@ -532,84 +546,84 @@ const DashboardSolicitante: React.FC = () => {
         ) : selectedRequest ? (
           /* Visualização de Solicitação Existente */
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
-            <header className="p-12 bg-white border-b flex justify-between items-end shadow-sm">
+            <header className="p-10 bg-white border-b flex justify-between items-end shadow-sm">
               <div>
-                <div className="flex items-center space-x-6 mb-6">
-                  <span className="text-lg font-black text-gray-400 bg-gray-50 px-6 py-2 rounded-xl border">ID: {selectedRequest.id}</span>
-                  <Badge status={selectedRequest.status} className="scale-125 ml-4" />
+                <div className="flex items-center space-x-6 mb-4">
+                  <span className="text-sm font-black text-gray-400 bg-gray-50 px-4 py-1.5 rounded-xl border">ID: {selectedRequest.id}</span>
+                  <Badge status={selectedRequest.status} className="scale-110 ml-2" />
                 </div>
-                <h2 className="text-6xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[800px]">{selectedRequest.title}</h2>
+                <h2 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[700px]">{selectedRequest.title}</h2>
               </div>
             </header>
             
-            <div className="flex-1 overflow-y-auto p-12 space-y-12 custom-scrollbar">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                <div className="bg-white p-12 rounded-[3rem] border border-gray-100 shadow-xl">
-                  <p className="text-sm font-black text-blue-600 uppercase mb-8 border-b pb-4 flex items-center italic"><Banknote size={20} className="mr-3"/> Dados Fiscais</p>
-                  <div className="space-y-10">
+            <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <div className="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-lg">
+                  <p className="text-sm font-black text-blue-600 uppercase mb-6 border-b pb-3 flex items-center italic"><Banknote size={18} className="mr-3"/> Dados Fiscais</p>
+                  <div className="space-y-8">
                     <div>
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-2">Número da Nota Fiscal</span>
-                      <p className="text-5xl font-black text-slate-900 leading-none">{selectedRequest.invoiceNumber || '---'}</p>
+                      <span className="text-xs font-black text-gray-400 uppercase block mb-1">Número da Nota Fiscal</span>
+                      <p className="text-3xl font-black text-slate-900 leading-none">{selectedRequest.invoiceNumber || '---'}</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-8">
-                      <div><span className="text-xs font-black text-gray-400 uppercase block mb-2">Vencimento</span><p className="text-3xl font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
-                      <div><span className="text-xs font-black text-gray-400 uppercase block mb-2">Pedidos</span><p className="text-3xl font-black text-slate-900">{selectedRequest.orderNumbers || '---'}</p></div>
+                    <div className="grid grid-cols-2 gap-6">
+                      <div><span className="text-xs font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-xl font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                      <div><span className="text-xs font-black text-gray-400 uppercase block mb-1">Pedidos</span><p className="text-xl font-black text-slate-900">{selectedRequest.orderNumbers || '---'}</p></div>
                     </div>
                   </div>
                 </div>
-                <div className="bg-white p-12 rounded-[3rem] border border-gray-100 shadow-xl">
-                  <p className="text-sm font-black text-blue-600 uppercase mb-8 border-b pb-4 flex items-center italic"><CreditCard size={20} className="mr-3"/> Pagamento</p>
-                  <div className="space-y-10">
+                <div className="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-lg">
+                  <p className="text-sm font-black text-blue-600 uppercase mb-6 border-b pb-3 flex items-center italic"><CreditCard size={18} className="mr-3"/> Pagamento</p>
+                  <div className="space-y-8">
                     <div>
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-2">Modalidade</span>
-                      <p className="text-4xl font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p>
+                      <span className="text-xs font-black text-gray-400 uppercase block mb-1">Modalidade</span>
+                      <p className="text-2xl font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p>
                     </div>
                     <div>
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-2">Favorecido</span>
-                      <p className="text-2xl font-bold text-slate-800 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
+                      <span className="text-xs font-black text-gray-400 uppercase block mb-1">Favorecido</span>
+                      <p className="text-xl font-bold text-slate-800 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Seção de Anexos */}
-              <div className="bg-white p-12 rounded-[3.5rem] border-2 border-gray-100 shadow-2xl relative">
-                <div className="flex items-center justify-between mb-10 border-b pb-6">
-                  <h3 className="text-2xl font-black text-slate-900 uppercase italic flex items-center"><FileText size={28} className="mr-4 text-blue-600"/> Documentação e Anexos</h3>
-                  {isFetchingAttachments && <div className="flex items-center text-blue-600 font-bold uppercase text-xs animate-pulse"><Loader2 className="animate-spin mr-2" /> Sincronizando arquivos...</div>}
+              <div className="bg-white p-10 rounded-[3rem] border-2 border-gray-100 shadow-xl relative">
+                <div className="flex items-center justify-between mb-8 border-b pb-4">
+                  <h3 className="text-xl font-black text-slate-900 uppercase italic flex items-center"><FileText size={24} className="mr-3 text-blue-600"/> Documentação e Anexos</h3>
+                  {isFetchingAttachments && <div className="flex items-center text-blue-600 font-bold uppercase text-[9px] animate-pulse"><Loader2 className="animate-spin mr-2" /> Sincronizando arquivos...</div>}
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                   <div className="space-y-12">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                   <div className="space-y-8">
                      <div>
-                       <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-4 italic">Nota Fiscal Principal:</p>
+                       <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 italic">Nota Fiscal Principal:</p>
                        {mainAttachments.map(att => (
-                         <div key={att.id} className="p-6 bg-blue-50/40 border border-blue-100 rounded-[2rem] flex items-center justify-between mb-3 group">
-                           <div className="flex items-center space-x-6">
-                             <div className="bg-blue-600 text-white p-4 rounded-2xl"><FileText size={24} /></div>
-                             <span className="text-lg font-black text-slate-800 max-w-[200px] truncate">{att.fileName}</span>
+                         <div key={att.id} className="p-4 bg-blue-50/40 border border-blue-100 rounded-2xl flex items-center justify-between mb-2 group">
+                           <div className="flex items-center space-x-4">
+                             <div className="bg-blue-600 text-white p-3 rounded-xl"><FileText size={20} /></div>
+                             <span className="text-sm font-black text-slate-800 max-w-[150px] truncate">{att.fileName}</span>
                            </div>
-                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase active:scale-95"><ExternalLink size={16} /></button>
+                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase active:scale-95"><ExternalLink size={14} /></button>
                          </div>
                        ))}
-                       {mainAttachments.length === 0 && !isFetchingAttachments && <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 italic">Nenhuma NF anexada diretamente no SharePoint.</div>}
+                       {mainAttachments.length === 0 && !isFetchingAttachments && <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl text-center text-gray-400 italic text-xs">Nenhuma NF anexada diretamente no SharePoint.</div>}
                      </div>
                      <div>
-                       <p className="text-xs font-black text-indigo-500 uppercase tracking-widest mb-4 italic">Boletos e Comprovantes:</p>
+                       <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3 italic">Boletos e Comprovantes:</p>
                        {secondaryAttachments.map(att => (
-                         <div key={att.id} className="p-6 bg-indigo-50/40 border border-indigo-100 rounded-[2rem] flex items-center justify-between mb-3">
-                           <div className="flex items-center space-x-6">
-                             <div className="bg-indigo-600 text-white p-4 rounded-2xl"><Paperclip size={24} /></div>
-                             <span className="text-lg font-black text-slate-800 max-w-[200px] truncate">{att.fileName}</span>
+                         <div key={att.id} className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between mb-2">
+                           <div className="flex items-center space-x-4">
+                             <div className="bg-indigo-600 text-white p-3 rounded-xl"><Paperclip size={20} /></div>
+                             <span className="text-sm font-black text-slate-800 max-w-[150px] truncate">{att.fileName}</span>
                            </div>
-                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase active:scale-95"><ExternalLink size={16} /></button>
+                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase active:scale-95"><ExternalLink size={14} /></button>
                          </div>
                        ))}
-                       {secondaryAttachments.length === 0 && !isFetchingAttachments && <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 italic font-medium">Sem boletos vinculados na lista secundária.</div>}
+                       {secondaryAttachments.length === 0 && !isFetchingAttachments && <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl text-center text-gray-400 italic text-xs">Sem boletos vinculados na lista secundária.</div>}
                      </div>
                    </div>
-                   <div className="bg-gray-50/50 p-10 rounded-[3rem] border border-gray-100">
-                      <span className="text-xs font-black text-gray-400 uppercase block mb-4 italic">Observações Internas</span>
-                      <p className="text-2xl font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
+                   <div className="bg-gray-50/50 p-8 rounded-[2.5rem] border border-gray-100">
+                      <span className="text-[10px] font-black text-gray-400 uppercase block mb-3 italic tracking-widest">Observações Internas</span>
+                      <p className="text-lg font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
                    </div>
                 </div>
               </div>
@@ -618,16 +632,16 @@ const DashboardSolicitante: React.FC = () => {
         ) : (
           /* Estado Vazio */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-40">
-            <div className="w-40 h-40 bg-blue-50 rounded-full flex items-center justify-center mb-8">
-              <Banknote size={80} className="text-blue-600" />
+            <div className="w-32 h-32 bg-blue-50 rounded-full flex items-center justify-center mb-6">
+              <Banknote size={60} className="text-blue-600" />
             </div>
-            <h3 className="text-3xl font-black uppercase italic tracking-widest text-slate-800 mb-4">Painel de Notas</h3>
-            <p className="text-gray-400 font-bold uppercase text-xs tracking-[0.3em] mb-10 max-w-xs leading-loose">Selecione uma solicitação ao lado para ver os detalhes ou crie uma nova nota agora mesmo.</p>
+            <h3 className="text-2xl font-black uppercase italic tracking-widest text-slate-800 mb-4">Painel de Notas</h3>
+            <p className="text-gray-400 font-bold uppercase text-[10px] tracking-[0.3em] mb-10 max-w-xs leading-loose">Selecione uma solicitação ao lado para ver os detalhes ou crie uma nova nota agora mesmo.</p>
             <button 
               onClick={() => setIsCreating(true)}
-              className="px-12 py-5 bg-blue-600 text-white rounded-3xl font-black uppercase italic tracking-widest flex items-center shadow-2xl hover:bg-blue-700 transition-all active:scale-95"
+              className="px-10 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase italic tracking-widest flex items-center shadow-xl hover:bg-blue-700 transition-all active:scale-95"
             >
-              <Plus size={24} className="mr-3" /> Abrir Chamado
+              <Plus size={20} className="mr-3" /> Abrir Chamado
             </button>
           </div>
         )}

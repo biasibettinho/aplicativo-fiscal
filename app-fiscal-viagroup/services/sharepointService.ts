@@ -64,9 +64,6 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
   return res;
 }
 
-/**
- * Função auxiliar para chamadas à API REST nativa do SharePoint com token de audiência correta
- */
 async function spRestFetch(url: string, options: RequestInit = {}) {
   const spToken = await authService.getSharePointToken();
   if (!spToken) {
@@ -91,13 +88,19 @@ async function spRestFetch(url: string, options: RequestInit = {}) {
 export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
-      const response = await graphFetch(endpoint, accessToken);
-      if (!response.ok) return [];
+      let allItems: any[] = [];
+      let nextLink = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
+
+      // Loop de paginação para evitar limites de delegação
+      while (nextLink) {
+        const response = await graphFetch(nextLink, accessToken);
+        if (!response.ok) break;
+        const data = await response.json();
+        allItems = [...allItems, ...(data.value || [])];
+        nextLink = data['@odata.nextLink'] || null;
+      }
       
-      const data = await response.json();
-      
-      return (data.value || []).map((item: any) => {
+      return allItems.map((item: any) => {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
         const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || '';
@@ -154,6 +157,38 @@ export const sharepointService = {
     }
   },
 
+  addAttachment: async (accessToken: string, itemId: string, file: File): Promise<boolean> => {
+    try {
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/driveItem/content`;
+      // Nota: O Graph para listas tem um endpoint específico para anexos legados ou via driveItem se a lista for biblioteca.
+      // Para Listas SharePoint comuns (Attachments), o endpoint REST nativo é mais confiável.
+      const spToken = await authService.getSharePointToken();
+      if (!spToken) return false;
+
+      const reader = new FileReader();
+      const fileData = await new Promise<ArrayBuffer>((resolve) => {
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.readAsArrayBuffer(file);
+      });
+
+      const url = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles/add(FileName='${file.name}')`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${spToken}`,
+          'Accept': 'application/json;odata=verbose',
+          'Content-Type': file.type
+        },
+        body: fileData
+      });
+
+      return response.ok;
+    } catch (e) {
+      console.error("Erro addAttachment:", e);
+      return false;
+    }
+  },
+
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
       const fields = mapRequestToFields(data);
@@ -171,10 +206,6 @@ export const sharepointService = {
     }
   },
 
-  /**
-   * Busca anexos da Nota Fiscal Principal usando API REST nativa.
-   * Isolado para garantir que funcione independentemente de outras listas.
-   */
   getItemAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
@@ -202,14 +233,9 @@ export const sharepointService = {
     }
   },
 
-  /**
-   * Busca anexos da lista secundária (Boletos e Comprovantes) usando API REST nativa.
-   * Realiza o filtro por ID_SOL e itera por cada item encontrado para recuperar seus arquivos.
-   */
   getSecondaryAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
-      // Passo A: Filtro na lista secundária
       const filter = `ID_SOL eq '${itemId}'`;
       const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id,Attachments`;
       
@@ -217,12 +243,10 @@ export const sharepointService = {
       if (!findResponse.ok) return [];
       
       const findData = await findResponse.json();
-      // Passo B: Verifica d.results (JSON Verbose)
       const secondaryItems = findData.d?.results || [];
       
       const allSecondaryAttachments: Attachment[] = [];
 
-      // Passo C: Loop pelos itens encontrados
       for (const item of secondaryItems) {
         if (item.Attachments) {
           const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
@@ -240,7 +264,6 @@ export const sharepointService = {
                 type: 'boleto',
                 mimeType: 'application/pdf',
                 size: 0,
-                // Combinação da base com ServerRelativeUrl
                 storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
                 createdAt: new Date().toISOString()
               });
@@ -252,7 +275,7 @@ export const sharepointService = {
       return allSecondaryAttachments;
     } catch (e) {
       console.error("Erro getSecondaryAttachments (Boletos):", e);
-      return []; // Retorna vazio em caso de erro para não quebrar a NF principal
+      return [];
     }
   }
 };
