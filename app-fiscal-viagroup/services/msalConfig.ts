@@ -30,16 +30,15 @@ msalInstance.initialize().then(() => {
   console.log("MSAL Pronto. URL de Redirecionamento:", getRedirectUri());
 }).catch(err => console.error("Falha no MSAL Init:", err));
 
+/**
+ * LOGIN_REQUEST: Apenas escopos do Microsoft Graph.
+ * Escopos de recursos diferentes (SharePoint) devem ser solicitados separadamente via acquireTokenSilent.
+ */
 export const loginRequest = {
-  // Escopos combinados para Graph e SharePoint
   scopes: [
     "openid",
     "profile",
     "User.Read",
-    "Sites.ReadWrite.All",
-    `https://${TENANT_DOMAIN}/AllSites.Read`,
-    `https://${TENANT_DOMAIN}/AllSites.Write`,
-    `https://${TENANT_DOMAIN}/Sites.Read.All`,
-    `https://${TENANT_DOMAIN}/.default`
+    "Sites.Read.All"
   ]
 };

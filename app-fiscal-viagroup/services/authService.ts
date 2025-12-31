@@ -67,25 +67,38 @@ export const authService = {
       return state;
     } catch (error: any) {
       console.error("MS Login Error:", error);
-      throw new Error(error.message || "Erro na autenticação Microsoft.");
+      // Fornece detalhes sobre o erro de escopo se disponível
+      const errorMessage = error.errorMessage || error.message || "Erro na autenticação Microsoft.";
+      throw new Error(errorMessage);
     }
   },
   
   /**
-   * Obtém um token específico para o recurso SharePoint para evitar erro de Audience
+   * Obtém um token específico para o recurso SharePoint (audiência correta).
+   * Resolve o erro AudienceUriValidationFailedException ao acessar _api/web.
    */
   getSharePointToken: async (): Promise<string | null> => {
     try {
       const accounts = msalInstance.getAllAccounts();
       if (accounts.length === 0) return null;
 
-      const response = await msalInstance.acquireTokenSilent({
+      const request = {
         scopes: [`https://vialacteoscombr.sharepoint.com/.default`],
         account: accounts[0]
-      });
-      return response.accessToken;
+      };
+
+      try {
+        // Tenta obter o token silenciosamente (cache)
+        const response = await msalInstance.acquireTokenSilent(request);
+        return response.accessToken;
+      } catch (silentError) {
+        // Se falhar (ex: interação necessária), tenta via popup
+        console.warn("Silent token acquisition failed for SharePoint, trying popup...", silentError);
+        const response = await msalInstance.acquireTokenPopup(request);
+        return response.accessToken;
+      }
     } catch (error) {
-      console.error("Erro ao adquirir token SharePoint:", error);
+      console.error("Erro crítico ao adquirir token SharePoint:", error);
       return null;
     }
   },
