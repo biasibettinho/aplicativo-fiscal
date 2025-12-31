@@ -1,5 +1,4 @@
 
-// Add React to imports to resolve 'Cannot find namespace React' error when using React.FC
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
@@ -36,11 +35,12 @@ const DashboardFinanceiro: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
     const fetchAtts = async () => {
+      // IMPORTANTE: Para a API REST, usamos selectedRequest.id (numérico)
       if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
         try {
           const [main, secondary] = await Promise.all([
-            sharepointService.getItemAttachments(authState.token, selectedRequest.graphId),
+            sharepointService.getItemAttachments(authState.token, selectedRequest.id),
             sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
           ]);
           if (isMounted) { setMainAttachments(main); setSecondaryAttachments(secondary); }

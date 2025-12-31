@@ -1,5 +1,4 @@
 
-// ... (mantenha os imports iguais)
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
@@ -40,11 +39,12 @@ const DashboardSolicitante: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
     const fetchAllAttachments = async () => {
+      // IMPORTANTE: Para a API REST, usamos selectedRequest.id (numérico)
       if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
         try {
           const [main, secondary] = await Promise.all([
-            sharepointService.getItemAttachments(authState.token, selectedRequest.graphId),
+            sharepointService.getItemAttachments(authState.token, selectedRequest.id),
             sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
           ]);
           
@@ -67,7 +67,6 @@ const DashboardSolicitante: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
-  // ... (restante do componente igual, apenas garanta que o useMemo e os botões usem r.id como chave de seleção)
   const filteredRequests = useMemo(() => {
     return requests.filter(r => 
       r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 

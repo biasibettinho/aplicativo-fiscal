@@ -172,13 +172,13 @@ export const sharepointService = {
   },
 
   /**
-   * Busca anexos usando API REST nativa e token de audiência SharePoint
+   * Busca anexos da Nota Fiscal Principal usando API REST nativa.
+   * Isolado para garantir que funcione independentemente de outras listas.
    */
-  getItemAttachments: async (unusedToken: string, numericId: string): Promise<Attachment[]> => {
-    if (!numericId) return [];
+  getItemAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
+    if (!itemId) return [];
     try {
-      const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${numericId})/AttachmentFiles`;
-      console.debug(`[DEBUG] Buscando anexos (SP REST NATIVO): ${endpoint}`);
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
       
       const response = await spRestFetch(endpoint);
       if (!response.ok) return [];
@@ -188,7 +188,7 @@ export const sharepointService = {
 
       return files.map((file: any) => ({
         id: file.FileName,
-        requestId: numericId,
+        requestId: itemId,
         fileName: file.FileName,
         type: 'invoice_pdf',
         mimeType: 'application/pdf',
@@ -197,33 +197,33 @@ export const sharepointService = {
         createdAt: new Date().toISOString()
       }));
     } catch (e) {
-      console.error("Erro getItemAttachments (REST):", e);
+      console.error("Erro getItemAttachments (Main Invoice):", e);
       return [];
     }
   },
 
   /**
-   * Busca anexos da lista secundária usando API REST nativa e token de audiência SharePoint.
-   * Filtra por ID_SOL e itera por todos os itens para consolidar todos os arquivos vinculados.
+   * Busca anexos da lista secundária (Boletos e Comprovantes) usando API REST nativa.
+   * Realiza o filtro por ID_SOL e itera por cada item encontrado para recuperar seus arquivos.
    */
-  getSecondaryAttachments: async (unusedToken: string, numericId: string): Promise<Attachment[]> => {
-    if (!numericId) return [];
+  getSecondaryAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
+    if (!itemId) return [];
     try {
-      // 1. Localiza os itens na lista secundária vinculados pelo campo ID_SOL
-      const filter = `ID_SOL eq '${numericId}'`;
+      // Passo A: Filtro na lista secundária
+      const filter = `ID_SOL eq '${itemId}'`;
       const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id,Attachments`;
       
       const findResponse = await spRestFetch(findItemUrl);
       if (!findResponse.ok) return [];
       
       const findData = await findResponse.json();
+      // Passo B: Verifica d.results (JSON Verbose)
       const secondaryItems = findData.d?.results || [];
       
       const allSecondaryAttachments: Attachment[] = [];
 
-      // 2. Percorre todos os itens encontrados (podem haver múltiplos boletos para uma mesma NF)
+      // Passo C: Loop pelos itens encontrados
       for (const item of secondaryItems) {
-        // Apenas dispara a busca de arquivos se o SharePoint indicar que o item possui anexos
         if (item.Attachments) {
           const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
           const attResponse = await spRestFetch(attUrl);
@@ -235,11 +235,12 @@ export const sharepointService = {
             files.forEach((file: any) => {
               allSecondaryAttachments.push({
                 id: `${item.Id}_${file.FileName}`,
-                requestId: numericId,
+                requestId: itemId,
                 fileName: file.FileName,
                 type: 'boleto',
                 mimeType: 'application/pdf',
                 size: 0,
+                // Combinação da base com ServerRelativeUrl
                 storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
                 createdAt: new Date().toISOString()
               });
@@ -250,8 +251,8 @@ export const sharepointService = {
 
       return allSecondaryAttachments;
     } catch (e) {
-      console.error("Erro getSecondaryAttachments (REST):", e);
-      return [];
+      console.error("Erro getSecondaryAttachments (Boletos):", e);
+      return []; // Retorna vazio em caso de erro para não quebrar a NF principal
     }
   }
 };
