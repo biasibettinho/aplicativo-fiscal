@@ -4,9 +4,9 @@ import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
-import { PAYMENT_METHODS } from '../constants';
+import { PAYMENT_METHODS, BRANCHES } from '../constants';
 import { 
-  Plus, Search, History, Clock, Loader2, CreditCard, Landmark, Edit3, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink
+  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -14,14 +14,25 @@ const DashboardSolicitante: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
   const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
-  const [backgroundJobs, setBackgroundJobs] = useState<any[]>([]);
-  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
-  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Estados do Formulário
+  const [formData, setFormData] = useState({
+    title: '',
+    branch: BRANCHES[0],
+    invoiceNumber: '',
+    orderNumbers: '',
+    paymentMethod: PAYMENT_METHODS[0],
+    paymentDate: '',
+    payee: '',
+    generalObservation: ''
+  });
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -39,7 +50,6 @@ const DashboardSolicitante: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
     const fetchAllAttachments = async () => {
-      // IMPORTANTE: Para a API REST, usamos selectedRequest.id (numérico)
       if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
         try {
@@ -63,9 +73,45 @@ const DashboardSolicitante: React.FC = () => {
       }
     };
     
-    fetchAllAttachments();
+    if (selectedId) fetchAllAttachments();
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authState.token || !authState.user) return;
+    
+    setIsSubmitting(true);
+    try {
+      const newRequest: Partial<PaymentRequest> = {
+        ...formData,
+        status: RequestStatus.PENDENTE,
+        createdByUserId: authState.user.id,
+        createdByName: authState.user.name
+      };
+      
+      const result = await requestService.createRequest(newRequest, authState.token);
+      if (result) {
+        await syncData();
+        setIsCreating(false);
+        setFormData({
+          title: '',
+          branch: BRANCHES[0],
+          invoiceNumber: '',
+          orderNumbers: '',
+          paymentMethod: PAYMENT_METHODS[0],
+          paymentDate: '',
+          payee: '',
+          generalObservation: ''
+        });
+      }
+    } catch (e) {
+      console.error("Erro ao criar solicitação:", e);
+      alert("Falha ao criar solicitação. Verifique os dados e tente novamente.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const filteredRequests = useMemo(() => {
     return requests.filter(r => 
@@ -77,48 +123,196 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 relative">
-      <div className="fixed bottom-6 right-6 z-[60] flex flex-col space-y-3 pointer-events-none">
-        {backgroundJobs.map(job => (
-          <div key={job.id} className="w-80 bg-slate-900 border border-white/10 rounded-2xl p-5 shadow-2xl pointer-events-auto">
-            <div className="flex justify-between items-start mb-2">
-              <h4 className="text-[11px] font-black text-white uppercase truncate pr-4">{job.title}</h4>
-              {job.progress === 100 ? <CheckCircle2 className="text-green-500" size={16} /> : <Loader2 className="text-blue-500 animate-spin" size={16} />}
-            </div>
-            <p className="text-[10px] text-blue-400 font-bold uppercase italic mb-2">{job.status}</p>
-            <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-               <div className="bg-blue-600 h-full transition-all duration-[60s] ease-linear" style={{ width: job.progress === 100 ? '100%' : '50%' }} />
-            </div>
-          </div>
-        ))}
-      </div>
-
+      {/* Sidebar de Listagem */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-6 border-b border-gray-100 bg-white z-10">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-xl font-black text-gray-800 uppercase italic">Solicitações</h1>
-            <button onClick={() => setSelectedId(null)} className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl transition-all active:scale-95"><Plus size={24} /></button>
+            <h1 className="text-xl font-black text-gray-800 uppercase italic">Minhas Notas</h1>
+            <button 
+              onClick={() => { setIsCreating(true); setSelectedId(null); }} 
+              className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl transition-all active:scale-95"
+            >
+              <Plus size={24} />
+            </button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input type="text" placeholder="Pesquisar..." className="w-full pl-11 pr-4 py-4 bg-gray-50 border-0 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            <input 
+              type="text" 
+              placeholder="Pesquisar..." 
+              className="w-full pl-11 pr-4 py-4 bg-gray-50 border-0 rounded-2xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500" 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+            />
           </div>
         </div>
+        
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-          {filteredRequests.map(req => (
-            <button key={req.id} onClick={() => { setSelectedId(req.id); }} className={`w-full p-5 rounded-[2rem] transition-all text-left border-2 ${selectedId === req.id ? 'bg-blue-50 border-blue-600 shadow-lg scale-[1.02]' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}>
-              <div className="flex justify-between items-start mb-3"><span className="text-xs font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-lg">#{req.id}</span><Badge status={req.status} /></div>
-              <h3 className="font-black text-gray-900 text-lg mb-2 leading-tight uppercase">{req.title}</h3>
-              <div className="flex items-center text-[11px] font-black text-gray-400 uppercase tracking-widest space-x-4">
-                <span className="flex items-center"><Clock size={14} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span>
-                <span className="text-blue-500 italic">{req.branch}</span>
+          {isLoading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={32} /></div>}
+          {!isLoading && filteredRequests.map(req => (
+            <button 
+              key={req.id} 
+              onClick={() => { setSelectedId(req.id); setIsCreating(false); }} 
+              className={`w-full p-5 rounded-[2rem] transition-all text-left border-2 ${selectedId === req.id ? 'bg-blue-50 border-blue-600 shadow-lg scale-[1.02]' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}
+            >
+              <div className="flex justify-between items-start mb-3">
+                <span className="text-xs font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-lg">#{req.id}</span>
+                <Badge status={req.status} />
+              </div>
+              <h3 className="font-black text-gray-900 text-lg mb-2 leading-tight uppercase truncate">{req.title}</h3>
+              <div className="flex items-center text-[10px] font-black text-gray-400 uppercase tracking-widest space-x-4">
+                <span className="flex items-center"><Clock size={12} className="mr-1" /> {new Date(req.createdAt).toLocaleDateString()}</span>
+                <span className="text-blue-500 italic truncate max-w-[100px]">{req.branch}</span>
               </div>
             </button>
           ))}
+          {!isLoading && filteredRequests.length === 0 && (
+            <div className="text-center py-20 text-gray-400 font-bold italic">Nenhuma solicitação encontrada.</div>
+          )}
         </div>
       </div>
 
-      <div className={`flex-1 flex flex-col bg-gray-50`}>
-        {selectedRequest ? (
+      {/* Área Principal de Conteúdo */}
+      <div className="flex-1 flex flex-col bg-gray-50 relative overflow-hidden">
+        
+        {/* Caso: Criando Nova Solicitação */}
+        {isCreating ? (
+          <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-white">
+            <header className="p-10 border-b flex justify-between items-center bg-gray-50/50">
+              <div className="flex items-center space-x-6">
+                <button onClick={() => setIsCreating(false)} className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">
+                  <ChevronLeft size={20} />
+                </button>
+                <h2 className="text-4xl font-black text-slate-900 uppercase italic leading-none">Nova Solicitação</h2>
+              </div>
+            </header>
+
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-12 custom-scrollbar">
+              <div className="max-w-4xl mx-auto space-y-12 pb-20">
+                
+                {/* Seção 1: Identificação */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="col-span-2">
+                    <label className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3 block italic">Título / Descrição Curta</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="Ex: Compra de suprimentos escritório..."
+                      className="w-full p-6 bg-gray-50 border-2 border-transparent rounded-[1.5rem] focus:border-blue-500 outline-none text-xl font-bold transition-all"
+                      value={formData.title}
+                      onChange={e => setFormData({...formData, title: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 block">Filial Destino</label>
+                    <select 
+                      className="w-full p-5 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      value={formData.branch}
+                      onChange={e => setFormData({...formData, branch: e.target.value})}
+                    >
+                      {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 block">Número da NF</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="000.000.000"
+                      className="w-full p-5 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                      value={formData.invoiceNumber}
+                      onChange={e => setFormData({...formData, invoiceNumber: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                {/* Seção 2: Detalhes de Pagamento */}
+                <div className="bg-gray-50/50 p-10 rounded-[3rem] border border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="col-span-2 flex items-center mb-2">
+                    <CreditCard className="text-blue-600 mr-3" size={24} />
+                    <h3 className="text-xl font-black text-slate-900 uppercase italic">Dados de Pagamento</h3>
+                  </div>
+                  
+                  <div>
+                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Método de Pagamento</label>
+                    <select 
+                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      value={formData.paymentMethod}
+                      onChange={e => setFormData({...formData, paymentMethod: e.target.value})}
+                    >
+                      {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Vencimento da Nota</label>
+                    <input 
+                      required
+                      type="date" 
+                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      value={formData.paymentDate}
+                      onChange={e => setFormData({...formData, paymentDate: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Favorecido (Pessoa/Empresa)</label>
+                    <input 
+                      required
+                      type="text" 
+                      placeholder="Nome completo ou Razão Social"
+                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      value={formData.payee}
+                      onChange={e => setFormData({...formData, payee: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Números de Pedido (Separados por vírgula)</label>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: 4567, 8910..."
+                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                      value={formData.orderNumbers}
+                      onChange={e => setFormData({...formData, orderNumbers: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                {/* Seção 3: Observações */}
+                <div>
+                  <label className="text-xs font-black text-gray-400 uppercase mb-3 block italic">Observações Adicionais</label>
+                  <textarea 
+                    rows={4}
+                    className="w-full p-6 bg-gray-50 border-0 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500 font-medium italic"
+                    placeholder="Alguma informação importante para o fiscal ou financeiro?"
+                    value={formData.generalObservation}
+                    onChange={e => setFormData({...formData, generalObservation: e.target.value})}
+                  />
+                </div>
+
+                {/* Rodapé de Ações */}
+                <div className="flex items-center justify-end space-x-6 pt-10 border-t">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsCreating(false)}
+                    className="px-8 py-5 text-gray-400 font-black text-xs uppercase hover:text-gray-600 transition-colors"
+                  >
+                    Descartar
+                  </button>
+                  <button 
+                    disabled={isSubmitting}
+                    className="px-12 py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-sm uppercase italic shadow-2xl hover:bg-blue-700 transition-all flex items-center shadow-blue-200 active:scale-95 disabled:opacity-50"
+                  >
+                    {isSubmitting ? <Loader2 className="animate-spin mr-3" /> : <Send className="mr-3" />}
+                    Criar Solicitação
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        ) : selectedRequest ? (
+          /* Visualização de Solicitação Existente */
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
             <header className="p-12 bg-white border-b flex justify-between items-end shadow-sm">
               <div>
@@ -126,7 +320,7 @@ const DashboardSolicitante: React.FC = () => {
                   <span className="text-lg font-black text-gray-400 bg-gray-50 px-6 py-2 rounded-xl border">ID: {selectedRequest.id}</span>
                   <Badge status={selectedRequest.status} className="scale-125 ml-4" />
                 </div>
-                <h2 className="text-6xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">{selectedRequest.title}</h2>
+                <h2 className="text-6xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[800px]">{selectedRequest.title}</h2>
               </div>
             </header>
             
@@ -175,10 +369,10 @@ const DashboardSolicitante: React.FC = () => {
                              <div className="bg-blue-600 text-white p-4 rounded-2xl"><FileText size={24} /></div>
                              <span className="text-lg font-black text-slate-800 max-w-[200px] truncate">{att.fileName}</span>
                            </div>
-                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase"><ExternalLink size={16} /></button>
+                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase active:scale-95"><ExternalLink size={16} /></button>
                          </div>
                        ))}
-                       {mainAttachments.length === 0 && !isFetchingAttachments && <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 italic">Nenhuma NF encontrada.</div>}
+                       {mainAttachments.length === 0 && !isFetchingAttachments && <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 italic">Nenhuma NF anexada diretamente no SharePoint.</div>}
                      </div>
                      <div>
                        <p className="text-xs font-black text-indigo-500 uppercase tracking-widest mb-4 italic">Boletos e Comprovantes:</p>
@@ -188,10 +382,10 @@ const DashboardSolicitante: React.FC = () => {
                              <div className="bg-indigo-600 text-white p-4 rounded-2xl"><Paperclip size={24} /></div>
                              <span className="text-lg font-black text-slate-800 max-w-[200px] truncate">{att.fileName}</span>
                            </div>
-                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase"><ExternalLink size={16} /></button>
+                           <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase active:scale-95"><ExternalLink size={16} /></button>
                          </div>
                        ))}
-                       {secondaryAttachments.length === 0 && !isFetchingAttachments && <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 italic">Sem boletos vinculados.</div>}
+                       {secondaryAttachments.length === 0 && !isFetchingAttachments && <div className="p-10 border-2 border-dashed border-gray-200 rounded-3xl text-center text-gray-400 italic font-medium">Sem boletos vinculados na lista secundária.</div>}
                      </div>
                    </div>
                    <div className="bg-gray-50/50 p-10 rounded-[3rem] border border-gray-100">
@@ -203,9 +397,19 @@ const DashboardSolicitante: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-30">
-            <Banknote size={120} className="mb-6" />
-            <h3 className="text-2xl font-black uppercase italic tracking-widest">Painel de Notas</h3>
+          /* Estado Vazio - Painel Inicial */
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-20">
+            <div className="w-40 h-40 bg-blue-50 rounded-full flex items-center justify-center mb-8 animate-bounce transition-all">
+              <Banknote size={80} className="text-blue-600" />
+            </div>
+            <h3 className="text-3xl font-black uppercase italic tracking-widest text-slate-800 mb-4">Painel de Notas</h3>
+            <p className="text-gray-400 font-bold uppercase text-xs tracking-[0.3em] mb-10 max-w-xs leading-loose">Selecione uma solicitação ao lado para ver os detalhes ou crie uma nova nota agora mesmo.</p>
+            <button 
+              onClick={() => setIsCreating(true)}
+              className="px-12 py-5 bg-blue-600 text-white rounded-3xl font-black uppercase italic tracking-widest flex items-center shadow-2xl hover:bg-blue-700 transition-all active:scale-95"
+            >
+              <Plus size={24} className="mr-3" /> Abrir Chamado
+            </button>
           </div>
         )}
       </div>
