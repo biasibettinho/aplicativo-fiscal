@@ -3,8 +3,9 @@ import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
 const TENANT = 'vialacteoscombr.sharepoint.com';
 const SITE_PATH = '/sites/Vialacteos'; 
+const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
-// GUIDs das Listas
+// IDs das Listas (GUIDs)
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 
@@ -26,6 +27,27 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
+/**
+ * Chamada ao Microsoft Graph (Melhor para metadados e identidade)
+ */
+async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
+  const headers: any = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json",
+    ...options.headers,
+  };
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error(`[GRAPH ERROR] ${url}`, txt);
+    return res;
+  }
+  return res;
+}
+
+/**
+ * Chamada à SharePoint REST API (Melhor para arquivos binários/anexos)
+ */
 async function spFetch(endpoint: string, accessToken: string, options: RequestInit = {}) {
   const url = `https://${TENANT}${SITE_PATH}${endpoint}`;
   const headers: any = {
@@ -33,7 +55,6 @@ async function spFetch(endpoint: string, accessToken: string, options: RequestIn
     Accept: "application/json;odata=verbose",
     ...options.headers,
   };
-  
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const txt = await res.text();
@@ -46,45 +67,47 @@ async function spFetch(endpoint: string, accessToken: string, options: RequestIn
 export const sharepointService = {
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
-      const endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items?$top=500&$select=*,Author/Title&$expand=Author`;
-      const response = await spFetch(endpoint, accessToken);
+      // Usamos Graph para buscar a lista de itens pois ele retorna o ID do Azure AD correto para filtros
+      const response = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`, accessToken);
       if (!response.ok) return [];
       
       const data = await response.json();
-      const results = data.d?.results || [];
-
-      return results.map((item: any) => ({
-        id: item.Id.toString(),
-        mirrorId: item.Id,
-        title: item.Title || 'Sem Título',
-        branch: item[FIELD_MAP.branch] || '',
-        status: (item[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
-        orderNumbers: item[FIELD_MAP.orderNumbers] || '',
-        invoiceNumber: item[FIELD_MAP.invoiceNumber] || '',
-        payee: item[FIELD_MAP.payee] || '',
-        paymentMethod: item[FIELD_MAP.paymentMethod] || '',
-        pixKey: item[FIELD_MAP.pixKey] || '',
-        paymentDate: item[FIELD_MAP.paymentDate] || '',
-        bank: item[FIELD_MAP.bank] || '',
-        agency: item[FIELD_MAP.agency] || '',
-        account: item[FIELD_MAP.account] || '',
-        accountType: item[FIELD_MAP.accountType] || '',
-        generalObservation: item[FIELD_MAP.generalObservation] || '',
-        statusManual: item[FIELD_MAP.statusManual] || '',
-        createdAt: item.Created,
-        updatedAt: item.Modified,
-        createdByUserId: item.AuthorId?.toString() || '',
-        createdByName: item.Author?.Title || 'Sistema',
-        attachments: []
-      }));
+      return (data.value || []).map((item: any) => {
+        const f = item.fields || {};
+        return {
+          id: item.id,
+          mirrorId: parseInt(item.id, 10) || 0,
+          title: f.Title || 'Sem Título',
+          branch: f[FIELD_MAP.branch] || '',
+          status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
+          orderNumbers: f[FIELD_MAP.orderNumbers] || '',
+          invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
+          payee: f[FIELD_MAP.payee] || '',
+          paymentMethod: f[FIELD_MAP.paymentMethod] || '',
+          pixKey: f[FIELD_MAP.pixKey] || '',
+          paymentDate: f[FIELD_MAP.paymentDate] || '',
+          bank: f[FIELD_MAP.bank] || '',
+          agency: f[FIELD_MAP.agency] || '',
+          account: f[FIELD_MAP.account] || '',
+          accountType: f[FIELD_MAP.accountType] || '',
+          generalObservation: f[FIELD_MAP.generalObservation] || '',
+          statusManual: f[FIELD_MAP.statusManual] || '',
+          createdAt: item.createdDateTime,
+          updatedAt: item.lastModifiedDateTime,
+          createdByUserId: item.createdBy?.user?.id || '',
+          createdByName: item.createdBy?.user?.displayName || 'Sistema',
+          attachments: []
+        };
+      });
     } catch (e) {
-      console.error("Erro getRequests:", e);
+      console.error("Erro ao buscar solicitações via Graph:", e);
       return [];
     }
   },
 
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
+      // Usamos REST API para anexos
       const endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
       const response = await spFetch(endpoint, accessToken);
       if (!response.ok) return [];
@@ -94,6 +117,7 @@ export const sharepointService = {
 
       return await Promise.all(files.map(async (file: any) => {
         const downloadUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
+        // Faz o download binário autenticado para gerar um Blob local e evitar problemas de cross-origin/auth no visualizador
         const contentRes = await fetch(downloadUrl, {
           headers: { Authorization: `Bearer ${accessToken}` }
         });
@@ -122,29 +146,34 @@ export const sharepointService = {
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      const filter = encodeURIComponent(`ID_SOL eq '${requestId}'`);
-      const endpointItems = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${filter}`;
-      const resItems = await spFetch(endpointItems, accessToken);
-      if (!resItems.ok) return [];
+      // 1. Localiza itens na lista secundária vinculados ao ID_SOL via Graph (mais rápido para busca)
+      const filter = encodeURIComponent(`fields/ID_SOL eq '${requestId}'`);
+      const graphUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
+      const res = await graphFetch(graphUrl, accessToken);
       
-      const dataItems = await resItems.json();
-      const items = dataItems.d?.results || [];
+      if (!res.ok) return [];
+      const data = await res.json();
       const results: Attachment[] = [];
 
-      for (const item of items) {
-        const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
-        const resAtts = await spFetch(endpointAtts, accessToken);
-        if (resAtts.ok) {
-          const dataAtts = await resAtts.json();
-          const files = dataAtts.d?.results || [];
+      // 2. Busca anexos binários via REST API para cada item encontrado
+      for (const item of (data.value || [])) {
+        const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.id})/AttachmentFiles`;
+        const spRes = await spFetch(endpointAtts, accessToken);
+        
+        if (spRes.ok) {
+          const spData = await spRes.json();
+          const files = spData.d?.results || [];
+          
           for (const file of files) {
             const downloadUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
             const contentRes = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+            
             let storageUrl = downloadUrl;
             if (contentRes.ok) {
               const blob = await contentRes.blob();
               storageUrl = URL.createObjectURL(blob);
             }
+            
             results.push({
               id: file.FileName,
               requestId,
@@ -153,7 +182,7 @@ export const sharepointService = {
               mimeType: 'application/pdf',
               size: 0,
               storageUrl,
-              createdAt: item.Created
+              createdAt: item.createdDateTime
             });
           }
         }
@@ -165,50 +194,42 @@ export const sharepointService = {
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    // Para POST, precisamos do ListItemEntityTypeFullName. 
-    // Em listas genéricas é SP.Data.NOME_DA_LISTAListItem
-    const body: any = {
-      '__metadata': { 'type': 'SP.Data.VialacteosListItem' }
+    const fields: any = {
+      Title: data.title,
+      [FIELD_MAP.invoiceNumber]: data.invoiceNumber || '',
+      [FIELD_MAP.orderNumbers]: data.orderNumbers || '',
+      [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
+      [FIELD_MAP.branch]: data.branch || '',
+      [FIELD_MAP.paymentMethod]: data.paymentMethod,
+      [FIELD_MAP.paymentDate]: data.paymentDate,
+      [FIELD_MAP.payee]: data.payee || '',
+      [FIELD_MAP.bank]: data.bank || '',
+      [FIELD_MAP.agency]: data.agency || '',
+      [FIELD_MAP.account]: data.account || '',
+      [FIELD_MAP.accountType]: data.accountType || 'Conta Corrente',
+      [FIELD_MAP.generalObservation]: data.generalObservation || '',
+      [FIELD_MAP.pixKey]: data.pixKey || '',
     };
-
-    Object.entries(data).forEach(([key, value]) => {
-      const spField = (FIELD_MAP as any)[key];
-      if (spField && value !== undefined) body[spField] = value;
-    });
-
-    const res = await spFetch(`/_api/web/lists(guid'${MAIN_LIST_ID}')/items`, accessToken, {
+    const resp = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`, accessToken, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json;odata=verbose' },
-      body: JSON.stringify(body)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
     });
-
-    if (!res.ok) throw new Error("Erro ao criar item no SharePoint");
-    const json = await res.json();
-    return { id: json.d.Id.toString() };
+    return await resp.json();
   },
 
   updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const body: any = {
-      '__metadata': { 'type': 'SP.Data.VialacteosListItem' }
-    };
-
-    Object.entries(data).forEach(([key, value]) => {
-      const spField = (FIELD_MAP as any)[key];
-      if (spField && value !== undefined) body[spField] = value;
+    const fields: any = {};
+    Object.keys(data).forEach(key => {
+      const spKey = (FIELD_MAP as any)[key];
+      if (spKey) fields[spKey] = (data as any)[key];
     });
-
-    const res = await spFetch(`/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})`, accessToken, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json;odata=verbose',
-        'IF-MATCH': '*',
-        'X-HTTP-Method': 'MERGE'
-      },
-      body: JSON.stringify(body)
+    const resp = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`, accessToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields)
     });
-
-    if (!res.ok) throw new Error("Erro ao atualizar item no SharePoint");
-    return { success: true };
+    return await resp.json();
   },
 
   triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, invoiceFiles: File[], ticketFiles: File[]): Promise<any> => {
