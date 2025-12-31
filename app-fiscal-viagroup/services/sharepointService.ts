@@ -74,7 +74,7 @@ async function spFetch(endpoint: string, accessToken: string, options: RequestIn
 
 export const sharepointService = {
   /**
-   * Busca as solicitações da lista principal usando Microsoft Graph.
+   * Busca as solicitações usando Microsoft Graph (Híbrido: Parte 1)
    */
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
@@ -85,9 +85,13 @@ export const sharepointService = {
       const data = await response.json();
       return (data.value || []).map((item: any) => {
         const f = item.fields || {};
-        // O ID do Graph (item.id) às vezes é um GUID, mas o SharePoint REST precisa do ID inteiro (f.id ou f.ID)
+        
+        // CRITICAL: A REST API só aceita o ID numérico que está dentro de fields
         const numericId = f.id || f.ID || parseInt(item.id, 10);
         
+        // Se o criador não vier no objeto user.id, tentamos pegar de campos auxiliares do SharePoint
+        const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || '';
+
         return {
           id: numericId.toString(),
           mirrorId: numericId,
@@ -108,8 +112,8 @@ export const sharepointService = {
           statusManual: f[FIELD_MAP.statusManual] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
-          createdByUserId: item.createdBy?.user?.id || '',
-          createdByName: item.createdBy?.user?.displayName || 'Sistema',
+          createdByUserId: creatorId,
+          createdByName: item.createdBy?.user?.displayName || f.AuthorDisplayName || 'Sistema',
           attachments: []
         };
       });
@@ -120,12 +124,12 @@ export const sharepointService = {
   },
 
   /**
-   * Busca anexos de um item da lista principal usando SharePoint REST.
+   * Busca anexos usando SharePoint REST API (Híbrido: Parte 2)
    */
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
-      // Usamos o numeric ID aqui
+      // Usamos o ID NUMÉRICO (inteiro) que a REST API exige
       const endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
       const response = await spFetch(endpoint, accessToken);
       
@@ -135,14 +139,13 @@ export const sharepointService = {
       const files = data.d?.results || [];
 
       return await Promise.all(files.map(async (file: any) => {
-        // Para baixar o conteúdo binário via REST API evitando CORS/Auth de sessão:
-        // Endpoint: .../AttachmentFiles('nome_arquivo')/$value
+        // Para baixar o conteúdo binário via REST API com Bearer Token (/$value)
         const fileNameEncoded = encodeURIComponent(file.FileName);
         const binaryEndpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles('${fileNameEncoded}')/$value`;
-        const downloadUrl = `https://${TENANT}${SITE_PATH}${binaryEndpoint}`;
+        const binaryUrl = `https://${TENANT}${SITE_PATH}${binaryEndpoint}`;
         
         try {
-          const contentRes = await fetch(downloadUrl, {
+          const contentRes = await fetch(binaryUrl, {
             headers: { Authorization: `Bearer ${accessToken}` }
           });
           
@@ -160,10 +163,9 @@ export const sharepointService = {
             };
           }
         } catch (e) {
-          console.warn(`Erro no download binário de ${file.FileName}, tentando fallback...`);
+          console.warn(`Erro no download REST de ${file.FileName}, usando URL relativa.`);
         }
         
-        // Fallback para ServerRelativeUrl (pode falhar se não houver cookie de sessão)
         return {
           id: file.FileName,
           requestId: itemId,
@@ -176,18 +178,18 @@ export const sharepointService = {
         };
       }));
     } catch (e) {
-      console.error("Erro getItemAttachments:", e);
+      console.error("Erro getItemAttachments via REST:", e);
       return [];
     }
   },
 
   /**
-   * Busca anexos da lista secundária (Boletos) usando Graph para localização e REST para arquivos.
+   * Busca anexos da lista secundária (Boletos) usando Graph para filtro e REST para arquivos
    */
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     if (!requestId) return [];
     try {
-      // 1. Filtragem por ID_SOL usando Graph para achar os itens correspondentes na lista de boletos
+      // 1. Filtragem por ID_SOL usando Graph (Mapeamento)
       const filter = encodeURIComponent(`fields/ID_SOL eq '${requestId}'`);
       const graphUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
       const res = await graphFetch(graphUrl, accessToken);
@@ -198,10 +200,10 @@ export const sharepointService = {
       const results: Attachment[] = [];
 
       for (const item of items) {
-        // Precisamos do ID INTEIRO (numeric) da lista secundária
+        // ID NUMÉRICO do item da lista secundária
         const numericSecondaryId = item.fields.id || item.fields.ID;
         
-        // 2. Para cada item da lista secundária, pegamos os arquivos de anexo via REST
+        // 2. Busca de arquivos via REST API
         const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${numericSecondaryId})/AttachmentFiles`;
         const spRes = await spFetch(endpointAtts, accessToken);
         
@@ -222,7 +224,6 @@ export const sharepointService = {
                 finalUrl = URL.createObjectURL(blob);
               }
             } catch (e) {
-              console.warn("Fallback para URL direta na lista secundária:", file.FileName);
               finalUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
             }
             
@@ -241,7 +242,7 @@ export const sharepointService = {
       }
       return results;
     } catch (e) {
-      console.error("Erro getSecondaryAttachments:", e);
+      console.error("Erro getSecondaryAttachments Híbrido:", e);
       return [];
     }
   },
@@ -273,7 +274,6 @@ export const sharepointService = {
 
     if (!response.ok) throw new Error("Erro ao criar item no SharePoint");
     const item = await response.json();
-    // Retornamos o numeric ID (fields.id) para ser usado nas chamadas subsequentes de anexo
     return { id: item.fields.id.toString(), ...item.fields };
   },
 
@@ -307,7 +307,7 @@ export const sharepointService = {
   },
 
   triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, invoiceFiles: File[], ticketFiles: File[]): Promise<any> => {
-    console.log(`[PA TRIGGER] Item ${itemId} | NF ${invoiceNumber} | Files: ${invoiceFiles.length + ticketFiles.length}`);
+    console.log(`[PA TRIGGER] Item ${itemId} | NF ${invoiceNumber}`);
     await new Promise(resolve => setTimeout(resolve, 2000));
     return { success: true };
   }
