@@ -40,7 +40,6 @@ export const authService = {
         };
         db.saveUsers([...users, user]);
       } else {
-        // Garante que o ID e o Papel do Admin Master estejam sempre corretos
         let changed = false;
         if (isAdmin && user.role !== UserRole.ADMIN_MASTER) {
           user.role = UserRole.ADMIN_MASTER;
@@ -72,11 +71,29 @@ export const authService = {
     }
   },
   
+  /**
+   * Obtém um token específico para o recurso SharePoint para evitar erro de Audience
+   */
+  getSharePointToken: async (): Promise<string | null> => {
+    try {
+      const accounts = msalInstance.getAllAccounts();
+      if (accounts.length === 0) return null;
+
+      const response = await msalInstance.acquireTokenSilent({
+        scopes: [`https://vialacteoscombr.sharepoint.com/.default`],
+        account: accounts[0]
+      });
+      return response.accessToken;
+    } catch (error) {
+      console.error("Erro ao adquirir token SharePoint:", error);
+      return null;
+    }
+  },
+  
   getCurrentUser: (): User | null => {
     const session = localStorage.getItem('sispag_session');
     if (!session) return null;
     const parsed = JSON.parse(session);
-    // Sempre busca a versão mais recente do banco local para evitar inconsistência de Role
     const users = db.getUsers();
     return users.find(u => u.email.toLowerCase() === parsed.user.email.toLowerCase()) || parsed.user;
   }

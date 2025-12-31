@@ -1,10 +1,12 @@
 
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
+import { authService } from './authService';
 
 /**
  * CONFIGURAÇÕES REAIS DO AMBIENTE VIA LACTEOS
  */
 const SITE_URL = 'https://vialacteoscombr.sharepoint.com/sites/Powerapps';
+const BASE_URL = 'https://vialacteoscombr.sharepoint.com';
 const GRAPH_SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
@@ -63,11 +65,17 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
 }
 
 /**
- * Função auxiliar para chamadas à API REST nativa do SharePoint
+ * Função auxiliar para chamadas à API REST nativa do SharePoint com token de audiência correta
  */
-async function spRestFetch(url: string, accessToken: string, options: RequestInit = {}) {
+async function spRestFetch(url: string, options: RequestInit = {}) {
+  const spToken = await authService.getSharePointToken();
+  if (!spToken) {
+    console.error("[SP REST] Falha ao adquirir token de audiência SharePoint.");
+    return new Response(null, { status: 401 });
+  }
+
   const headers: any = {
-    Authorization: `Bearer ${accessToken}`,
+    Authorization: `Bearer ${spToken}`,
     'Accept': 'application/json;odata=verbose',
     ...options.headers,
   };
@@ -163,44 +171,48 @@ export const sharepointService = {
     }
   },
 
-  getItemAttachments: async (accessToken: string, numericId: string): Promise<Attachment[]> => {
+  /**
+   * Busca anexos usando API REST nativa e token de audiência SharePoint
+   */
+  getItemAttachments: async (unusedToken: string, numericId: string): Promise<Attachment[]> => {
     if (!numericId) return [];
     try {
-      // Usando a API REST nativa do SharePoint conforme solicitado
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${numericId})/AttachmentFiles`;
-      console.debug(`[DEBUG] Buscando anexos (SP REST): ${endpoint}`);
+      console.debug(`[DEBUG] Buscando anexos (SP REST NATIVO): ${endpoint}`);
       
-      const response = await spRestFetch(endpoint, accessToken);
+      const response = await spRestFetch(endpoint);
       if (!response.ok) return [];
       
       const data = await response.json();
       const files = data.d?.results || [];
 
       return files.map((file: any) => ({
-        id: file.FileName, // Usamos o nome como ID único do anexo
+        id: file.FileName,
         requestId: numericId,
         fileName: file.FileName,
         type: 'invoice_pdf',
         mimeType: 'application/pdf',
         size: 0,
-        // Construção da URL absoluta do SharePoint
-        storageUrl: `https://vialacteoscombr.sharepoint.com${file.ServerRelativeUrl}`,
+        storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
         createdAt: new Date().toISOString()
       }));
     } catch (e) {
-      console.error("Erro getItemAttachments (SP REST):", e);
+      console.error("Erro getItemAttachments (REST):", e);
       return [];
     }
   },
 
-  getSecondaryAttachments: async (accessToken: string, numericId: string): Promise<Attachment[]> => {
+  /**
+   * Busca anexos da lista secundária usando API REST nativa e token de audiência SharePoint
+   */
+  getSecondaryAttachments: async (unusedToken: string, numericId: string): Promise<Attachment[]> => {
     if (!numericId) return [];
     try {
-      // 1. Primeiro, encontrar o(s) item(ns) na lista secundária que possuem o ID_SOL correspondente
+      // 1. Localiza o item na lista secundária
       const filter = `ID_SOL eq '${numericId}'`;
       const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
       
-      const findResponse = await spRestFetch(findItemUrl, accessToken);
+      const findResponse = await spRestFetch(findItemUrl);
       if (!findResponse.ok) return [];
       
       const findData = await findResponse.json();
@@ -208,10 +220,10 @@ export const sharepointService = {
       
       const results: Attachment[] = [];
 
-      // 2. Para cada item encontrado, buscar seus anexos via API REST
+      // 2. Busca arquivos para cada item de boleto encontrado
       for (const item of secondaryItems) {
         const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
-        const attResponse = await spRestFetch(attUrl, accessToken);
+        const attResponse = await spRestFetch(attUrl);
         
         if (attResponse.ok) {
           const attData = await attResponse.json();
@@ -225,7 +237,7 @@ export const sharepointService = {
               type: 'boleto',
               mimeType: 'application/pdf',
               size: 0,
-              storageUrl: `https://vialacteoscombr.sharepoint.com${file.ServerRelativeUrl}`,
+              storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
               createdAt: new Date().toISOString()
             });
           });
@@ -234,7 +246,7 @@ export const sharepointService = {
 
       return results;
     } catch (e) {
-      console.error("Erro getSecondaryAttachments (SP REST):", e);
+      console.error("Erro getSecondaryAttachments (REST):", e);
       return [];
     }
   }

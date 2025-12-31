@@ -31,14 +31,15 @@ msalInstance.initialize().then(() => {
 }).catch(err => console.error("Falha no MSAL Init:", err));
 
 export const loginRequest = {
-  // Removido o .default para evitar o erro AADSTS70011.
-  // Focamos nos escopos necessários para o SharePoint e Graph básico.
+  // Escopos combinados para Graph e SharePoint
   scopes: [
     "openid",
     "profile",
     "User.Read",
     "Sites.ReadWrite.All",
     `https://${TENANT_DOMAIN}/AllSites.Read`,
-    `https://${TENANT_DOMAIN}/AllSites.Write`
+    `https://${TENANT_DOMAIN}/AllSites.Write`,
+    `https://${TENANT_DOMAIN}/Sites.Read.All`,
+    `https://${TENANT_DOMAIN}/.default`
   ]
 };
