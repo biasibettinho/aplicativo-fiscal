@@ -1,6 +1,8 @@
 
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
+const TENANT = 'vialacteoscombr.sharepoint.com';
+const SITE_PATH = '/sites/Vialacteos'; // Ajuste o path se necessário (ex: /sites/Fiscal)
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
@@ -23,6 +25,9 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA'
 };
 
+/**
+ * Utilitário para chamadas ao Microsoft Graph
+ */
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
   const headers: any = {
     Authorization: `Bearer ${accessToken}`,
@@ -32,10 +37,27 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const txt = await res.text();
-    console.warn(`[SHAREPOINT ERROR] URL: ${url} | Status: ${res.status}`, txt);
-    // Se for 400 ou 404, não lançamos erro pesado para permitir que o sistema tente o próximo método de busca
-    if (res.status === 400 || res.status === 404) return res; 
-    throw new Error(`Graph API ${res.status}`);
+    console.warn(`[GRAPH ERROR] ${url}`, txt);
+    return res;
+  }
+  return res;
+}
+
+/**
+ * Utilitário para chamadas à SharePoint REST API
+ */
+async function spFetch(endpoint: string, accessToken: string, options: RequestInit = {}) {
+  const url = `https://${TENANT}${SITE_PATH}${endpoint}`;
+  const headers: any = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: "application/json;odata=verbose",
+    ...options.headers,
+  };
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    const txt = await res.text();
+    console.warn(`[SHAREPOINT REST ERROR] ${url}`, txt);
+    return res;
   }
   return res;
 }
@@ -77,131 +99,82 @@ export const sharepointService = {
     }
   },
 
-  searchFilesByQuery: async (accessToken: string, query: string): Promise<Attachment[]> => {
-    if (!query || query === '---' || query.trim() === '') return [];
+  getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
-      const encodedQuery = encodeURIComponent(query);
-      // Busca em todos os drives do site para ser mais abrangente
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/drive/root/search(q='${encodedQuery}')`;
+      // Endpoint sugerido: AttachmentFiles via SharePoint REST API
+      const endpoint = `/_api/web/lists/getbyid('${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
+      const response = await spFetch(endpoint, accessToken);
       
-      const response = await graphFetch(url, accessToken);
       if (!response.ok) return [];
       
       const data = await response.json();
-      if (!data.value) return [];
+      const files = data.d?.results || [];
 
-      return await Promise.all(data.value.filter((f: any) => f.file).map(async (file: any) => {
-        const contentUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/drive/items/${file.id}/content`;
-        const blobRes = await graphFetch(contentUrl, accessToken);
-        const blob = await blobRes.blob();
+      return await Promise.all(files.map(async (file: any) => {
+        // Para baixar o conteúdo, usamos o ServerRelativeUrl
+        const downloadEndpoint = `/_api/web/GetFileByServerRelativeUrl('${file.ServerRelativeUrl}')/$value`;
+        const contentRes = await spFetch(downloadEndpoint, accessToken);
+        const blob = await contentRes.blob();
+        
         return {
-          id: file.id,
-          requestId: query,
-          fileName: file.name,
+          id: file.FileName,
+          requestId: itemId,
+          fileName: file.FileName,
           type: 'invoice_pdf',
-          mimeType: file.file.mimeType || 'application/pdf',
-          size: file.size,
+          mimeType: 'application/pdf',
+          size: 0,
           storageUrl: URL.createObjectURL(blob),
-          createdAt: file.createdDateTime
+          createdAt: new Date().toISOString()
         };
       }));
     } catch (e) {
-      return [];
-    }
-  },
-
-  getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
-    try {
-      let results: Attachment[] = [];
-
-      // 1. Tenta como anexo de lista tradicional
-      const attUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/attachments`;
-      const attRes = await graphFetch(attUrl, accessToken);
-      
-      if (attRes.ok) {
-        const data = await attRes.json();
-        if (data.value && data.value.length > 0) {
-          results = await Promise.all(data.value.map(async (a: any) => {
-            const valUrl = `${attUrl}/${a.id}/$value`;
-            const blobRes = await graphFetch(valUrl, accessToken);
-            return {
-              id: a.id,
-              requestId: itemId,
-              fileName: a.name,
-              type: 'invoice_pdf',
-              mimeType: 'application/pdf',
-              size: 0,
-              storageUrl: URL.createObjectURL(await blobRes.blob()),
-              createdAt: new Date().toISOString()
-            };
-          }));
-          if (results.length > 0) return results;
-        }
-      }
-
-      // 2. Tenta como DriveItem (Comportamento de Biblioteca de Documentos)
-      const diUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/driveItem`;
-      const diRes = await graphFetch(diUrl, accessToken);
-      
-      if (diRes.ok) {
-        const diData = await diRes.json();
-        if (diData.id && diData.file) {
-          const contentRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/drive/items/${diData.id}/content`, accessToken);
-          results.push({
-            id: diData.id,
-            requestId: itemId,
-            fileName: diData.name,
-            type: 'invoice_pdf',
-            mimeType: diData.file.mimeType || 'application/pdf',
-            size: diData.size,
-            storageUrl: URL.createObjectURL(await contentRes.blob()),
-            createdAt: diData.createdDateTime
-          });
-          return results;
-        }
-      }
-
-      // 3. Fallback: Busca geral pelo ID na biblioteca
-      return await sharepointService.searchFilesByQuery(accessToken, itemId);
-
-    } catch (e) {
+      console.error("Erro ao buscar anexos via SharePoint REST:", e);
       return [];
     }
   },
 
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
+      // 1. Localiza os itens na lista secundária que referenciam o ID da solicitação (via Graph)
       const filter = encodeURIComponent(`fields/ID_SOL eq '${requestId}'`);
-      const url = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
-      const res = await graphFetch(url, accessToken);
+      const graphUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
+      const res = await graphFetch(graphUrl, accessToken);
       
-      if (res.ok) {
-        const data = await res.json();
-        const results: Attachment[] = [];
-        for (const item of (data.value || [])) {
-          const attsRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments`, accessToken);
-          if (attsRes.ok) {
-            const attsData = await attsRes.json();
-            for (const a of (attsData.value || [])) {
-              const bRes = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items/${item.id}/attachments/${a.id}/$value`, accessToken);
-              results.push({
-                id: a.id,
-                requestId,
-                fileName: a.name,
-                type: 'boleto',
-                mimeType: 'application/pdf',
-                size: 0,
-                storageUrl: URL.createObjectURL(await bRes.blob()),
-                createdAt: item.createdDateTime
-              });
-            }
+      if (!res.ok) return [];
+      const data = await res.json();
+      const results: Attachment[] = [];
+
+      // 2. Para cada item encontrado, busca seus anexos via SharePoint REST API
+      for (const item of (data.value || [])) {
+        const endpoint = `/_api/web/lists/getbyid('${SECONDARY_LIST_ID}')/items(${item.id})/AttachmentFiles`;
+        const spRes = await spFetch(endpoint, accessToken);
+        
+        if (spRes.ok) {
+          const spData = await spRes.json();
+          const files = spData.d?.results || [];
+          
+          for (const file of files) {
+            const downloadEndpoint = `/_api/web/GetFileByServerRelativeUrl('${file.ServerRelativeUrl}')/$value`;
+            const contentRes = await spFetch(downloadEndpoint, accessToken);
+            const blob = await contentRes.blob();
+            
+            results.push({
+              id: file.FileName,
+              requestId,
+              fileName: file.FileName,
+              type: 'boleto',
+              mimeType: 'application/pdf',
+              size: 0,
+              storageUrl: URL.createObjectURL(blob),
+              createdAt: item.createdDateTime
+            });
           }
         }
-        if (results.length > 0) return results;
       }
-    } catch (e) { }
-
-    return await sharepointService.searchFilesByQuery(accessToken, requestId);
+      return results;
+    } catch (e) {
+      return [];
+    }
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
