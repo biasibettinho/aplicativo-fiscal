@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS, BRANCHES } from '../constants';
 import { 
-  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar
+  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -22,17 +22,31 @@ const DashboardSolicitante: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados do Formulário
+  // Estados do Formulário Refinados
   const [formData, setFormData] = useState({
     title: '',
-    branch: BRANCHES[0],
+    branch: '',
     invoiceNumber: '',
     orderNumbers: '',
     paymentMethod: PAYMENT_METHODS[0],
     paymentDate: '',
     payee: '',
+    pixKey: '',
+    bank: '',
+    agency: '',
+    account: '',
+    accountType: 'Corrente',
     generalObservation: ''
   });
+
+  // Efeito para pré-preencher a filial com base no perfil
+  useEffect(() => {
+    if (isCreating && authState.user) {
+      // Prioriza branchDefault do usuário, caso contrário usa a Matriz
+      const defaultBranch = authState.user.branchDefault || BRANCHES[0];
+      setFormData(prev => ({ ...prev, branch: defaultBranch }));
+    }
+  }, [isCreating, authState.user]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -83,15 +97,18 @@ const DashboardSolicitante: React.FC = () => {
     
     setIsSubmitting(true);
     try {
+      // Conforme solicitado: Status inicial 'Em Processamento' para o fluxo do Automate
       const newRequest: Partial<PaymentRequest> = {
         ...formData,
-        status: RequestStatus.PENDENTE,
+        status: RequestStatus.PROCESSANDO,
         createdByUserId: authState.user.id,
         createdByName: authState.user.name
       };
       
       const result = await requestService.createRequest(newRequest, authState.token);
       if (result) {
+        // Simula o tempo de processamento informado (UX)
+        await new Promise(resolve => setTimeout(resolve, 2000));
         await syncData();
         setIsCreating(false);
         setFormData({
@@ -102,6 +119,11 @@ const DashboardSolicitante: React.FC = () => {
           paymentMethod: PAYMENT_METHODS[0],
           paymentDate: '',
           payee: '',
+          pixKey: '',
+          bank: '',
+          agency: '',
+          account: '',
+          accountType: 'Corrente',
           generalObservation: ''
         });
       }
@@ -123,6 +145,19 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 relative">
+      {/* Overlay de Submissão / Processamento */}
+      {isSubmitting && (
+        <div className="absolute inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center">
+          <div className="bg-white/10 p-8 rounded-[3rem] border border-white/10 shadow-2xl flex flex-col items-center max-w-sm">
+            <Loader2 className="animate-spin text-blue-400 mb-6" size={60} />
+            <h2 className="text-2xl font-black text-white uppercase italic mb-4">Processando Requisição</h2>
+            <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest">
+              Isso pode levar aproximadamente 1 minuto enquanto o fluxo automatizado valida os dados.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar de Listagem */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-6 border-b border-gray-100 bg-white z-10">
@@ -175,15 +210,19 @@ const DashboardSolicitante: React.FC = () => {
       {/* Área Principal de Conteúdo */}
       <div className="flex-1 flex flex-col bg-gray-50 relative overflow-hidden">
         
-        {/* Caso: Criando Nova Solicitação */}
+        {/* Caso: Criando Nova Solicitação com Estilização Gradiente Profissional */}
         {isCreating ? (
-          <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-white">
-            <header className="p-10 border-b flex justify-between items-center bg-gray-50/50">
+          <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+            <header className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm">
               <div className="flex items-center space-x-6">
-                <button onClick={() => setIsCreating(false)} className="p-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors">
+                <button onClick={() => setIsCreating(false)} className="p-3 bg-white/10 text-white border border-white/10 rounded-xl hover:bg-white/20 transition-colors">
                   <ChevronLeft size={20} />
                 </button>
-                <h2 className="text-4xl font-black text-slate-900 uppercase italic leading-none">Nova Solicitação</h2>
+                <h2 className="text-4xl font-black text-white uppercase italic leading-none tracking-tighter">Nova Solicitação</h2>
+              </div>
+              <div className="flex items-center space-x-2 text-blue-400 font-black text-[10px] uppercase tracking-widest">
+                <Info size={14} />
+                <span>Preenchimento Obrigatório</span>
               </div>
             </header>
 
@@ -193,126 +232,205 @@ const DashboardSolicitante: React.FC = () => {
                 {/* Seção 1: Identificação */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="col-span-2">
-                    <label className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3 block italic">Título / Descrição Curta</label>
+                    <label className="text-xs font-black text-blue-400 uppercase tracking-widest mb-3 block italic">Título / Descrição Curta</label>
                     <input 
                       required
                       type="text" 
-                      placeholder="Ex: Compra de suprimentos escritório..."
-                      className="w-full p-6 bg-gray-50 border-2 border-transparent rounded-[1.5rem] focus:border-blue-500 outline-none text-xl font-bold transition-all"
+                      placeholder="Ex: Pagamento de Frete - NF 123..."
+                      className="w-full p-6 bg-white/10 border-2 border-transparent rounded-[1.5rem] focus:border-blue-400 focus:bg-white/20 outline-none text-xl font-bold transition-all text-white placeholder:text-blue-300/30"
                       value={formData.title}
                       onChange={e => setFormData({...formData, title: e.target.value})}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 block">Filial Destino</label>
+                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Filial Destino (Auto-preenchida)</label>
                     <select 
-                      className="w-full p-5 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white appearance-none"
                       value={formData.branch}
                       onChange={e => setFormData({...formData, branch: e.target.value})}
                     >
-                      {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                      {BRANCHES.map(b => <option key={b} value={b} className="text-slate-900">{b}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 block">Número da NF</label>
+                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número da NF / Documento</label>
                     <input 
                       required
                       type="text" 
                       placeholder="000.000.000"
-                      className="w-full p-5 bg-gray-50 border-0 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
                       value={formData.invoiceNumber}
                       onChange={e => setFormData({...formData, invoiceNumber: e.target.value})}
                     />
                   </div>
                 </div>
 
-                {/* Seção 2: Detalhes de Pagamento */}
-                <div className="bg-gray-50/50 p-10 rounded-[3rem] border border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Seção 2: Detalhes de Pagamento Dinâmicos */}
+                <div className="bg-white/5 p-10 rounded-[3rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-8 shadow-2xl">
                   <div className="col-span-2 flex items-center mb-2">
-                    <CreditCard className="text-blue-600 mr-3" size={24} />
-                    <h3 className="text-xl font-black text-slate-900 uppercase italic">Dados de Pagamento</h3>
+                    <CreditCard className="text-blue-400 mr-3" size={24} />
+                    <h3 className="text-xl font-black text-white uppercase italic tracking-tight">Dados Financeiros</h3>
                   </div>
                   
                   <div>
-                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Método de Pagamento</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Método de Pagamento</label>
                     <select 
-                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white appearance-none"
                       value={formData.paymentMethod}
                       onChange={e => setFormData({...formData, paymentMethod: e.target.value})}
                     >
-                      {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                      {PAYMENT_METHODS.map(m => <option key={m} value={m} className="text-slate-900">{m}</option>)}
                     </select>
                   </div>
 
                   <div>
-                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Vencimento da Nota</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Data de Vencimento</label>
                     <input 
                       required
                       type="date" 
-                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white"
                       value={formData.paymentDate}
                       onChange={e => setFormData({...formData, paymentDate: e.target.value})}
                     />
                   </div>
 
                   <div className="col-span-2">
-                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Favorecido (Pessoa/Empresa)</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Favorecido (Pessoa/Empresa)</label>
                     <input 
                       required
                       type="text" 
                       placeholder="Nome completo ou Razão Social"
-                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold uppercase"
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-white placeholder:text-white/20"
                       value={formData.payee}
                       onChange={e => setFormData({...formData, payee: e.target.value})}
                     />
                   </div>
 
+                  {/* Campos Condicionais baseados no método */}
+                  {formData.paymentMethod === 'PIX' && (
+                    <div className="col-span-2 animate-in fade-in slide-in-from-top-4 duration-300">
+                      <label className="text-xs font-black text-blue-400 uppercase mb-3 block flex items-center">
+                        <Smartphone size={14} className="mr-2" /> Chave PIX
+                      </label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="E-mail, CPF, CNPJ ou Chave Aleatória"
+                        className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
+                        value={formData.pixKey}
+                        onChange={e => setFormData({...formData, pixKey: e.target.value})}
+                      />
+                    </div>
+                  )}
+
+                  {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'Transferência') && (
+                    <>
+                      <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                        <div className="col-span-2">
+                          <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Banco</label>
+                          <input 
+                            required
+                            type="text" 
+                            placeholder="Ex: Itaú, Bradesco..."
+                            className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-blue-300/30"
+                            value={formData.bank}
+                            onChange={e => setFormData({...formData, bank: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Agência</label>
+                          <input 
+                            required
+                            type="text" 
+                            placeholder="0000"
+                            className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
+                            value={formData.agency}
+                            onChange={e => setFormData({...formData, agency: e.target.value})}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-black text-blue-400 uppercase mb-3 block">Conta</label>
+                          <input 
+                            required
+                            type="text" 
+                            placeholder="00000-0"
+                            className="w-full p-5 bg-blue-500/10 border border-blue-500/20 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white"
+                            value={formData.account}
+                            onChange={e => setFormData({...formData, account: e.target.value})}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
                   <div className="col-span-2">
-                    <label className="text-xs font-black text-gray-400 uppercase mb-3 block">Números de Pedido (Separados por vírgula)</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-3 block">Número de Pedido (OC)</label>
                     <input 
                       type="text" 
                       placeholder="Ex: 4567, 8910..."
-                      className="w-full p-5 bg-white border border-gray-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                      className="w-full p-5 bg-white/10 border border-white/10 rounded-2xl outline-none focus:ring-2 focus:ring-blue-400 font-bold text-white placeholder:text-white/20"
                       value={formData.orderNumbers}
                       onChange={e => setFormData({...formData, orderNumbers: e.target.value})}
                     />
                   </div>
                 </div>
 
-                {/* Seção 3: Observações */}
+                {/* Seção 3: Upload de Arquivos */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 border-dashed relative group hover:bg-white/10 transition-all">
+                      <label className="absolute inset-0 cursor-pointer"></label>
+                      <div className="flex flex-col items-center text-center">
+                         <div className="bg-blue-600 p-4 rounded-2xl text-white mb-4"><FileText size={24} /></div>
+                         <p className="text-sm font-black text-white uppercase italic">Nota Fiscal (PDF/JPG)</p>
+                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">Clique ou arraste o arquivo</p>
+                         <input type="file" className="hidden" accept=".pdf,image/*" />
+                      </div>
+                   </div>
+                   <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 border-dashed relative group hover:bg-white/10 transition-all">
+                      <label className="absolute inset-0 cursor-pointer"></label>
+                      <div className="flex flex-col items-center text-center">
+                         <div className="bg-indigo-600 p-4 rounded-2xl text-white mb-4"><Paperclip size={24} /></div>
+                         <p className="text-sm font-black text-white uppercase italic">Boleto / Comprovante</p>
+                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">Apenas se houver anexo</p>
+                         <input type="file" className="hidden" accept=".pdf,image/*" />
+                      </div>
+                   </div>
+                </div>
+
+                {/* Seção 4: Observações */}
                 <div>
-                  <label className="text-xs font-black text-gray-400 uppercase mb-3 block italic">Observações Adicionais</label>
+                  <label className="text-xs font-black text-white/50 uppercase mb-3 block italic">Observações Internas</label>
                   <textarea 
                     rows={4}
-                    className="w-full p-6 bg-gray-50 border-0 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-500 font-medium italic"
-                    placeholder="Alguma informação importante para o fiscal ou financeiro?"
+                    className="w-full p-6 bg-white/5 border-0 rounded-[1.5rem] outline-none focus:ring-2 focus:ring-blue-400 font-medium italic text-white placeholder:text-white/20"
+                    placeholder="Informações adicionais para o faturamento..."
                     value={formData.generalObservation}
                     onChange={e => setFormData({...formData, generalObservation: e.target.value})}
                   />
                 </div>
 
                 {/* Rodapé de Ações */}
-                <div className="flex items-center justify-end space-x-6 pt-10 border-t">
+                <div className="flex items-center justify-end space-x-6 pt-10 border-t border-white/5">
                   <button 
                     type="button" 
                     onClick={() => setIsCreating(false)}
-                    className="px-8 py-5 text-gray-400 font-black text-xs uppercase hover:text-gray-600 transition-colors"
+                    className="px-8 py-5 text-white/40 font-black text-xs uppercase hover:text-white transition-colors tracking-widest"
                   >
                     Descartar
                   </button>
                   <button 
                     disabled={isSubmitting}
-                    className="px-12 py-5 bg-blue-600 text-white rounded-[1.5rem] font-black text-sm uppercase italic shadow-2xl hover:bg-blue-700 transition-all flex items-center shadow-blue-200 active:scale-95 disabled:opacity-50"
+                    className="px-16 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-sm uppercase italic shadow-2xl hover:bg-blue-700 transition-all flex items-center shadow-blue-900/40 active:scale-95 disabled:opacity-50"
                   >
                     {isSubmitting ? <Loader2 className="animate-spin mr-3" /> : <Send className="mr-3" />}
-                    Criar Solicitação
+                    Submeter p/ Fluxo
                   </button>
                 </div>
               </div>
             </form>
           </div>
         ) : selectedRequest ? (
-          /* Visualização de Solicitação Existente */
+          /* Visualização de Solicitação Existente - Mantida Intacta */
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
             <header className="p-12 bg-white border-b flex justify-between items-end shadow-sm">
               <div>
@@ -354,6 +472,7 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
+              {/* Seção de Anexos - Lógica Mantida conforme restrição */}
               <div className="bg-white p-12 rounded-[3.5rem] border-2 border-gray-100 shadow-2xl relative">
                 <div className="flex items-center justify-between mb-10 border-b pb-6">
                   <h3 className="text-2xl font-black text-slate-900 uppercase italic flex items-center"><FileText size={28} className="mr-4 text-blue-600"/> Documentação e Anexos</h3>
@@ -398,8 +517,8 @@ const DashboardSolicitante: React.FC = () => {
           </div>
         ) : (
           /* Estado Vazio - Painel Inicial */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-20">
-            <div className="w-40 h-40 bg-blue-50 rounded-full flex items-center justify-center mb-8 animate-bounce transition-all">
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-40">
+            <div className="w-40 h-40 bg-blue-50 rounded-full flex items-center justify-center mb-8">
               <Banknote size={80} className="text-blue-600" />
             </div>
             <h3 className="text-3xl font-black uppercase italic tracking-widest text-slate-800 mb-4">Painel de Notas</h3>
