@@ -2,15 +2,16 @@
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
 const TENANT = 'vialacteoscombr.sharepoint.com';
-const SITE_PATH = '/sites/Vialacteos'; 
+// CORREÇÃO: O site real descoberto no log é /sites/Powerapps
+const SITE_PATH = '/sites/Powerapps'; 
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 
 // IDs das Listas (GUIDs)
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 
-// Nomes para Fallback (Baseado no log, parece haver espaço duplo)
-const MAIN_LIST_TITLE = 'Lista  APP Fiscal'; 
+// Nome Interno verificado no log
+const MAIN_LIST_TITLE = 'Lista APP Fiscal'; 
 
 const FIELD_MAP = {
   title: 'Title',
@@ -46,7 +47,7 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
 }
 
 /**
- * Utilitário SharePoint REST com Redundância
+ * Utilitário SharePoint REST atualizado com o SITE_PATH correto
  */
 async function spFetch(endpoint: string, accessToken: string, options: RequestInit = {}) {
   const baseUrl = `https://${TENANT}${SITE_PATH}`;
@@ -107,11 +108,11 @@ export const sharepointService = {
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
-      // TENTATIVA 1: Via GUID (Mais seguro)
+      // TENTATIVA 1: Via GUID (Agora no path /sites/Powerapps)
       let endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
       let response = await spFetch(endpoint, accessToken);
       
-      // TENTATIVA 2: Fallback via Nome (Caso o GUID falhe por erro de path)
+      // TENTATIVA 2: Fallback via Nome Interno
       if (!response.ok) {
         endpoint = `/_api/web/lists/getbytitle('${MAIN_LIST_TITLE}')/items(${itemId})/AttachmentFiles`;
         response = await spFetch(endpoint, accessToken);
@@ -124,10 +125,9 @@ export const sharepointService = {
 
       return await Promise.all(files.map(async (file: any) => {
         const fileNameEncoded = encodeURIComponent(file.FileName);
-        // Usamos a URL relativa do servidor que é garantida pelo SharePoint
+        // Construímos a URL absoluta usando o domínio e o caminho relativo do SharePoint
         const binaryUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
         
-        // Tenta baixar o blob para criar uma URL local (evita problemas de cookie/auth no <img>)
         try {
           const blobRes = await fetch(binaryUrl, { 
             headers: { Authorization: `Bearer ${accessToken}` } 
@@ -166,7 +166,6 @@ export const sharepointService = {
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     if (!requestId) return [];
     try {
-      // Aqui o Graph é usado para localizar o item na lista secundária
       const filter = encodeURIComponent(`fields/ID_SOL eq '${requestId}'`);
       const graphUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
       const res = await graphFetch(graphUrl, accessToken);
@@ -178,6 +177,7 @@ export const sharepointService = {
 
       for (const item of items) {
         const numericSecondaryId = item.fields.id || item.fields.ID;
+        // Chama a REST API no site correto (/sites/Powerapps)
         const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${numericSecondaryId})/AttachmentFiles`;
         const spRes = await spFetch(endpointAtts, accessToken);
         
