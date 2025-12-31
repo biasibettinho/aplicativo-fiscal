@@ -9,7 +9,7 @@ const SITE_URL = 'https://vialacteoscombr.sharepoint.com/sites/Powerapps';
 const BASE_URL = 'https://vialacteoscombr.sharepoint.com';
 const GRAPH_SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
+const SECONDARY_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 
 const FIELD_MAP = {
   title: 'Title',
@@ -203,14 +203,15 @@ export const sharepointService = {
   },
 
   /**
-   * Busca anexos da lista secundária usando API REST nativa e token de audiência SharePoint
+   * Busca anexos da lista secundária usando API REST nativa e token de audiência SharePoint.
+   * Filtra por ID_SOL e itera por todos os itens para consolidar todos os arquivos vinculados.
    */
   getSecondaryAttachments: async (unusedToken: string, numericId: string): Promise<Attachment[]> => {
     if (!numericId) return [];
     try {
-      // 1. Localiza o item na lista secundária
+      // 1. Localiza os itens na lista secundária vinculados pelo campo ID_SOL
       const filter = `ID_SOL eq '${numericId}'`;
-      const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
+      const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id,Attachments`;
       
       const findResponse = await spRestFetch(findItemUrl);
       if (!findResponse.ok) return [];
@@ -218,33 +219,36 @@ export const sharepointService = {
       const findData = await findResponse.json();
       const secondaryItems = findData.d?.results || [];
       
-      const results: Attachment[] = [];
+      const allSecondaryAttachments: Attachment[] = [];
 
-      // 2. Busca arquivos para cada item de boleto encontrado
+      // 2. Percorre todos os itens encontrados (podem haver múltiplos boletos para uma mesma NF)
       for (const item of secondaryItems) {
-        const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
-        const attResponse = await spRestFetch(attUrl);
-        
-        if (attResponse.ok) {
-          const attData = await attResponse.json();
-          const files = attData.d?.results || [];
+        // Apenas dispara a busca de arquivos se o SharePoint indicar que o item possui anexos
+        if (item.Attachments) {
+          const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
+          const attResponse = await spRestFetch(attUrl);
           
-          files.forEach((file: any) => {
-            results.push({
-              id: file.FileName,
-              requestId: numericId,
-              fileName: file.FileName,
-              type: 'boleto',
-              mimeType: 'application/pdf',
-              size: 0,
-              storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
-              createdAt: new Date().toISOString()
+          if (attResponse.ok) {
+            const attData = await attResponse.json();
+            const files = attData.d?.results || [];
+            
+            files.forEach((file: any) => {
+              allSecondaryAttachments.push({
+                id: `${item.Id}_${file.FileName}`,
+                requestId: numericId,
+                fileName: file.FileName,
+                type: 'boleto',
+                mimeType: 'application/pdf',
+                size: 0,
+                storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
+                createdAt: new Date().toISOString()
+              });
             });
-          });
+          }
         }
       }
 
-      return results;
+      return allSecondaryAttachments;
     } catch (e) {
       console.error("Erro getSecondaryAttachments (REST):", e);
       return [];
