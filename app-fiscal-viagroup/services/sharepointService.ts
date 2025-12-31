@@ -1,10 +1,9 @@
 
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
-// IDs validados através dos logs de inspeção de diretório
 const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
-const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';      // Lista APP Fiscal
-const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938'; // Anexos APP Fiscal (Boletos)
+const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
+const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 
 const FIELD_MAP = {
   title: 'Title',
@@ -33,7 +32,7 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const txt = await res.text();
-    console.warn(`[GRAPH ERROR LOG] URL: ${url} | Status: ${res.status} | Body:`, txt);
+    console.warn(`[GRAPH WARN] ${url}`, txt);
     return res;
   }
   return res;
@@ -87,16 +86,12 @@ export const sharepointService = {
     }
   },
 
-  /**
-   * Busca anexos da lista principal usando EXPAND (Resolve erro 400)
-   */
   getItemAttachments: async (accessToken: string, graphId: string): Promise<Attachment[]> => {
     if (!graphId) return [];
     try {
-      // Usar expand=attachments é o modo mais seguro para SharePoint Lists no Graph
+      // Usamos expand=attachments para pegar a downloadUrl diretamente
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}?expand=attachments`;
       const response = await graphFetch(endpoint, accessToken);
-      
       if (!response.ok) return [];
       
       const itemData = await response.json();
@@ -109,29 +104,24 @@ export const sharepointService = {
         type: 'invoice_pdf',
         mimeType: file.contentType || 'application/pdf',
         size: file.size || 0,
-        // downloadUrl é fornecido pelo Graph quando expandimos anexos
+        // Esta URL é temporária e pré-autorizada pelo Graph
         storageUrl: file['@microsoft.graph.downloadUrl'] || '',
         createdAt: file.lastModifiedDateTime || new Date().toISOString()
       }));
     } catch (e) {
-      console.error("Erro getItemAttachments via Expand:", e);
+      console.error("Erro getItemAttachments:", e);
       return [];
     }
   },
 
-  /**
-   * Busca anexos da lista secundária (Resolve erro 404 e filtro)
-   */
   getSecondaryAttachments: async (accessToken: string, numericId: string): Promise<Attachment[]> => {
     if (!numericId) return [];
     try {
-      // Filtramos por ID_SOL (que é o ID da lista principal guardado na secundária)
       const filter = encodeURIComponent(`fields/ID_SOL eq '${numericId}'`);
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields,attachments&$filter=${filter}`;
       const response = await graphFetch(endpoint, accessToken);
       
       if (!response.ok) return [];
-      
       const data = await response.json();
       const items = data.value || [];
       const results: Attachment[] = [];
@@ -153,7 +143,6 @@ export const sharepointService = {
       }
       return results;
     } catch (e) {
-      console.error("Erro getSecondaryAttachments via Expand:", e);
       return [];
     }
   },

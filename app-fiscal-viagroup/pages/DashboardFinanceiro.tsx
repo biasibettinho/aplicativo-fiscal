@@ -1,14 +1,14 @@
 
+// Add React to imports to resolve 'Cannot find namespace React' error when using React.FC
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
-import { PaymentRequest, RequestStatus, User, Attachment } from '../types';
+import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
-import { db } from '../services/db';
 import Badge from '../components/Badge';
-import { isHighPriority, BRANCHES } from '../constants';
+import { BRANCHES } from '../constants';
 import { 
-  DollarSign, Share2, Search, Banknote, FileText, ExternalLink, Paperclip, XCircle, CheckCircle, AlertTriangle, MapPin, Filter, BarChart3, Hash, Landmark, Loader2
+  DollarSign, Search, Banknote, FileText, ExternalLink, Paperclip, CheckCircle, MapPin, Filter, Landmark, Loader2
 } from 'lucide-react';
 
 const DashboardFinanceiro: React.FC = () => {
@@ -19,43 +19,29 @@ const DashboardFinanceiro: React.FC = () => {
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
-  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
-  const [isSharingControlOpen, setIsSharingControlOpen] = useState(false);
-  
   const [searchTerm, setSearchTerm] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
-  
-  const [shareUserId, setShareUserId] = useState('');
-  const [shareComment, setShareComment] = useState('');
-  const [rejectReason, setRejectReason] = useState('');
-  const [errorType, setErrorType] = useState('Nota fiscal não localizada para faturamento');
-  const [financeUsers, setFinanceUsers] = useState<User[]>([]);
-
-  const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
   const loadData = async () => {
     if (!authState.user || !authState.token) return;
     const data = await requestService.getRequestsFiltered(authState.user, authState.token);
     const financeOnly = data.filter(r => ![RequestStatus.PENDENTE, RequestStatus.ANALISE].includes(r.status));
     setRequests(financeOnly);
-    setFinanceUsers(db.getUsers().filter(u => ['financeiro.norte@viagroup.com.br', 'financeiro.sul@viagroup.com.br'].includes(u.email)));
   };
 
   useEffect(() => { loadData(); }, [authState.user, authState.token]);
 
-  // Captura dinâmica de anexos
+  const selectedRequest = requests.find(r => r.id === selectedId);
+
   useEffect(() => {
     let isMounted = true;
     const fetchAtts = async () => {
-      if (selectedId && authState.token) {
+      if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
         try {
           const [main, secondary] = await Promise.all([
-            sharepointService.getItemAttachments(authState.token, selectedId),
-            sharepointService.getSecondaryAttachments(authState.token, selectedId)
+            sharepointService.getItemAttachments(authState.token, selectedRequest.graphId),
+            sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
           ]);
           if (isMounted) { setMainAttachments(main); setSecondaryAttachments(secondary); }
         } catch (e) { console.error(e); } finally { if (isMounted) setIsFetchingAttachments(false); }
@@ -73,11 +59,9 @@ const DashboardFinanceiro: React.FC = () => {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, branchFilter]);
 
-  const selectedRequest = filteredRequests.find(r => r.id === selectedId);
-
   const handleFaturar = async () => {
-    if (!selectedId || !authState.token) return;
-    await requestService.changeStatus(selectedId, RequestStatus.FATURADO, authState.token, 'Pagamento liquidado e faturado.');
+    if (!selectedRequest || !authState.token) return;
+    await requestService.changeStatus(selectedRequest.graphId, RequestStatus.FATURADO, authState.token, 'Pagamento liquidado e faturado.');
     loadData(); setSelectedId(null);
   };
 

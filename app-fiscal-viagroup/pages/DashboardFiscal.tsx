@@ -1,4 +1,5 @@
 
+// Add React to imports to resolve 'Cannot find namespace React' error when using React.FC
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
@@ -30,20 +31,21 @@ const DashboardFiscal: React.FC = () => {
 
   useEffect(() => { loadData(); }, [authState.user, authState.token]);
 
-  // Captura dinâmica de anexos ao selecionar item
+  const selectedRequest = requests.find(r => r.id === selectedId);
+
   useEffect(() => {
     let isMounted = true;
     const fetchAtts = async () => {
-      if (selectedId && authState.token) {
+      if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
-        // Limpar lista anterior para feedback visual imediato
         setMainAttachments([]);
         setSecondaryAttachments([]);
         
         try {
+          // Importante: Usar graphId para os anexos da lista principal
           const [main, secondary] = await Promise.all([
-            sharepointService.getItemAttachments(authState.token, selectedId),
-            sharepointService.getSecondaryAttachments(authState.token, selectedId)
+            sharepointService.getItemAttachments(authState.token, selectedRequest.graphId),
+            sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
           ]);
           
           if (isMounted) {
@@ -64,11 +66,9 @@ const DashboardFiscal: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
-  const selectedRequest = requests.find(r => r.id === selectedId);
-
   const handleApprove = async () => {
-    if (!selectedId || !authState.token) return;
-    await requestService.changeStatus(selectedId, RequestStatus.APROVADO, authState.token, 'Aprovado pelo Fiscal.');
+    if (!selectedRequest || !authState.token) return;
+    await requestService.changeStatus(selectedRequest.graphId, RequestStatus.APROVADO, authState.token, 'Aprovado pelo Fiscal.');
     loadData(); setSelectedId(null);
   };
 
@@ -92,7 +92,7 @@ const DashboardFiscal: React.FC = () => {
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
           {filteredRequests.map(r => (
-            <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-6 cursor-pointer transition-all ${selectedId === r.id ? 'bg-blue-50 border-l-8 border-blue-600' : 'hover:bg-gray-50'}`}>
+            <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-blue-50 border-l-8 border-blue-600' : 'hover:bg-gray-50'}`}>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-black text-gray-400">#{r.id}</span>
                 <Badge status={r.status} />
