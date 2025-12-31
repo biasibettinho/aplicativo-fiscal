@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter
+  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter, Trash2
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -26,6 +26,10 @@ const DashboardSolicitante: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // Estados para Upload de Arquivos
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [ticketFile, setTicketFile] = useState<File | null>(null);
 
   // Estados do Formulário Refinados
   const [formData, setFormData] = useState({
@@ -90,6 +94,12 @@ const DashboardSolicitante: React.FC = () => {
     e.preventDefault();
     if (!authState.token || !authState.user) return;
     
+    // Validação básica de arquivo obrigatório
+    if (!invoiceFile) {
+      alert("A Nota Fiscal é obrigatória para prosseguir.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const newRequest: Partial<PaymentRequest> = {
@@ -99,11 +109,17 @@ const DashboardSolicitante: React.FC = () => {
         createdByName: authState.user.name
       };
       
+      // O result cria o item na lista. O Power Automate é disparado pelo status 'Processando'
       const result = await requestService.createRequest(newRequest, authState.token);
       if (result) {
+        // Simulação de processamento UX (aproximadamente 1 minuto no aviso, mas aqui aguardamos sincronia inicial)
         await new Promise(resolve => setTimeout(resolve, 2000));
         await syncData();
         setIsCreating(false);
+        
+        // Reset de formulário e arquivos
+        setInvoiceFile(null);
+        setTicketFile(null);
         setFormData({
           title: '',
           invoiceNumber: '',
@@ -165,13 +181,13 @@ const DashboardSolicitante: React.FC = () => {
             <Loader2 className="animate-spin text-blue-400 mb-6" size={60} />
             <h2 className="text-2xl font-black text-white uppercase italic mb-4">Processando Requisição</h2>
             <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest">
-              Isso pode levar aproximadamente 1 minuto enquanto o fluxo automatizado valida os dados.
+              Isso pode levar aproximadamente 1 minuto enquanto o fluxo automatizado valida os dados e processa os arquivos.
             </p>
           </div>
         </div>
       )}
 
-      {/* Sidebar de Listagem com Filtros Refinados */}
+      {/* Sidebar de Listagem */}
       <div className="w-96 bg-white border-r border-gray-200 flex flex-col shadow-sm">
         <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4">
           <div className="flex items-center justify-between">
@@ -265,7 +281,7 @@ const DashboardSolicitante: React.FC = () => {
       {/* Área Principal de Conteúdo */}
       <div className="flex-1 flex flex-col bg-gray-50 relative overflow-hidden">
         
-        {/* Formulário de Nova Solicitação com Background Gradiente Azul Escuro Profissional */}
+        {/* Formulário de Nova Solicitação */}
         {isCreating ? (
           <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
             <header className="p-10 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm">
@@ -284,7 +300,7 @@ const DashboardSolicitante: React.FC = () => {
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-12 custom-scrollbar">
               <div className="max-w-4xl mx-auto space-y-12 pb-20">
                 
-                {/* Seção 1: Identificação (Filial removida - Automática via Fluxo) */}
+                {/* Seção 1: Identificação */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="col-span-2">
                     <label className="text-xs font-black text-blue-400 uppercase tracking-widest mb-3 block italic">Título / Descrição Curta</label>
@@ -298,7 +314,7 @@ const DashboardSolicitante: React.FC = () => {
                     />
                   </div>
                   
-                  {/* Reorganização NF e Pedido lado a lado para facilitar preenchimento */}
+                  {/* NF e Pedido Lado a Lado */}
                   <div>
                     <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block">Número da NF / Documento</label>
                     <input 
@@ -363,7 +379,6 @@ const DashboardSolicitante: React.FC = () => {
                     />
                   </div>
 
-                  {/* Campos Condicionais: PIX e A Vista seguem a mesma regra de simplicidade */}
                   {(formData.paymentMethod === 'PIX' || formData.paymentMethod === 'A Vista') && (
                     <div className="col-span-2 animate-in fade-in slide-in-from-top-4 duration-300">
                       <label className="text-xs font-black text-blue-400 uppercase mb-3 block flex items-center">
@@ -419,25 +434,66 @@ const DashboardSolicitante: React.FC = () => {
                   )}
                 </div>
 
-                {/* Seção 3: Upload de Arquivos */}
+                {/* Seção 3: Upload de Arquivos Restaurada */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                   <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 border-dashed relative group hover:bg-white/10 transition-all">
-                      <label className="absolute inset-0 cursor-pointer"></label>
-                      <div className="flex flex-col items-center text-center">
-                         <div className="bg-blue-600 p-4 rounded-2xl text-white mb-4"><FileText size={24} /></div>
-                         <p className="text-sm font-black text-white uppercase italic">Nota Fiscal (PDF/JPG)</p>
-                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">Clique ou arraste o arquivo</p>
-                         <input type="file" className="hidden" accept=".pdf,image/*" />
-                      </div>
+                   <div className={`p-8 rounded-[2rem] border border-dashed transition-all relative group ${invoiceFile ? 'bg-blue-600/20 border-blue-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                      <input 
+                        id="invoice-upload"
+                        type="file" 
+                        className="hidden" 
+                        accept=".pdf,image/*" 
+                        onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)}
+                      />
+                      <label htmlFor="invoice-upload" className="flex flex-col items-center text-center cursor-pointer">
+                         <div className={`p-4 rounded-2xl text-white mb-4 shadow-lg ${invoiceFile ? 'bg-blue-500' : 'bg-blue-600'}`}>
+                           <FileText size={24} />
+                         </div>
+                         <p className="text-sm font-black text-white uppercase italic">
+                           {invoiceFile ? invoiceFile.name : 'Nota Fiscal (PDF/JPG)'}
+                         </p>
+                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">
+                           {invoiceFile ? 'Arquivo Selecionado - Clique p/ alterar' : 'Clique para selecionar'}
+                         </p>
+                      </label>
+                      {invoiceFile && (
+                        <button 
+                          type="button"
+                          onClick={() => setInvoiceFile(null)}
+                          className="absolute top-4 right-4 text-white/40 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                    </div>
-                   <div className="bg-white/5 p-8 rounded-[2rem] border border-white/5 border-dashed relative group hover:bg-white/10 transition-all">
-                      <label className="absolute inset-0 cursor-pointer"></label>
-                      <div className="flex flex-col items-center text-center">
-                         <div className="bg-indigo-600 p-4 rounded-2xl text-white mb-4"><Paperclip size={24} /></div>
-                         <p className="text-sm font-black text-white uppercase italic">Boleto / Comprovante</p>
-                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">Apenas se houver anexo</p>
-                         <input type="file" className="hidden" accept=".pdf,image/*" />
-                      </div>
+
+                   <div className={`p-8 rounded-[2rem] border border-dashed transition-all relative group ${ticketFile ? 'bg-indigo-600/20 border-indigo-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                      <input 
+                        id="ticket-upload"
+                        type="file" 
+                        className="hidden" 
+                        accept=".pdf,image/*" 
+                        onChange={(e) => setTicketFile(e.target.files?.[0] || null)}
+                      />
+                      <label htmlFor="ticket-upload" className="flex flex-col items-center text-center cursor-pointer">
+                         <div className={`p-4 rounded-2xl text-white mb-4 shadow-lg ${ticketFile ? 'bg-indigo-500' : 'bg-indigo-600'}`}>
+                           <Paperclip size={24} />
+                         </div>
+                         <p className="text-sm font-black text-white uppercase italic">
+                           {ticketFile ? ticketFile.name : 'Boleto / Comprovante'}
+                         </p>
+                         <p className="text-[10px] text-white/40 mt-1 uppercase font-bold tracking-widest">
+                           {ticketFile ? 'Arquivo Selecionado - Clique p/ alterar' : 'Opcional'}
+                         </p>
+                      </label>
+                      {ticketFile && (
+                        <button 
+                          type="button"
+                          onClick={() => setTicketFile(null)}
+                          className="absolute top-4 right-4 text-white/40 hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                    </div>
                 </div>
 
@@ -474,7 +530,7 @@ const DashboardSolicitante: React.FC = () => {
             </form>
           </div>
         ) : selectedRequest ? (
-          /* Visualização de Solicitação Existente - Mantida Intacta */
+          /* Visualização de Solicitação Existente */
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
             <header className="p-12 bg-white border-b flex justify-between items-end shadow-sm">
               <div>
@@ -516,7 +572,7 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* Seção de Anexos - Lógica Mantida conforme restrição */}
+              {/* Seção de Anexos */}
               <div className="bg-white p-12 rounded-[3.5rem] border-2 border-gray-100 shadow-2xl relative">
                 <div className="flex items-center justify-between mb-10 border-b pb-6">
                   <h3 className="text-2xl font-black text-slate-900 uppercase italic flex items-center"><FileText size={28} className="mr-4 text-blue-600"/> Documentação e Anexos</h3>
@@ -560,7 +616,7 @@ const DashboardSolicitante: React.FC = () => {
             </div>
           </div>
         ) : (
-          /* Estado Vazio - Painel Inicial */
+          /* Estado Vazio */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-40">
             <div className="w-40 h-40 bg-blue-50 rounded-full flex items-center justify-center mb-8">
               <Banknote size={80} className="text-blue-600" />
