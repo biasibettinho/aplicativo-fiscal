@@ -5,6 +5,8 @@ const getRedirectUri = () => {
   return window.location.origin.split('?')[0].replace(/\/$/, "");
 };
 
+const TENANT_DOMAIN = 'vialacteoscombr.sharepoint.com';
+
 export const msalConfig: Configuration = {
   auth: {
     clientId: "c176306d-f849-4cf4-bfca-22ff214cdaad",
@@ -29,6 +31,15 @@ msalInstance.initialize().then(() => {
 }).catch(err => console.error("Falha no MSAL Init:", err));
 
 export const loginRequest = {
-  // Adicionado Files.Read.All para cobrir Document Libraries (Sugestão do Copilot)
-  scopes: ["User.Read", "User.Read.All", "Sites.ReadWrite.All", "Files.Read.All"]
+  // Solicitamos escopos do Graph e do SharePoint.
+  // IMPORTANTE: O SharePoint exige que o token tenha a audiência correta para a API REST.
+  scopes: [
+    "User.Read", 
+    "User.Read.All", 
+    "Sites.ReadWrite.All", 
+    "Files.Read.All",
+    `https://${TENANT_DOMAIN}/AllSites.Read`,
+    `https://${TENANT_DOMAIN}/AllSites.Write`,
+    `https://${TENANT_DOMAIN}/.default`
+  ]
 };

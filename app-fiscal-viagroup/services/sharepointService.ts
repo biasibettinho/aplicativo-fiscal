@@ -2,8 +2,9 @@
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 
 const TENANT = 'vialacteoscombr.sharepoint.com';
-const SITE_PATH = '/sites/Vialacteos'; // Ajuste o path se necessário (ex: /sites/Fiscal)
-const SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
+const SITE_PATH = '/sites/Vialacteos'; 
+
+// IDs das Listas (GUIDs) - Mais precisos que os títulos para chamadas REST
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-384b-4388-90af-d46f10b47938';
 
@@ -26,137 +27,166 @@ const FIELD_MAP = {
 };
 
 /**
- * Utilitário para chamadas ao Microsoft Graph
- */
-async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
-  const headers: any = {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: "application/json",
-    ...options.headers,
-  };
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const txt = await res.text();
-    console.warn(`[GRAPH ERROR] ${url}`, txt);
-    return res;
-  }
-  return res;
-}
-
-/**
  * Utilitário para chamadas à SharePoint REST API
  */
 async function spFetch(endpoint: string, accessToken: string, options: RequestInit = {}) {
   const url = `https://${TENANT}${SITE_PATH}${endpoint}`;
   const headers: any = {
     Authorization: `Bearer ${accessToken}`,
-    Accept: "application/json;odata=verbose",
+    Accept: "application/json;odata=verbose", 
     ...options.headers,
   };
+  
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const txt = await res.text();
-    console.warn(`[SHAREPOINT REST ERROR] ${url}`, txt);
+    console.error(`[SHAREPOINT REST ERROR] ${url}`, txt);
     return res;
   }
   return res;
 }
 
 export const sharepointService = {
+  /**
+   * Busca itens da lista principal usando SharePoint REST API em vez do Graph
+   */
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
-      const response = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`, accessToken);
+      // Usamos a GUID da lista para máxima precisão. 
+      // Selecionamos Author/Title para obter quem criou.
+      const endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items?$top=500&$select=*,Author/Title&$expand=Author`;
+      const response = await spFetch(endpoint, accessToken);
+      
+      if (!response.ok) return [];
+      
       const data = await response.json();
-      return (data.value || []).map((item: any) => {
-        const f = item.fields || {};
+      const results = data.d?.results || [];
+
+      return results.map((item: any) => {
         return {
-          id: item.id,
-          mirrorId: parseInt(item.id, 10) || 0,
-          title: f.Title || 'Sem Título',
-          branch: f[FIELD_MAP.branch] || '',
-          status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
-          orderNumbers: f[FIELD_MAP.orderNumbers] || '',
-          invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
-          payee: f[FIELD_MAP.payee] || '',
-          paymentMethod: f[FIELD_MAP.paymentMethod] || '',
-          pixKey: f[FIELD_MAP.pixKey] || '',
-          paymentDate: f[FIELD_MAP.paymentDate] || '',
-          bank: f[FIELD_MAP.bank] || '',
-          agency: f[FIELD_MAP.agency] || '',
-          account: f[FIELD_MAP.account] || '',
-          accountType: f[FIELD_MAP.accountType] || '',
-          generalObservation: f[FIELD_MAP.generalObservation] || '',
-          statusManual: f[FIELD_MAP.statusManual] || '',
-          createdAt: item.createdDateTime,
-          updatedAt: item.lastModifiedDateTime,
-          createdByUserId: item.createdBy?.user?.id || '',
-          createdByName: item.createdBy?.user?.displayName || 'Sistema',
+          id: item.Id.toString(),
+          mirrorId: item.Id,
+          title: item.Title || 'Sem Título',
+          branch: item[FIELD_MAP.branch] || '',
+          status: (item[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
+          orderNumbers: item[FIELD_MAP.orderNumbers] || '',
+          invoiceNumber: item[FIELD_MAP.invoiceNumber] || '',
+          payee: item[FIELD_MAP.payee] || '',
+          paymentMethod: item[FIELD_MAP.paymentMethod] || '',
+          pixKey: item[FIELD_MAP.pixKey] || '',
+          paymentDate: item[FIELD_MAP.paymentDate] || '',
+          bank: item[FIELD_MAP.bank] || '',
+          agency: item[FIELD_MAP.agency] || '',
+          account: item[FIELD_MAP.account] || '',
+          accountType: item[FIELD_MAP.accountType] || '',
+          generalObservation: item[FIELD_MAP.generalObservation] || '',
+          statusManual: item[FIELD_MAP.statusManual] || '',
+          createdAt: item.Created,
+          updatedAt: item.Modified,
+          createdByUserId: item.AuthorId?.toString() || '',
+          createdByName: item.Author?.Title || 'Sistema',
           attachments: []
         };
       });
     } catch (e) {
+      console.error("Erro ao buscar solicitações via SP REST:", e);
       return [];
     }
   },
 
+  /**
+   * Busca anexos do item na lista principal usando o endpoint de AttachmentFiles
+   */
   getItemAttachments: async (accessToken: string, itemId: string): Promise<Attachment[]> => {
     try {
-      // Endpoint sugerido: AttachmentFiles via SharePoint REST API
-      const endpoint = `/_api/web/lists/getbyid('${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
-      const response = await spFetch(endpoint, accessToken);
+      // Endpoint: /_api/web/lists(guid'...')/items(ID)/AttachmentFiles
+      const endpoint = `/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
       
+      const response = await spFetch(endpoint, accessToken);
       if (!response.ok) return [];
       
       const data = await response.json();
       const files = data.d?.results || [];
 
       return await Promise.all(files.map(async (file: any) => {
-        // Para baixar o conteúdo, usamos o ServerRelativeUrl
-        const downloadEndpoint = `/_api/web/GetFileByServerRelativeUrl('${file.ServerRelativeUrl}')/$value`;
-        const contentRes = await spFetch(downloadEndpoint, accessToken);
-        const blob = await contentRes.blob();
+        // Para baixar o conteúdo, usamos a URL absoluta do servidor.
+        const downloadUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
         
-        return {
-          id: file.FileName,
-          requestId: itemId,
-          fileName: file.FileName,
-          type: 'invoice_pdf',
-          mimeType: 'application/pdf',
-          size: 0,
-          storageUrl: URL.createObjectURL(blob),
-          createdAt: new Date().toISOString()
-        };
+        // Chamada para obter o blob (binário) do arquivo com autenticação
+        const contentRes = await fetch(downloadUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        
+        if (contentRes.ok) {
+          const blob = await contentRes.blob();
+          return {
+            id: file.FileName,
+            requestId: itemId,
+            fileName: file.FileName,
+            type: 'invoice_pdf',
+            mimeType: 'application/pdf',
+            size: 0,
+            storageUrl: URL.createObjectURL(blob),
+            createdAt: new Date().toISOString()
+          };
+        } else {
+          // Fallback para URL direta se o fetch binário falhar
+          return {
+            id: file.FileName,
+            requestId: itemId,
+            fileName: file.FileName,
+            type: 'invoice_pdf',
+            mimeType: 'application/pdf',
+            size: 0,
+            storageUrl: downloadUrl,
+            createdAt: new Date().toISOString()
+          };
+        }
       }));
     } catch (e) {
-      console.error("Erro ao buscar anexos via SharePoint REST:", e);
+      console.error("Erro getItemAttachments via SharePoint REST:", e);
       return [];
     }
   },
 
+  /**
+   * Busca anexos na lista secundária filtrando itens pelo ID_SOL via SharePoint REST
+   */
   getSecondaryAttachments: async (accessToken: string, requestId: string): Promise<Attachment[]> => {
     try {
-      // 1. Localiza os itens na lista secundária que referenciam o ID da solicitação (via Graph)
-      const filter = encodeURIComponent(`fields/ID_SOL eq '${requestId}'`);
-      const graphUrl = `https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${SECONDARY_LIST_ID}/items?expand=fields&$filter=${filter}`;
-      const res = await graphFetch(graphUrl, accessToken);
+      // 1. Localiza os itens na lista secundária (Boletos) vinculados ao ID_SOL
+      const filter = encodeURIComponent(`ID_SOL eq '${requestId}'`);
+      const endpointItems = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${filter}`;
       
-      if (!res.ok) return [];
-      const data = await res.json();
+      const resItems = await spFetch(endpointItems, accessToken);
+      if (!resItems.ok) return [];
+      
+      const dataItems = await resItems.json();
+      const items = dataItems.d?.results || [];
       const results: Attachment[] = [];
 
-      // 2. Para cada item encontrado, busca seus anexos via SharePoint REST API
-      for (const item of (data.value || [])) {
-        const endpoint = `/_api/web/lists/getbyid('${SECONDARY_LIST_ID}')/items(${item.id})/AttachmentFiles`;
-        const spRes = await spFetch(endpoint, accessToken);
+      // 2. Para cada item encontrado, busca seus arquivos anexos
+      for (const item of items) {
+        const endpointAtts = `/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
+        const resAtts = await spFetch(endpointAtts, accessToken);
         
-        if (spRes.ok) {
-          const spData = await spRes.json();
-          const files = spData.d?.results || [];
+        if (resAtts.ok) {
+          const dataAtts = await resAtts.json();
+          const files = dataAtts.d?.results || [];
           
           for (const file of files) {
-            const downloadEndpoint = `/_api/web/GetFileByServerRelativeUrl('${file.ServerRelativeUrl}')/$value`;
-            const contentRes = await spFetch(downloadEndpoint, accessToken);
-            const blob = await contentRes.blob();
+            const downloadUrl = `https://${TENANT}${file.ServerRelativeUrl}`;
+            
+            // Tentativa de carregar como Blob para evitar problemas de visualização
+            const contentRes = await fetch(downloadUrl, {
+               headers: { Authorization: `Bearer ${accessToken}` }
+            });
+            
+            let storageUrl = downloadUrl;
+            if (contentRes.ok) {
+              const blob = await contentRes.blob();
+              storageUrl = URL.createObjectURL(blob);
+            }
             
             results.push({
               id: file.FileName,
@@ -165,70 +195,99 @@ export const sharepointService = {
               type: 'boleto',
               mimeType: 'application/pdf',
               size: 0,
-              storageUrl: URL.createObjectURL(blob),
-              createdAt: item.createdDateTime
+              storageUrl: storageUrl,
+              createdAt: item.Created
             });
           }
         }
       }
       return results;
     } catch (e) {
+      console.error("Erro getSecondaryAttachments via SharePoint REST:", e);
       return [];
     }
   },
 
+  /**
+   * Cria um novo item na lista principal
+   */
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const fields: any = {
-      Title: data.title,
-      [FIELD_MAP.invoiceNumber]: data.invoiceNumber || '',
-      [FIELD_MAP.orderNumbers]: data.orderNumbers || '',
-      [FIELD_MAP.status]: data.status || RequestStatus.PENDENTE,
-      [FIELD_MAP.branch]: data.branch || 'Matriz SP',
-      [FIELD_MAP.paymentMethod]: data.paymentMethod,
-      [FIELD_MAP.paymentDate]: data.paymentDate,
-      [FIELD_MAP.payee]: data.payee || '',
-      [FIELD_MAP.bank]: data.bank || '',
-      [FIELD_MAP.agency]: data.agency || '',
-      [FIELD_MAP.account]: data.account || '',
-      [FIELD_MAP.accountType]: data.accountType || 'Conta Corrente',
-      [FIELD_MAP.generalObservation]: data.generalObservation || '',
-      [FIELD_MAP.pixKey]: data.pixKey || '',
+    const body: any = {
+      '__metadata': { 'type': 'SP.Data.VialacteosListItem' }
     };
-    const resp = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items`, accessToken, {
+
+    Object.entries(data).forEach(([key, value]) => {
+      const spField = (FIELD_MAP as any)[key];
+      if (spField && value !== undefined) body[spField] = value;
+    });
+
+    const res = await spFetch(`/_api/web/lists(guid'${MAIN_LIST_ID}')/items`, accessToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json;odata=verbose' },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) throw new Error("Erro ao criar item no SharePoint");
+    const json = await res.json();
+    return { id: json.d.Id.toString() };
+  },
+
+  /**
+   * Atualiza um item existente na lista principal
+   */
+  updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
+    const body: any = {
+      '__metadata': { 'type': 'SP.Data.VialacteosListItem' }
+    };
+
+    Object.entries(data).forEach(([key, value]) => {
+      const spField = (FIELD_MAP as any)[key];
+      if (spField && value !== undefined) body[spField] = value;
+    });
+
+    const res = await spFetch(`/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})`, accessToken, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json;odata=verbose',
+        'IF-MATCH': '*',
+        'X-HTTP-Method': 'MERGE'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) throw new Error("Erro ao atualizar item no SharePoint");
+    return { success: true };
+  },
+
+  /**
+   * Dispara o Power Automate para processamento de arquivos
+   */
+  triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, invoiceFiles: File[], ticketFiles: File[]): Promise<any> => {
+    const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result?.toString().split(',')[1] || '');
+      reader.onerror = reject;
+    });
+
+    const invoices = await Promise.all(invoiceFiles.map(async f => ({ fileName: f.name, content: await toBase64(f) })));
+    const tickets = await Promise.all(ticketFiles.map(async f => ({ fileName: f.name, content: await toBase64(f) })));
+
+    // Webhook URL do Flow de Integração (Placeholder)
+    const FLOW_URL = 'https://prod-141.westus.logic.azure.com:443/workflows/da8673a0a38f4201889895066a98297b/triggers/manual/paths/invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=pU0kI6_uT_v-L2w7-v8f8f8f8f8f8f8f8f8f8f8f8f8';
+
+    const res = await fetch(FLOW_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields })
+      body: JSON.stringify({
+        itemId,
+        invoiceNumber,
+        invoices,
+        tickets
+      })
     });
-    return await resp.json();
-  },
 
-  updateRequest: async (accessToken: string, itemId: string, data: Partial<PaymentRequest>): Promise<any> => {
-    const fields: any = {};
-    Object.keys(data).forEach(key => {
-      const spKey = (FIELD_MAP as any)[key];
-      if (spKey) fields[spKey] = (data as any)[key];
-    });
-    const resp = await graphFetch(`https://graph.microsoft.com/v1.0/sites/${SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`, accessToken, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fields)
-    });
-    return await resp.json();
-  },
-
-  triggerPowerAutomateUpload: async (itemId: string, invoiceNumber: string, nfs: File[], boletos: File[]) => {
-    const url = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
-    const toB64 = (f: File): Promise<any> => new Promise((res) => {
-      const r = new FileReader();
-      r.onload = () => res({ name: f.name, content: (r.result as string).split(',')[1] });
-      r.readAsDataURL(f);
-    });
-    const body = {
-      itemId,
-      invoiceNumber,
-      invoiceFiles: await Promise.all(nfs.map(toB64)),
-      ticketFiles: await Promise.all(boletos.map(toB64))
-    };
-    return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error("Falha ao notificar Power Automate.");
+    return res;
   }
 };
