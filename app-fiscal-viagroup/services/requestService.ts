@@ -37,64 +37,66 @@ export const requestService = {
     }
   },
 
-  createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<any> => {
-    // 1. Cria o item no SharePoint via Graph para persistência de metadados
-    const item = await sharepointService.createRequest(accessToken, data);
-    
-    if (item && item.fields) {
-      const numericId = item.fields.id || item.fields.ID;
-      
-      // 2. Prepara as arrays de ficheiros para o Power Automate
-      const invoiceFiles: { name: string, content: string }[] = [];
-      const ticketFiles: { name: string, content: string }[] = [];
+  /**
+   * Centraliza o envio para o Power Automate.
+   * Não cria mais o item via Graph antes do envio.
+   */
+  processFlowSubmission: async (data: Partial<PaymentRequest>, files: { invoice?: File | null, ticket?: File | null }, itemId: string): Promise<boolean> => {
+    // Arrays de ficheiros para o Power Automate
+    const invoiceFiles: { name: string, content: string }[] = [];
+    const ticketFiles: { name: string, content: string }[] = [];
 
-      // Função auxiliar para converter arquivo em Base64 limpo (remove prefixo data:...)
-      const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-          const result = reader.result?.toString();
-          if (result && result.includes(',')) {
-            resolve(result.split(',')[1]);
-          } else {
-            resolve('');
-          }
-        };
-        reader.onerror = error => reject(error);
-      });
-
-      // 3. Processa e separa os anexos (Nota Fiscal -> invoiceFiles, Boleto -> ticketFiles)
-      if (files?.invoice) {
-        invoiceFiles.push({
-          name: files.invoice.name,
-          content: await toBase64(files.invoice)
-        });
-      }
-
-      if (files?.ticket) {
-        ticketFiles.push({
-          name: files.ticket.name,
-          content: await toBase64(files.ticket)
-        });
-      }
-
-      // 4. Constrói o payload final conforme solicitado: itemId e arrays separadas
-      const flowPayload: any = {
-        ...data,
-        itemId: numericId.toString(),
-        invoiceFiles: invoiceFiles,
-        ticketFiles: ticketFiles
+    // Função auxiliar para converter arquivo em Base64 limpo
+    const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result?.toString();
+        // Remove o prefixo "data:application/pdf;base64," ou similar
+        if (result && result.includes(',')) {
+          resolve(result.split(',')[1]);
+        } else {
+          resolve('');
+        }
       };
+      reader.onerror = error => reject(error);
+    });
 
-      // 5. Dispara o Gatilho do Power Automate
-      await sharepointService.triggerPowerAutomateFlow(flowPayload);
+    // Processa anexos
+    if (files.invoice) {
+      invoiceFiles.push({
+        name: files.invoice.name,
+        content: await toBase64(files.invoice)
+      });
     }
-    
-    return item;
+
+    if (files.ticket) {
+      ticketFiles.push({
+        name: files.ticket.name,
+        content: await toBase64(files.ticket)
+      });
+    }
+
+    // Constrói o payload final conforme solicitado
+    const flowPayload: any = {
+      ...data,
+      itemId: itemId, // "0" para novos, ID Real para edições
+      invoiceFiles: invoiceFiles,
+      ticketFiles: ticketFiles
+    };
+
+    // Dispara o Gatilho e aguarda o status da resposta (200/202)
+    return await sharepointService.triggerPowerAutomateFlow(flowPayload);
   },
 
-  updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string): Promise<any> => {
-    return await sharepointService.updateRequest(accessToken, id, data);
+  createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<boolean> => {
+    // Para novas solicitações, itemId é sempre "0"
+    return await requestService.processFlowSubmission(data, files || {}, "0");
+  },
+
+  updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string, files?: { invoice?: File | null, ticket?: File | null }): Promise<boolean> => {
+    // Para edições, enviamos o ID real do SharePoint
+    return await requestService.processFlowSubmission(data, files || {}, id);
   },
 
   changeStatus: async (id: string, status: RequestStatus, accessToken: string, comment?: string): Promise<any> => {
