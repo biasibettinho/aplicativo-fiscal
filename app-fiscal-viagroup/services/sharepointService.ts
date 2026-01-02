@@ -69,7 +69,7 @@ async function spRestFetch(url: string, options: RequestInit = {}) {
 
 export const sharepointService = {
   /**
-   * Consulta a lista App_Gestao_Usuarios (via GUID) para determinar o papel do usuário.
+   * Consulta a lista App_Gestao_Usuarios (via GUID oficial) para determinar o papel do usuário.
    */
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
     try {
@@ -96,17 +96,20 @@ export const sharepointService = {
   },
 
   /**
-   * Busca todos os usuários da lista de gestão no SharePoint.
+   * Busca todos os usuários da lista de gestão no SharePoint usando o GUID solicitado.
    */
   getAllSharePointUsers: async (): Promise<any[]> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Status,Id`;
       const response = await spRestFetch(endpoint);
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.error("Falha na consulta getAllSharePointUsers:", response.status);
+        return [];
+      }
       const data = await response.json();
       return data.d?.results || [];
     } catch (e) {
-      console.error("Erro ao buscar todos os usuários do SharePoint:", e);
+      console.error("Erro crítico ao buscar todos os usuários do SharePoint:", e);
       return [];
     }
   },

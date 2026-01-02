@@ -38,21 +38,14 @@ export const requestService = {
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<any> => {
-    // 1. Cria o item no SharePoint via Graph para persistência da metadados
+    // 1. Cria o item no SharePoint via Graph para persistência de metadados
     const item = await sharepointService.createRequest(accessToken, data);
     
     if (item && item.fields) {
       const numericId = item.fields.id || item.fields.ID;
       
-      // 2. Prepara o payload para o Power Automate com chaves separadas conforme solicitado
-      const flowPayload: any = {
-        ...data,
-        id: numericId.toString(),
-        file_nf_content: null,
-        file_nf_name: null,
-        file_boleto_content: null,
-        file_boleto_name: null
-      };
+      // 2. Prepara a array de arquivos para o Power Automate conforme a nova especificação
+      const invoiceFiles: { name: string, content: string }[] = [];
 
       // Função auxiliar para converter arquivo em Base64
       const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -62,19 +55,31 @@ export const requestService = {
         reader.onerror = error => reject(error);
       });
 
-      // 3. Mapeia os anexos para as chaves específicas (file_nf e file_boleto)
+      // 3. Processa e adiciona os anexos na array (Nota Fiscal primeiro, Boleto depois)
       if (files?.invoice) {
-        flowPayload.file_nf_name = files.invoice.name;
-        flowPayload.file_nf_content = await toBase64(files.invoice);
+        invoiceFiles.push({
+          name: files.invoice.name,
+          content: await toBase64(files.invoice)
+        });
       }
 
       if (files?.ticket) {
-        flowPayload.file_boleto_name = files.ticket.name;
-        flowPayload.file_boleto_content = await toBase64(files.ticket);
+        invoiceFiles.push({
+          name: files.ticket.name,
+          content: await toBase64(files.ticket)
+        });
       }
 
-      // 4. Dispara o Gatilho do Power Automate
-      // O fluxo agora é o único responsável pelo processamento e salvamento dos anexos
+      // 4. Constrói o payload final
+      const flowPayload: any = {
+        ...data,
+        id: numericId.toString(),
+        invoiceFiles: invoiceFiles // Array de objetos conforme solicitado
+      };
+
+      // 5. Dispara o Gatilho do Power Automate
+      // RESTRIÇÃO: O salvamento direto via sharepointService.addAttachment foi removido.
+      // O fluxo é agora o único responsável por processar a array e salvar nas listas.
       await sharepointService.triggerPowerAutomateFlow(flowPayload);
     }
     
