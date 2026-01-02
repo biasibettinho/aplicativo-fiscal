@@ -84,6 +84,7 @@ const DashboardSolicitante: React.FC = () => {
       if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
         try {
+          // Busca na lista principal e na lista auxiliar (ID_SOL)
           const [main, secondary] = await Promise.all([
             sharepointService.getItemAttachments(authState.token, selectedRequest.id),
             sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
@@ -187,11 +188,12 @@ const DashboardSolicitante: React.FC = () => {
         await syncData(true);
         handleCancelCreate();
       } else {
-        alert("Falha na comunicação com o fluxo de automação. Tente novamente.");
+        // REGRA DE REENVIO: Não limpa o formulário, apenas avisa o usuário.
+        alert("O Power Automate não respondeu como esperado. Verifique sua conexão e tente reenviar.");
       }
     } catch (e) {
       console.error("Erro ao processar solicitação:", e);
-      alert("Erro interno ao processar submissão.");
+      alert("Erro de comunicação com o servidor de automação. Os dados foram preservados, tente enviar novamente.");
     } finally {
       setIsSubmitting(false);
     }
@@ -203,6 +205,7 @@ const DashboardSolicitante: React.FC = () => {
                            r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            r.id.toString().includes(searchTerm);
       const matchesStatus = statusFilter === '' || r.status === statusFilter;
+      
       const requestDate = new Date(r.createdAt);
       requestDate.setHours(0, 0, 0, 0);
       
@@ -265,8 +268,8 @@ const DashboardSolicitante: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 pt-2">
-            <div>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <div className="col-span-2">
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Status</label>
               <select 
                 value={statusFilter}
@@ -283,11 +286,31 @@ const DashboardSolicitante: React.FC = () => {
                 <option value={RequestStatus.ERRO_FINANCEIRO}>Erro - Financeiro</option>
               </select>
             </div>
+            {/* Filtros de Data Reintroduzidos */}
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">De</label>
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={e => setStartDate(e.target.value)}
+                className="w-full p-2 bg-gray-50 border-0 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">Até</label>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={e => setEndDate(e.target.value)}
+                className="w-full p-2 bg-gray-50 border-0 rounded-xl text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
           {isLoading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={32} /></div>}
+          {!isLoading && filteredRequests.length === 0 && <div className="text-center py-10 text-gray-400 font-bold text-xs uppercase italic">Nenhuma nota encontrada.</div>}
           {!isLoading && filteredRequests.map(req => (
             <button 
               key={req.id} 
@@ -456,6 +479,7 @@ const DashboardSolicitante: React.FC = () => {
                     <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">NF</span><p className="text-2xl font-black text-slate-900 leading-none">{selectedRequest.invoiceNumber || '---'}</p></div>
                     <div className="grid grid-cols-2 gap-4">
                       <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-lg font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Filial</span><p className="text-lg font-black text-slate-900 uppercase">{selectedRequest.branch}</p></div>
                     </div>
                   </div>
                 </div>
@@ -468,25 +492,55 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
               
-              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-gray-100 shadow-xl relative">
-                <div className="flex items-center justify-between mb-6 border-b pb-3">
-                  <h3 className="text-lg font-black text-slate-900 uppercase italic flex items-center"><FileText size={20} className="mr-3 text-blue-600"/> Anexos Atuais</h3>
-                  {isFetchingAttachments && <Loader2 className="animate-spin text-blue-600" size={16} />}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Seção Nota Fiscal (Lista Principal) */}
+                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl relative">
+                  <div className="flex items-center justify-between mb-6 border-b border-blue-50 pb-3">
+                    <h3 className="text-lg font-black text-blue-600 uppercase italic flex items-center"><FileText size={20} className="mr-3"/> Nota Fiscal</h3>
+                    {isFetchingAttachments && <Loader2 className="animate-spin text-blue-600" size={16} />}
+                  </div>
+                  <div className="space-y-4">
+                    {mainAttachments.length > 0 ? mainAttachments.map(att => (
+                      <div key={att.id} className="p-4 bg-blue-50/40 border border-blue-100 rounded-2xl flex items-center justify-between transition-all hover:bg-blue-100/50">
+                        <div className="flex items-center space-x-3 overflow-hidden">
+                          <FileText size={18} className="text-blue-500 shrink-0" />
+                          <span className="text-xs font-black text-slate-800 truncate">{att.fileName}</span>
+                        </div>
+                        <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-bold flex items-center shadow-md"><ExternalLink size={12} className="mr-1.5" /> Abrir</button>
+                      </div>
+                    )) : (
+                      <div className="py-10 text-center text-gray-300 font-bold italic border-2 border-dashed border-gray-100 rounded-3xl">Nenhuma NF anexada</div>
+                    )}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                   <div className="space-y-6">
-                     {mainAttachments.map(att => (
-                       <div key={att.id} className="p-3 bg-blue-50/40 border border-blue-100 rounded-xl flex items-center justify-between mb-2">
-                         <span className="text-xs font-black text-slate-800 truncate">{att.fileName}</span>
-                         <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[9px] uppercase"><ExternalLink size={12} /></button>
-                       </div>
-                     ))}
-                   </div>
-                   <div className="bg-gray-50/50 p-6 rounded-[2rem] border border-gray-100">
-                      <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic">Observações</span>
-                      <p className="text-base font-medium text-slate-600 leading-relaxed italic">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
-                   </div>
+
+                {/* Seção Boleto / Auxiliar (Lista Secundária ID_SOL) */}
+                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl relative">
+                  <div className="flex items-center justify-between mb-6 border-b border-indigo-50 pb-3">
+                    <h3 className="text-lg font-black text-indigo-600 uppercase italic flex items-center"><Paperclip size={20} className="mr-3"/> Boletos / Auxiliares</h3>
+                  </div>
+                  <div className="space-y-4">
+                    {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
+                      <div key={att.id} className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between transition-all hover:bg-indigo-100/50">
+                        <div className="flex items-center space-x-3 overflow-hidden">
+                          <Paperclip size={18} className="text-indigo-500 shrink-0" />
+                          <span className="text-xs font-black text-slate-800 truncate">{att.fileName}</span>
+                        </div>
+                        <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-bold flex items-center shadow-md"><ExternalLink size={12} className="mr-1.5" /> Abrir</button>
+                      </div>
+                    )) : (
+                      <div className="py-10 text-center text-gray-300 font-bold italic border-2 border-dashed border-gray-100 rounded-3xl">Nenhum boleto anexado</div>
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              {/* Observações */}
+              <div className="bg-gray-50 p-8 rounded-[2.5rem] border border-gray-100 shadow-inner">
+                <span className="text-[10px] font-black text-gray-400 uppercase block mb-3 italic flex items-center"><MessageSquare size={14} className="mr-2"/> Observações do Solicitante</span>
+                <p className="text-base font-medium text-slate-600 leading-relaxed bg-white p-6 rounded-2xl border border-gray-100">
+                  {selectedRequest.generalObservation ? `"${selectedRequest.generalObservation}"` : 'Sem observações cadastradas.'}
+                </p>
               </div>
             </div>
           </div>
