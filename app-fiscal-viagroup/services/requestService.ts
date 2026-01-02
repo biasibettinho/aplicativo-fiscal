@@ -44,18 +44,26 @@ export const requestService = {
     if (item && item.fields) {
       const numericId = item.fields.id || item.fields.ID;
       
-      // 2. Prepara a array de arquivos para o Power Automate conforme a nova especificação
+      // 2. Prepara as arrays de ficheiros para o Power Automate
       const invoiceFiles: { name: string, content: string }[] = [];
+      const ticketFiles: { name: string, content: string }[] = [];
 
-      // Função auxiliar para converter arquivo em Base64
+      // Função auxiliar para converter arquivo em Base64 limpo (remove prefixo data:...)
       const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result?.toString().split(',')[1] || '');
+        reader.onload = () => {
+          const result = reader.result?.toString();
+          if (result && result.includes(',')) {
+            resolve(result.split(',')[1]);
+          } else {
+            resolve('');
+          }
+        };
         reader.onerror = error => reject(error);
       });
 
-      // 3. Processa e adiciona os anexos na array (Nota Fiscal primeiro, Boleto depois)
+      // 3. Processa e separa os anexos (Nota Fiscal -> invoiceFiles, Boleto -> ticketFiles)
       if (files?.invoice) {
         invoiceFiles.push({
           name: files.invoice.name,
@@ -64,22 +72,21 @@ export const requestService = {
       }
 
       if (files?.ticket) {
-        invoiceFiles.push({
+        ticketFiles.push({
           name: files.ticket.name,
           content: await toBase64(files.ticket)
         });
       }
 
-      // 4. Constrói o payload final
+      // 4. Constrói o payload final conforme solicitado: itemId e arrays separadas
       const flowPayload: any = {
         ...data,
-        id: numericId.toString(),
-        invoiceFiles: invoiceFiles // Array de objetos conforme solicitado
+        itemId: numericId.toString(),
+        invoiceFiles: invoiceFiles,
+        ticketFiles: ticketFiles
       };
 
       // 5. Dispara o Gatilho do Power Automate
-      // RESTRIÇÃO: O salvamento direto via sharepointService.addAttachment foi removido.
-      // O fluxo é agora o único responsável por processar a array e salvar nas listas.
       await sharepointService.triggerPowerAutomateFlow(flowPayload);
     }
     
