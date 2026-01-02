@@ -10,6 +10,7 @@ const BASE_URL = 'https://vialacteoscombr.sharepoint.com';
 const GRAPH_SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
+const USER_LIST_ID = 'aab3f85b-2541-4974-ab1a-e0a0ee688b4e';
 const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
 
 const FIELD_MAP = {
@@ -68,11 +69,11 @@ async function spRestFetch(url: string, options: RequestInit = {}) {
 
 export const sharepointService = {
   /**
-   * Consulta a lista App_Gestao_Usuarios para determinar o papel do usuário.
+   * Consulta a lista App_Gestao_Usuarios (via GUID) para determinar o papel do usuário.
    */
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
     try {
-      const endpoint = `${SITE_URL}/_api/web/lists/getbytitle('App_Gestao_Usuarios')/items?$filter=EmailUsuario eq '${email}'`;
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$filter=EmailUsuario eq '${email}'`;
       const response = await spRestFetch(endpoint);
       if (!response.ok) return UserRole.SOLICITANTE;
       
@@ -91,6 +92,22 @@ export const sharepointService = {
     } catch (e) {
       console.error("Erro ao buscar papel do usuário no SharePoint:", e);
       return UserRole.SOLICITANTE;
+    }
+  },
+
+  /**
+   * Busca todos os usuários da lista de gestão no SharePoint.
+   */
+  getAllSharePointUsers: async (): Promise<any[]> => {
+    try {
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Status,Id`;
+      const response = await spRestFetch(endpoint);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return data.d?.results || [];
+    } catch (e) {
+      console.error("Erro ao buscar todos os usuários do SharePoint:", e);
+      return [];
     }
   },
 
@@ -116,7 +133,6 @@ export const sharepointService = {
       let allItems: any[] = [];
       let nextLink = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
 
-      // Loop de paginação para evitar limites de delegação
       while (nextLink) {
         const response = await graphFetch(nextLink, accessToken);
         if (!response.ok) break;

@@ -44,12 +44,12 @@ export const requestService = {
     if (item && item.fields) {
       const numericId = item.fields.id || item.fields.ID;
       
-      // 2. Prepara o payload para o Power Automate
+      // 2. Prepara o payload para o Power Automate (Chaves corrigidas)
       const flowPayload: any = {
         ...data,
         id: numericId.toString(),
-        invoiceFile: null,
-        ticketFile: null
+        file_nf: null,
+        file_boleto: null
       };
 
       // Função auxiliar para converter arquivo em Base64
@@ -62,7 +62,7 @@ export const requestService = {
 
       // 3. Processa os anexos para o Fluxo
       if (files?.invoice) {
-        flowPayload.invoiceFile = {
+        flowPayload.file_nf = {
           name: files.invoice.name,
           content: await toBase64(files.invoice)
         };
@@ -71,7 +71,7 @@ export const requestService = {
       }
 
       if (files?.ticket) {
-        flowPayload.ticketFile = {
+        flowPayload.file_boleto = {
           name: files.ticket.name,
           content: await toBase64(files.ticket)
         };
