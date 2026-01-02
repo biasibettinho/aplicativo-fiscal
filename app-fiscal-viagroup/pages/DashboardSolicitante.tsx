@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter, Trash2, Edit3
+  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter, Trash2, Edit3, MessageSquare
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -116,7 +116,7 @@ const DashboardSolicitante: React.FC = () => {
       orderNumbers: selectedRequest.orderNumbers,
       paymentMethod: selectedRequest.paymentMethod || PAYMENT_METHODS[0],
       paymentDate: selectedRequest.paymentDate ? selectedRequest.paymentDate.split('T')[0] : '',
-      payee: selectedRequest.payee,
+      payee: selectedRequest.payee || '',
       pixKey: selectedRequest.pixKey || '',
       bank: selectedRequest.bank || '',
       agency: selectedRequest.agency || '',
@@ -172,13 +172,11 @@ const DashboardSolicitante: React.FC = () => {
       let success = false;
 
       if (isEditing && selectedRequest) {
-        // EDIÇÃO: Envia ID real do SharePoint
         success = await requestService.updateRequest(selectedRequest.id, submissionData, authState.token, {
           invoice: invoiceFile,
           ticket: ticketFile
         });
       } else {
-        // CRIAÇÃO: Envia itemId "0"
         success = await requestService.createRequest(authState.token, submissionData, { 
           invoice: invoiceFile, 
           ticket: ticketFile 
@@ -186,7 +184,6 @@ const DashboardSolicitante: React.FC = () => {
       }
 
       if (success) {
-        // Aguarda a sincronização para refletir a mudança
         await syncData(true);
         handleCancelCreate();
       } else {
@@ -345,16 +342,53 @@ const DashboardSolicitante: React.FC = () => {
 
                 <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="col-span-2 flex items-center mb-1"><CreditCard className="text-blue-400 mr-3" size={20} /><h3 className="text-lg font-black text-white uppercase italic tracking-tight">Financeiro</h3></div>
+                  <div className="col-span-2">
+                    <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Nome do Favorecido / Razão Social</label>
+                    <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} />
+                  </div>
                   <div>
-                    <label className="text-xs font-black text-white/50 uppercase mb-2 block">Método</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Método</label>
                     <select className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold uppercase" value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})}>
                       {PAYMENT_METHODS.map(m => <option key={m} value={m} className="text-slate-900">{m}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-black text-white/50 uppercase mb-2 block">Vencimento</label>
+                    <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Vencimento</label>
                     <input required type="date" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} />
                   </div>
+
+                  {/* Campo Condicional PIX */}
+                  {formData.paymentMethod === 'PIX' && (
+                    <div className="col-span-2 animate-in fade-in slide-in-from-top-4">
+                      <label className="text-xs font-black text-blue-400 uppercase mb-2 block tracking-widest flex items-center"><Smartphone size={14} className="mr-2"/> Chave PIX</label>
+                      <input required type="text" className="w-full p-4 bg-white/10 border border-blue-400/30 rounded-xl text-white font-bold" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} />
+                    </div>
+                  )}
+
+                  {/* Campos Condicionais TED/DEPOSITO */}
+                  {formData.paymentMethod === 'TED/DEPOSITO' && (
+                    <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4">
+                      <div className="col-span-2 md:col-span-1">
+                        <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Banco</label>
+                        <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Agência</label>
+                        <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.agency} onChange={e => setFormData({...formData, agency: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Conta</label>
+                        <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.account} onChange={e => setFormData({...formData, account: e.target.value})} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Tipo</label>
+                        <select className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold uppercase" value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})}>
+                          <option value="Corrente" className="text-slate-900">Corrente</option>
+                          <option value="Poupança" className="text-slate-900">Poupança</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -372,6 +406,16 @@ const DashboardSolicitante: React.FC = () => {
                          <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{ticketFile ? ticketFile.name : (isEditing ? 'Atualizar Boleto (Se necessário)' : 'Boleto / Comprovante')}</p>
                       </label>
                    </div>
+                </div>
+
+                <div className="col-span-2 bg-white/5 p-6 rounded-[1.5rem] border border-white/10">
+                  <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-3 block italic flex items-center"><MessageSquare size={14} className="mr-2"/> Observações / Instruções Adicionais</label>
+                  <textarea 
+                    className="w-full p-4 bg-white/5 border border-white/10 rounded-xl outline-none text-sm font-bold text-white h-24 resize-none focus:border-blue-400 transition-colors" 
+                    value={formData.generalObservation} 
+                    onChange={e => setFormData({...formData, generalObservation: e.target.value})} 
+                    placeholder="Ex: Urgente, pagamento parcial, detalhes da conta..."
+                  />
                 </div>
 
                 <div className="flex items-center justify-end space-x-4 pt-6 border-t border-white/5">
@@ -419,6 +463,7 @@ const DashboardSolicitante: React.FC = () => {
                   <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><CreditCard size={16} className="mr-3"/> Pagamento</p>
                   <div className="space-y-6">
                     <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Favorecido</span><p className="text-lg font-bold text-slate-800 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p></div>
+                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Método</span><p className="text-sm font-black text-blue-600 uppercase">{selectedRequest.paymentMethod}</p></div>
                   </div>
                 </div>
               </div>
