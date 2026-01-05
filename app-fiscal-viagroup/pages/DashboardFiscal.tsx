@@ -4,7 +4,6 @@ import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
-import { BRANCHES } from '../constants';
 import Badge from '../components/Badge';
 import { 
   Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare
@@ -74,6 +73,23 @@ const DashboardFiscal: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
+  // Lógica de Filiais Dinâmicas baseada nos dados carregados
+  const availableBranches = useMemo(() => {
+    const branches = requests
+      .map(r => r.branch)
+      .filter(branch => branch && branch.trim() !== '');
+    return Array.from(new Set(branches)).sort();
+  }, [requests]);
+
+  // Opções de Status Específicas solicitadas
+  const statusOptions = [
+    { label: 'Todos', value: '' },
+    { label: 'Aprovado', value: RequestStatus.APROVADO },
+    { label: 'Erro - Fiscal', value: RequestStatus.ERRO_FISCAL },
+    { label: 'Em Análise', value: RequestStatus.ANALISE },
+    { label: 'Pendente', value: RequestStatus.PENDENTE },
+  ];
+
   // Lógica de Workflow (Hierarquia)
   const isMaster = useMemo(() => {
     return authState.user?.role === UserRole.FISCAL_ADMIN || authState.user?.role === UserRole.ADMIN_MASTER;
@@ -83,7 +99,6 @@ const DashboardFiscal: React.FC = () => {
     if (!selectedRequest || !authState.token) return;
     setIsProcessingAction(true);
     try {
-      // Se Comum -> Em Análise | Se Master -> Aprovado
       const targetStatus = isMaster ? RequestStatus.APROVADO : RequestStatus.ANALISE;
       const comment = isMaster ? 'Aprovação Final realizada pelo Fiscal Master.' : 'Conferência inicial realizada pelo Fiscal Comum. Aguardando Master.';
       
@@ -102,7 +117,6 @@ const DashboardFiscal: React.FC = () => {
     if (!selectedRequest || !authState.token) return;
     setIsProcessingAction(true);
     try {
-      // Se Comum -> Em Análise | Se Master -> Erro - Fiscal
       const targetStatus = isMaster ? RequestStatus.ERRO_FISCAL : RequestStatus.ANALISE;
       const fullComment = `[${rejectReason}] ${rejectComment}`;
       
@@ -143,9 +157,10 @@ const DashboardFiscal: React.FC = () => {
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
       
-      {/* Barra de Filtros Superior */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 min-w-[200px]">
+      {/* Barra de Filtros Superior - Compactada e Reposicionada */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center gap-6">
+        {/* Campo de Busca - Largura Reduzida */}
+        <div className="relative w-64 min-w-[200px]">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input 
             type="text" 
@@ -156,7 +171,8 @@ const DashboardFiscal: React.FC = () => {
           />
         </div>
         
-        <div className="flex items-center gap-4">
+        {/* Filtros à Esquerda, logo após a busca */}
+        <div className="flex items-center gap-5">
           <div className="flex flex-col">
             <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center">
               <Calendar size={10} className="mr-1"/> Data Criação
@@ -176,10 +192,10 @@ const DashboardFiscal: React.FC = () => {
             <select 
               value={branchFilter}
               onChange={e => setBranchFilter(e.target.value)}
-              className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+              className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
             >
-              <option value="">Todas</option>
-              {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+              <option value="">Todas as Filiais</option>
+              {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
           </div>
 
@@ -190,10 +206,11 @@ const DashboardFiscal: React.FC = () => {
             <select 
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+              className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
             >
-              <option value="">Todos</option>
-              {Object.values(RequestStatus).map(s => <option key={s} value={s}>{s}</option>)}
+              {statusOptions.map(opt => (
+                <option key={opt.label} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
           </div>
         </div>
