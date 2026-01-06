@@ -28,7 +28,8 @@ const FIELD_MAP = {
   bank: 'BANCO',
   agency: 'AGENCIA',
   account: 'CONTA',
-  accountType: 'TIPO_CONTA'
+  accountType: 'TIPO_CONTA',
+  sharedWithEmail: 'PESSOA_COMPARTILHADA'
 };
 
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -95,9 +96,6 @@ export const sharepointService = {
     }
   },
 
-  /**
-   * Busca todos os usuários da lista de gestão no SharePoint usando o GUID solicitado.
-   */
   getAllSharePointUsers: async (): Promise<any[]> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Status,Id`;
@@ -114,9 +112,6 @@ export const sharepointService = {
     }
   },
 
-  /**
-   * Dispara o fluxo do Power Automate com payload JSON.
-   */
   triggerPowerAutomateFlow: async (payload: any): Promise<boolean> => {
     try {
       const response = await fetch(POWER_AUTOMATE_URL, {
@@ -171,6 +166,7 @@ export const sharepointService = {
           accountType: f[FIELD_MAP.accountType] || '',
           generalObservation: f[FIELD_MAP.generalObservation] || '',
           statusManual: f[FIELD_MAP.statusManual] || '',
+          sharedWithEmail: f[FIELD_MAP.sharedWithEmail] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: creatorId,

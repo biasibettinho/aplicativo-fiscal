@@ -87,6 +87,7 @@ export interface PaymentRequest {
   finalizedAt?: string;
   sharedWithUserId?: string;
   sharedByUserId?: string;
+  sharedWithEmail?: string; // Mapeia PESSOA_COMPARTILHADA
   shareComment?: string;
   attachments?: Attachment[];
 }
