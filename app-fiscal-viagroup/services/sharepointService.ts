@@ -29,7 +29,8 @@ const FIELD_MAP = {
   agency: 'AGENCIA',
   account: 'CONTA',
   accountType: 'TIPO_CONTA',
-  sharedWithEmail: 'PESSOA_COMPARTILHADA'
+  sharedWithEmail: 'PESSOA_COMPARTILHADA',
+  errorObservation: 'OBS_ERRO' // Mapeamento da coluna OBS_ERRO
 };
 
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -167,6 +168,7 @@ export const sharepointService = {
           generalObservation: f[FIELD_MAP.generalObservation] || '',
           statusManual: f[FIELD_MAP.statusManual] || '',
           sharedWithEmail: f[FIELD_MAP.sharedWithEmail] || '',
+          errorObservation: f[FIELD_MAP.errorObservation] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: creatorId,

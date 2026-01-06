@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  DollarSign, Search, Banknote, FileText, ExternalLink, Paperclip, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X
+  DollarSign, Search, Banknote, FileText, ExternalLink, Paperclip, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3
 } from 'lucide-react';
 
 const DashboardFinanceiro: React.FC = () => {
@@ -16,6 +16,7 @@ const DashboardFinanceiro: React.FC = () => {
   const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
+  const [isReworking, setIsReworking] = useState(false);
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -25,7 +26,7 @@ const DashboardFinanceiro: React.FC = () => {
 
   // Modais de Ação
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState('Dados Bancários Incorretos');
+  const [rejectReason, setRejectReason] = useState('Sem método de pagamento');
   const [rejectComment, setRejectComment] = useState('');
   
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -41,13 +42,13 @@ const DashboardFinanceiro: React.FC = () => {
     if (!authState.user || !authState.token) return;
     const data = await requestService.getRequestsFiltered(authState.user, authState.token);
     
-    // Regra: Exibir apenas aprovados pelo fiscal ou status financeiros subsequentes
     const financeOnly = data.filter(r => [
       RequestStatus.APROVADO, 
       RequestStatus.ANALISE, 
       RequestStatus.FATURADO, 
-      RequestStatus.ERRO_FINANCEIRO
-    ].includes(r.status));
+      RequestStatus.ERRO_FINANCEIRO,
+      RequestStatus.COMPARTILHADO
+    ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail !== ''));
     
     setRequests(financeOnly);
   };
@@ -57,6 +58,7 @@ const DashboardFinanceiro: React.FC = () => {
   const selectedRequest = requests.find(r => r.id === selectedId);
 
   useEffect(() => {
+    setIsReworking(false);
     let isMounted = true;
     const fetchAtts = async () => {
       if (selectedRequest && authState.token) {
@@ -84,7 +86,6 @@ const DashboardFinanceiro: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
-  // Lógica de Filiais Dinâmicas
   const availableBranches = useMemo(() => {
     const branches = requests
       .map(r => r.branch)
@@ -92,7 +93,6 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-  // Opções de Status Específicas
   const statusOptions = [
     { label: 'Todos', value: '' },
     { label: 'Faturado', value: RequestStatus.FATURADO },
@@ -101,12 +101,9 @@ const DashboardFinanceiro: React.FC = () => {
     { label: 'Pendente', value: RequestStatus.PENDENTE },
   ];
 
-  // Histórico de compartilhamento para o modal
+  // Filtro de compartilhamento - Busca itens onde PESSOA_COMPARTILHADA contenha o e-mail
   const sharedHistory = useMemo(() => {
-    return requests.filter(r => 
-      r.sharedWithEmail === shareEmail && 
-      r.status === RequestStatus.APROVADO // Apenas pendentes conforme solicitado
-    );
+    return requests.filter(r => r.sharedWithEmail === shareEmail);
   }, [requests, shareEmail]);
 
   const handleApprove = async () => {
@@ -116,7 +113,11 @@ const DashboardFinanceiro: React.FC = () => {
       const targetStatus = isMaster ? RequestStatus.FATURADO : RequestStatus.ANALISE;
       const comment = isMaster ? 'Concluído Faturamento pelo Financeiro Master.' : 'Encaminhado para validação Master pelo Financeiro Comum.';
       
-      await requestService.changeStatus(selectedRequest.graphId, targetStatus, authState.token, comment);
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+        status: targetStatus,
+        generalObservation: comment,
+        errorObservation: ''
+      });
       await loadData(); 
       setSelectedId(null);
     } catch (e) {
@@ -132,9 +133,13 @@ const DashboardFinanceiro: React.FC = () => {
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
-      const fullComment = `[REPROVAÇÃO FINANCEIRA: ${rejectReason}] ${rejectComment}`;
       
-      await requestService.changeStatus(selectedRequest.graphId, targetStatus, authState.token, fullComment);
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+        status: targetStatus,
+        errorObservation: rejectReason, // OBS_ERRO
+        generalObservation: rejectComment // Observa_x00e7__x00e3_o
+      });
+      
       await loadData();
       setIsRejectModalOpen(false);
       setRejectComment('');
@@ -187,10 +192,11 @@ const DashboardFinanceiro: React.FC = () => {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, dateFilter, branchFilter, statusFilter]);
 
+  const isFinalized = selectedRequest && [RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(selectedRequest.status);
+
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
       
-      {/* Barra de Filtros Superior - Padrão Fiscal */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center gap-6">
         <div className="relative w-64 min-w-[200px]">
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -248,18 +254,14 @@ const DashboardFinanceiro: React.FC = () => {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden">
-        {/* Listagem Lateral */}
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Aguardando Liquidação ({filteredRequests.length})</span>
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Financeiro ({filteredRequests.length})</span>
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
-              // Regra visual: Aprovado pelo fiscal aparece como Pendente no Financeiro
               let displayStatus: any = r.status;
               if (r.status === RequestStatus.APROVADO) displayStatus = RequestStatus.PENDENTE;
-              
-              // Se em análise e usuário comum, mostra como Aprovado
               if (r.status === RequestStatus.ANALISE && !isMaster) displayStatus = RequestStatus.APROVADO;
 
               return (
@@ -273,17 +275,12 @@ const DashboardFinanceiro: React.FC = () => {
                     <Badge status={displayStatus} className="scale-90 origin-right" />
                   </div>
                   <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
-                  <div className="flex justify-between items-center mt-2">
-                    <span className="text-[9px] text-indigo-500 font-bold italic uppercase tracking-widest">{r.branch}</span>
-                    <span className="text-[9px] text-gray-400 font-medium">{new Date(r.createdAt).toLocaleDateString()}</span>
-                  </div>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Detalhes do Registro */}
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
@@ -296,35 +293,43 @@ const DashboardFinanceiro: React.FC = () => {
                     </span>
                   </div>
                   <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate">{selectedRequest.title}</h2>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-2 flex items-center"><MapPin size={14} className="mr-2 text-indigo-500"/> FILIAL: {selectedRequest.branch} • ID: {selectedRequest.id}</p>
                 </div>
                 <div className="flex space-x-3">
-                  {/* Botão de Compartilhar Exclusivo Master */}
                   {isMaster && (
-                    <button 
-                      onClick={() => setIsShareModalOpen(true)}
-                      className="px-6 py-3.5 bg-indigo-100 text-indigo-600 rounded-2xl font-black text-[10px] uppercase italic flex items-center hover:bg-indigo-200 transition-all shadow-sm"
-                    >
+                    <button onClick={() => setIsShareModalOpen(true)} className="px-6 py-3.5 bg-indigo-100 text-indigo-600 rounded-2xl font-black text-[10px] uppercase italic flex items-center hover:bg-indigo-200 transition-all shadow-sm">
                       <Share2 size={18} className="mr-2" /> Compartilhar
                     </button>
                   )}
                   
-                  <button 
-                    onClick={() => setIsRejectModalOpen(true)} 
-                    disabled={isProcessingAction}
-                    className="px-6 py-3.5 text-red-600 font-black text-[10px] uppercase border-2 border-red-100 rounded-2xl hover:bg-red-50 transition-all flex items-center shadow-sm disabled:opacity-50"
-                  >
-                    <XCircle size={18} className="mr-2" /> Reprovar
-                  </button>
-                  
-                  <button 
-                    onClick={handleApprove} 
-                    disabled={isProcessingAction}
-                    className="px-10 py-3.5 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-green-700 transition-all flex items-center disabled:opacity-50"
-                  >
-                    {isProcessingAction ? <Loader2 size={18} className="animate-spin mr-2" /> : <CheckCircle size={18} className="mr-2" />}
-                    {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
-                  </button>
+                  {isFinalized && !isReworking ? (
+                    <button 
+                      onClick={() => setIsReworking(true)}
+                      className="px-6 py-3.5 bg-amber-100 text-amber-700 font-black text-[10px] uppercase rounded-2xl hover:bg-amber-200 transition-all flex items-center shadow-sm"
+                    >
+                      <Edit3 size={18} className="mr-2" /> Editar Ações
+                    </button>
+                  ) : (
+                    <>
+                      <button 
+                        onClick={() => setIsRejectModalOpen(true)} 
+                        disabled={isProcessingAction}
+                        className="px-6 py-3.5 text-red-600 font-black text-[10px] uppercase border-2 border-red-100 rounded-2xl hover:bg-red-50 transition-all flex items-center shadow-sm disabled:opacity-50"
+                      >
+                        <XCircle size={18} className="mr-2" /> Reprovar
+                      </button>
+                      <button 
+                        onClick={handleApprove} 
+                        disabled={isProcessingAction}
+                        className="px-10 py-3.5 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-green-700 transition-all flex items-center disabled:opacity-50"
+                      >
+                        {isProcessingAction ? <Loader2 size={18} className="animate-spin mr-2" /> : <CheckCircle size={18} className="mr-2" />}
+                        {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
+                      </button>
+                      {isReworking && (
+                         <button onClick={() => setIsReworking(false)} className="p-3.5 text-gray-400 hover:text-gray-600"><X size={20}/></button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -335,10 +340,13 @@ const DashboardFinanceiro: React.FC = () => {
                       <Landmark size={14} className="mr-2"/> Dados p/ Liquidação
                     </h3>
                     <div className="space-y-8">
-                      <div>
-                        <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span>
-                        <p className="text-2xl font-black text-slate-900 break-words leading-tight">{selectedRequest.payee || '---'}</p>
-                      </div>
+                      {/* Lógica Favorecido - Invisível se vazio */}
+                      {selectedRequest.payee && selectedRequest.payee.trim() !== '' && (
+                        <div>
+                          <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span>
+                          <p className="text-2xl font-black text-slate-900 break-words leading-tight">{selectedRequest.payee}</p>
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-6">
                          <div>
                             <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span>
@@ -349,67 +357,35 @@ const DashboardFinanceiro: React.FC = () => {
                             <p className="text-xl font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p>
                          </div>
                       </div>
-
-                      {selectedRequest.paymentMethod === 'PIX' && (
-                        <div className="pt-4 border-t border-indigo-100/50">
-                          <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span>
-                          <p className="text-lg font-bold text-indigo-900 break-all">{selectedRequest.pixKey || '---'}</p>
-                        </div>
-                      )}
-
-                      {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
-                        <div className="pt-4 border-t border-indigo-100/50 grid grid-cols-2 gap-4">
-                          <div>
-                            <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Banco</span>
-                            <p className="text-sm font-bold text-slate-900">{selectedRequest.bank || '---'}</p>
-                          </div>
-                          <div>
-                            <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Ag/Conta</span>
-                            <p className="text-sm font-bold text-slate-900">{selectedRequest.agency} / {selectedRequest.account}</p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </section>
 
                   <section className="space-y-6">
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-3 italic">
-                      <Paperclip size={16} className="mr-2" /> Documentação Auxiliar {isFetchingAttachments && <Loader2 size={14} className="ml-2 animate-spin text-indigo-600" />}
+                      <Paperclip size={16} className="mr-2" /> Documentação
                     </h3>
                     <div className="space-y-4">
                       {[...mainAttachments, ...secondaryAttachments].map(att => (
                         <div key={att.id} className="p-4 bg-white border border-indigo-100 rounded-2xl flex items-center shadow group hover:border-indigo-500 transition-all">
-                          <div className={`p-3 rounded-xl mr-4 group-hover:scale-110 transition-transform ${att.type === 'invoice_pdf' ? 'bg-indigo-600' : 'bg-blue-600'} text-white`}><FileText size={20}/></div>
+                          <div className={`p-3 rounded-xl mr-4 group-hover:scale-110 transition-transform bg-indigo-600 text-white`}><FileText size={20}/></div>
                           <div className="flex-1 truncate"><span className="text-gray-900 font-bold text-xs block truncate">{att.fileName}</span></div>
                           <button onClick={() => handleViewFile(att.storageUrl)} className="ml-4 p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors"><ExternalLink size={16} /></button>
                         </div>
                       ))}
-                      {!isFetchingAttachments && mainAttachments.length === 0 && secondaryAttachments.length === 0 && (
-                        <div className="p-12 border-2 border-dashed border-gray-100 rounded-[2rem] text-center text-gray-300 font-bold italic text-sm">Nenhum documento disponível.</div>
-                      )}
                     </div>
                   </section>
                 </div>
-
-                {selectedRequest.generalObservation && (
-                  <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
-                    <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação da Solicitação</span>
-                    <p className="text-sm font-medium text-slate-600 italic">"{selectedRequest.generalObservation}"</p>
-                  </div>
-                )}
               </div>
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-300 text-center p-20">
               <DollarSign size={100} className="opacity-10 mb-6" />
               <h3 className="text-2xl font-black text-gray-900 uppercase italic">Gestão Financeira</h3>
-              <p className="text-sm font-bold text-gray-400 mt-4 max-w-xs">Aguardando seleção de nota aprovada pelo fiscal para processamento de liquidação.</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Modal de Reprovação Financeira */}
       {isRejectModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
@@ -430,9 +406,8 @@ const DashboardFinanceiro: React.FC = () => {
                   onChange={e => setRejectReason(e.target.value)}
                   className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-500"
                 >
-                  <option value="Dados Bancários Incorretos">Dados Bancários Incorretos</option>
-                  <option value="Valor Divergente">Valor Divergente</option>
-                  <option value="NF Sem Pedido">NF Sem Pedido</option>
+                  <option value="Sem método de pagamento">Sem método de pagamento</option>
+                  <option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option>
                 </select>
               </div>
 
@@ -462,7 +437,6 @@ const DashboardFinanceiro: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Compartilhamento (Exclusivo Master) */}
       {isShareModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
@@ -488,9 +462,8 @@ const DashboardFinanceiro: React.FC = () => {
                 </select>
               </div>
 
-              {/* Histórico no Pop-up */}
               <div className="space-y-4">
-                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-2 italic">Histórico Pendente p/ {shareEmail}</h4>
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-2 italic">Histórico de Compartilhamento p/ {shareEmail}</h4>
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                   {sharedHistory.length > 0 ? sharedHistory.map(h => (
                     <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
@@ -498,7 +471,7 @@ const DashboardFinanceiro: React.FC = () => {
                         <span className="text-[10px] font-black text-indigo-600 block leading-none mb-1">#{h.id}</span>
                         <p className="text-xs font-bold text-gray-700 truncate">{h.title}</p>
                       </div>
-                      <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
+                      <Badge status={h.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : h.status} className="scale-75 origin-right" />
                     </div>
                   )) : (
                     <p className="text-center py-6 text-gray-300 font-bold italic text-[10px] uppercase">Nenhuma pendência compartilhada.</p>
@@ -518,16 +491,6 @@ const DashboardFinanceiro: React.FC = () => {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Overlay de Processamento Global */}
-      {isProcessingAction && (
-        <div className="fixed inset-0 z-[110] bg-white/20 backdrop-blur-[2px] flex items-center justify-center cursor-wait">
-          <div className="bg-white p-6 rounded-3xl shadow-2xl border border-gray-100 flex items-center space-x-4">
-            <Loader2 className="animate-spin text-indigo-600" size={32} />
-            <span className="text-xs font-black uppercase tracking-widest text-gray-600 italic">Processando liquidação...</span>
           </div>
         </div>
       )}
