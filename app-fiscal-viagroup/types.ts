@@ -56,7 +56,7 @@ export interface AuditLog {
 
 export interface PaymentRequest {
   id: string;
-  graphId: string; // ID único do Microsoft Graph
+  graphId: string; 
   mirrorId: number;
   title: string;
   branch: string;
@@ -67,10 +67,11 @@ export interface PaymentRequest {
   status: RequestStatus;
   statusFinal?: string;
   statusManual?: string;
+  statusEspelho?: string; // Coluna STATUS_ESPELHO
   errorType?: string;
   errorObservation?: string;
-  generalObservation?: string; // Observação do Solicitante
-  approverObservation?: string; // Observação dos Aprovadores (Nova Coluna)
+  generalObservation?: string; 
+  approverObservation?: string; 
   orderNumbers: string;
   invoiceNumber: string;
   payee: string;
@@ -88,7 +89,7 @@ export interface PaymentRequest {
   finalizedAt?: string;
   sharedWithUserId?: string;
   sharedByUserId?: string;
-  sharedWithEmail?: string; // Mapeia PESSOA_COMPARTILHADA
+  sharedWithEmail?: string; 
   shareComment?: string;
   attachments?: Attachment[];
 }

@@ -20,12 +20,14 @@ const FIELD_MAP = {
   status: 'Status',
   branch: 'Filial',
   generalObservation: 'Observa_x00e7__x00e3_o',
-  approverObservation: 'OBSERVACAO_APROVADORES', // Nova coluna para aprovadores
+  approverObservation: 'OBSERVACAO_APROVADORES', 
   paymentMethod: 'MET_PAGAMENTO',
   pixKey: 'CAMPO_PIX',
   paymentDate: 'DATA_PAG',
   payee: 'PESSOA',
   statusManual: 'STATUS_ESPELHO_MANUAL',
+  statusFinal: 'STATUS_FINAL',
+  statusEspelho: 'STATUS_ESPELHO',
   bank: 'BANCO',
   agency: 'AGENCIA',
   account: 'CONTA',
@@ -71,9 +73,6 @@ async function spRestFetch(url: string, options: RequestInit = {}) {
 }
 
 export const sharepointService = {
-  /**
-   * Consulta a lista App_Gestao_Usuarios (via GUID oficial) para determinar o papel do usuário.
-   */
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$filter=EmailUsuario eq '${email}'`;
@@ -102,10 +101,7 @@ export const sharepointService = {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Status,Id`;
       const response = await spRestFetch(endpoint);
-      if (!response.ok) {
-        console.error("Falha na consulta getAllSharePointUsers:", response.status);
-        return [];
-      }
+      if (!response.ok) return [];
       const data = await response.json();
       return data.d?.results || [];
     } catch (e) {
@@ -167,8 +163,10 @@ export const sharepointService = {
           account: f[FIELD_MAP.account] || '',
           accountType: f[FIELD_MAP.accountType] || '',
           generalObservation: f[FIELD_MAP.generalObservation] || '',
-          approverObservation: f[FIELD_MAP.approverObservation] || '', // Mapeamento da nova coluna
+          approverObservation: f[FIELD_MAP.approverObservation] || '', 
           statusManual: f[FIELD_MAP.statusManual] || '',
+          statusFinal: f[FIELD_MAP.statusFinal] || '',
+          statusEspelho: f[FIELD_MAP.statusEspelho] || '',
           sharedWithEmail: f[FIELD_MAP.sharedWithEmail] || '',
           errorObservation: f[FIELD_MAP.errorObservation] || '',
           createdAt: item.createdDateTime,

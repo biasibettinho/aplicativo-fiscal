@@ -36,6 +36,26 @@ const DashboardFinanceiro: React.FC = () => {
     return authState.user?.role === UserRole.FINANCEIRO_MASTER || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
 
+  // Função centralizada para resolver o status visual conforme hierarquia solicitada
+  const resolveDisplayStatus = (r: PaymentRequest): string => {
+    // Prioridade 1: Erro - Financeiro
+    if (r.status === RequestStatus.ERRO_FINANCEIRO) return RequestStatus.ERRO_FINANCEIRO;
+
+    // Prioridade 2: Status Final preenchido
+    if (r.statusFinal && r.statusFinal.trim() !== '') return r.statusFinal;
+
+    // Prioridade 3: Se o usuário for sofia.ferneda, exibe Status Manual
+    if (authState.user?.email.toLowerCase() === 'sofia.ferneda@viagroup.com.br') {
+      if (r.statusManual && r.statusManual.trim() !== '') return r.statusManual;
+    }
+
+    // Prioridade 4: Se Status Manual for 'Compartilhado'
+    if (r.statusManual === 'Compartilhado') return 'Compartilhado';
+
+    // Prioridade 5: Fallback para Status Espelho ou Status Original
+    return r.statusEspelho && r.statusEspelho.trim() !== '' ? r.statusEspelho : r.status;
+  };
+
   const loadData = async () => {
     if (!authState.user || !authState.token) return;
     const data = await requestService.getRequestsFiltered(authState.user, authState.token);
@@ -49,7 +69,6 @@ const DashboardFinanceiro: React.FC = () => {
       RequestStatus.COMPARTILHADO
     ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail.trim() !== ''));
 
-    // Visibilidade Financeiro Comum: Apenas itens compartilhados com o próprio e-mail
     if (authState.user.role === UserRole.FINANCEIRO) {
       filtered = filtered.filter(r => r.sharedWithEmail?.toLowerCase() === authState.user?.email.toLowerCase());
     }
@@ -87,7 +106,6 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-  // Filtro Regionalizado para o Pop-up de Compartilhamento (Apenas o que exige atenção)
   const northShared = useMemo(() => 
     requests.filter(r => 
       r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br' &&
@@ -111,7 +129,6 @@ const DashboardFinanceiro: React.FC = () => {
       const targetStatus = isMaster ? RequestStatus.FATURADO : RequestStatus.ANALISE;
       const comment = isMaster ? 'Faturamento concluído pelo Master.' : 'Encaminhado para validação Master.';
       
-      // Persistência exclusiva na coluna OBSERVACAO_APROVADORES (approverObservation)
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         approverObservation: comment,
@@ -126,7 +143,6 @@ const DashboardFinanceiro: React.FC = () => {
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
-      // Persistência exclusiva na coluna OBSERVACAO_APROVADORES (approverObservation)
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason, 
@@ -182,23 +198,8 @@ const DashboardFinanceiro: React.FC = () => {
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
-              // LÓGICA DE STATUS RIGOROSA CONFORME SOLICITADO
-              let dStatus: any = r.status;
-              
-              if (!isMaster) {
-                // FINANCEIRO COMUM: Sempre exibe 'Pendente' para o que está com ele
-                dStatus = RequestStatus.PENDENTE;
-              } else {
-                // FINANCEIRO MASTER: Lógica de 'Compartilhado'
-                const isShared = r.sharedWithEmail && r.sharedWithEmail.trim() !== '';
-                const isNotFinalOrAnalise = r.status !== RequestStatus.FATURADO && r.status !== RequestStatus.ANALISE;
-
-                if (isShared && isNotFinalOrAnalise) {
-                  dStatus = RequestStatus.COMPARTILHADO;
-                } else if (r.status === RequestStatus.APROVADO) {
-                  dStatus = RequestStatus.PENDENTE;
-                }
-              }
+              // Aplicação da Hierarquia de Status solicitada
+              const dStatus = resolveDisplayStatus(r);
 
               return (
                 <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'}`}>
@@ -216,7 +217,9 @@ const DashboardFinanceiro: React.FC = () => {
             <>
               <div className="p-10 border-b flex justify-between items-center bg-gray-50/20">
                 <div className="max-w-[50%]">
-                   <div className="flex items-center space-x-3 mb-2"><Badge status={selectedRequest.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : selectedRequest.status} /></div>
+                   <div className="flex items-center space-x-3 mb-2">
+                     <Badge status={resolveDisplayStatus(selectedRequest)} />
+                   </div>
                    <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate">{selectedRequest.title}</h2>
                 </div>
                 <div className="flex space-x-3">
@@ -263,7 +266,7 @@ const DashboardFinanceiro: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
           <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col animate-in zoom-in duration-200">
-            <div className="bg-red-600 p-6 text-white flex justify-between items-center">
+            <div className="bg-red-600 p-6 text-white flex justify-between items-center text-white">
               <h3 className="text-lg font-black uppercase italic tracking-tight">Reprovar Financeiro</h3>
               <button onClick={() => setIsRejectModalOpen(false)}><X size={20}/></button>
             </div>
@@ -295,7 +298,7 @@ const DashboardFinanceiro: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
           <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            <div className="bg-indigo-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3"><Share2 size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Divisão Regional</h3></div><button onClick={() => setIsShareModalOpen(false)}><X size={20}/></button></div>
+            <div className="bg-indigo-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><Share2 size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Divisão Regional</h3></div><button onClick={() => setIsShareModalOpen(false)}><X size={20}/></button></div>
             <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
               <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
                 <label className="text-[10px] font-black text-indigo-400 uppercase block mb-3 text-center tracking-widest">Compartilhar com Regional</label>
@@ -317,7 +320,7 @@ const DashboardFinanceiro: React.FC = () => {
                     {northShared.length > 0 ? northShared.map(h => (
                       <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
                         <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
+                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
                       </div>
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio / Sem pendências</p>}
                   </div>
@@ -328,7 +331,7 @@ const DashboardFinanceiro: React.FC = () => {
                     {southShared.length > 0 ? southShared.map(h => (
                       <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
                         <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
+                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
                       </div>
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio / Sem pendências</p>}
                   </div>
