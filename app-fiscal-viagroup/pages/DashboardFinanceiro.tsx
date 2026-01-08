@@ -49,7 +49,7 @@ const DashboardFinanceiro: React.FC = () => {
       RequestStatus.COMPARTILHADO
     ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail.trim() !== ''));
 
-    // Regra: Financeiro Comum vê apenas o que foi compartilhado com ele
+    // Visibilidade Financeiro Comum: Apenas itens compartilhados com o próprio e-mail
     if (authState.user.role === UserRole.FINANCEIRO) {
       filtered = filtered.filter(r => r.sharedWithEmail?.toLowerCase() === authState.user?.email.toLowerCase());
     }
@@ -87,7 +87,7 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-  // Filtro corrigido para o Pop-up de Compartilhamento (Ignora Finalizados)
+  // Filtro Regionalizado para o Pop-up de Compartilhamento (Apenas o que exige atenção)
   const northShared = useMemo(() => 
     requests.filter(r => 
       r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br' &&
@@ -111,9 +111,10 @@ const DashboardFinanceiro: React.FC = () => {
       const targetStatus = isMaster ? RequestStatus.FATURADO : RequestStatus.ANALISE;
       const comment = isMaster ? 'Faturamento concluído pelo Master.' : 'Encaminhado para validação Master.';
       
+      // Persistência exclusiva na coluna OBSERVACAO_APROVADORES (approverObservation)
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
-        approverObservation: comment, // Salvo em OBSERVACAO_APROVADORES
+        approverObservation: comment,
         errorObservation: ''
       });
       await loadData(); setSelectedId(null);
@@ -125,10 +126,11 @@ const DashboardFinanceiro: React.FC = () => {
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
+      // Persistência exclusiva na coluna OBSERVACAO_APROVADORES (approverObservation)
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason, 
-        approverObservation: rejectComment // Salvo em OBSERVACAO_APROVADORES
+        approverObservation: rejectComment
       });
       await loadData(); setIsRejectModalOpen(false); setSelectedId(null);
     } catch (e) { alert("Erro ao reprovar."); } finally { setIsProcessingAction(false); }
@@ -180,26 +182,27 @@ const DashboardFinanceiro: React.FC = () => {
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
-              // Lógica de Status Corrigida e Aprimorada
-              let displayStatus: any = r.status;
+              // LÓGICA DE STATUS RIGOROSA CONFORME SOLICITADO
+              let dStatus: any = r.status;
               
-              const isShared = r.sharedWithEmail && r.sharedWithEmail.trim() !== '';
-              const isNotFinalOrAnalise = r.status !== RequestStatus.FATURADO && r.status !== RequestStatus.ANALISE;
-
               if (!isMaster) {
-                // Usuário Comum: Sempre visualiza como Pendente o que está com ele
-                displayStatus = RequestStatus.PENDENTE;
-              } else if (isShared && isNotFinalOrAnalise) {
-                // Master: Visualiza como Compartilhado se pendente e compartilhado
-                displayStatus = RequestStatus.COMPARTILHADO;
-              } else if (r.status === RequestStatus.APROVADO) {
-                // Itens novos vindos do Fiscal
-                displayStatus = RequestStatus.PENDENTE;
+                // FINANCEIRO COMUM: Sempre exibe 'Pendente' para o que está com ele
+                dStatus = RequestStatus.PENDENTE;
+              } else {
+                // FINANCEIRO MASTER: Lógica de 'Compartilhado'
+                const isShared = r.sharedWithEmail && r.sharedWithEmail.trim() !== '';
+                const isNotFinalOrAnalise = r.status !== RequestStatus.FATURADO && r.status !== RequestStatus.ANALISE;
+
+                if (isShared && isNotFinalOrAnalise) {
+                  dStatus = RequestStatus.COMPARTILHADO;
+                } else if (r.status === RequestStatus.APROVADO) {
+                  dStatus = RequestStatus.PENDENTE;
+                }
               }
 
               return (
                 <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'}`}>
-                  <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black text-gray-400">#{r.id}</span><Badge status={displayStatus} className="scale-90 origin-right" /></div>
+                  <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black text-gray-400">#{r.id}</span><Badge status={dStatus} className="scale-90 origin-right" /></div>
                   <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
                 </div>
               );
@@ -259,9 +262,9 @@ const DashboardFinanceiro: React.FC = () => {
       {isRejectModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            <div className="bg-red-600 p-6 text-white flex justify-between items-center shrink-0">
-              <h3 className="text-lg font-black uppercase italic">Reprovar Financeiro</h3>
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col animate-in zoom-in duration-200">
+            <div className="bg-red-600 p-6 text-white flex justify-between items-center">
+              <h3 className="text-lg font-black uppercase italic tracking-tight">Reprovar Financeiro</h3>
               <button onClick={() => setIsRejectModalOpen(false)}><X size={20}/></button>
             </div>
             <div className="p-8 space-y-6">
@@ -278,8 +281,8 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Voltar</button>
-                <button onClick={handleConfirmReject} disabled={isProcessingAction} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl disabled:opacity-50">
-                   Confirmar Reprovação
+                <button onClick={handleConfirmReject} disabled={isProcessingAction} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl disabled:opacity-50 transition-all hover:bg-red-700">
+                   {isProcessingAction ? <Loader2 size={16} className="animate-spin" /> : 'Confirmar Reprovação'}
                 </button>
               </div>
             </div>
@@ -301,7 +304,7 @@ const DashboardFinanceiro: React.FC = () => {
                     <option value="financeiro.sul@viagroup.com.br">financeiro.sul@viagroup.com.br</option>
                     <option value="financeiro.norte@viagroup.com.br">financeiro.norte@viagroup.com.br</option>
                   </select>
-                  <button onClick={handleShare} disabled={isProcessingAction} className="px-6 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center disabled:opacity-50">
+                  <button onClick={handleShare} disabled={isProcessingAction} className="px-6 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center disabled:opacity-50 transition-all">
                     {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <Globe size={16} className="mr-2" />} Compartilhar
                   </button>
                 </div>
@@ -316,7 +319,7 @@ const DashboardFinanceiro: React.FC = () => {
                         <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
                         <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
                       </div>
-                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
+                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio / Sem pendências</p>}
                   </div>
                 </div>
                 <div className="space-y-4">
@@ -327,7 +330,7 @@ const DashboardFinanceiro: React.FC = () => {
                         <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
                         <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
                       </div>
-                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
+                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio / Sem pendências</p>}
                   </div>
                 </div>
               </div>

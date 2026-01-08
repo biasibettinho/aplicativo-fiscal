@@ -25,7 +25,7 @@ export const authService = {
 
       const email = account.username.toLowerCase();
       
-      // Busca Role do Usuário no SharePoint (App_Gestao_Usuarios) para RLS
+      // CRÍTICO: Consulta obrigatória à lista SharePoint App_Gestao_Usuarios para capturar a Role correta
       const role = await sharepointService.getUserRoleFromSharePoint(email);
 
       const users = db.getUsers();
@@ -36,7 +36,7 @@ export const authService = {
           id: account.localAccountId,
           email: email,
           name: account.name || email.split('@')[0],
-          role: role,
+          role: role, // Role vinda do SharePoint
           isActive: true,
           department: (account.idTokenClaims as any)?.department || '',
           createdAt: new Date().toISOString(),
@@ -44,10 +44,10 @@ export const authService = {
         };
         db.saveUsers([...users, user]);
       } else {
-        // Atualiza role se mudou no SharePoint
+        // Sincroniza a Role caso tenha havido alteração no SharePoint
         if (user.role !== role) {
           user.role = role;
-          db.saveUsers(users.map(u => u.email.toLowerCase() === email ? user! : u));
+          db.saveUsers(users.map(u => u.email.toLowerCase() === email ? { ...u, role } : u));
         }
       }
 
