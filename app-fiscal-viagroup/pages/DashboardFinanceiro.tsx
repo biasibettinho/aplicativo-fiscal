@@ -131,7 +131,6 @@ const DashboardFinanceiro: React.FC = () => {
     ), 
   [requests]);
 
-  // FUNÇÃO ATUALIZADA: Lógica de transição de status e observações conforme papel
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     setIsProcessingAction(true);
@@ -170,22 +169,38 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e) { alert("Erro ao reprovar."); } finally { setIsProcessingAction(false); }
   };
 
-  // FUNÇÃO ATUALIZADA: Gravação completa conforme PATCH do Power Apps
+  /**
+   * FUNÇÃO AJUSTADA: Realiza a gravação completa de compartilhamento no SharePoint.
+   * Utiliza exatamente os nomes técnicos: PESSOA_COMPARTILHADA, STATUS_ESPELHO_MANUAL, 
+   * PESSOA_COMPARTILHOU e COMENTARIO_COMPARTILHAMENTO via updateRequest (PATCH).
+   */
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
+    
+    if (!shareEmail) {
+      alert("Por favor, selecione uma regional de destino.");
+      return;
+    }
+
     setIsProcessingAction(true);
     try {
+      // Patch enviando apenas os campos de compartilhamento, preservando o restante do item
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
-        sharedWithEmail: shareEmail,            // PESSOA_COMPARTILHADA
-        statusManual: 'Compartilhado',          // STATUS_ESPELHO_MANUAL
-        sharedByName: authState.user.name,      // PESSOA_COMPARTILHOU
-        shareComment: shareCommentText         // COMENTARIO_COMPARTILHAMENTO
+        sharedWithEmail: shareEmail,            // Mapeia para PESSOA_COMPARTILHADA
+        statusManual: 'Compartilhado',          // Mapeia para STATUS_ESPELHO_MANUAL
+        sharedByName: authState.user.name,      // Mapeia para PESSOA_COMPARTILHOU
+        shareComment: shareCommentText.trim()  // Mapeia para COMENTARIO_COMPARTILHAMENTO
       });
+
+      // Recarrega os dados para atualizar a interface e o status visual (Prioridade 4)
       await loadData(); 
+      
+      // Fecha o modal e limpa o estado de comentário
       setIsShareModalOpen(false);
       setShareCommentText('');
     } catch (e) { 
-      alert("Erro ao compartilhar."); 
+      console.error("Erro no compartilhamento SharePoint:", e);
+      alert("Erro ao salvar informações de compartilhamento no SharePoint."); 
     } finally { 
       setIsProcessingAction(false); 
     }
@@ -366,11 +381,11 @@ const DashboardFinanceiro: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Observação (Opcional)</label>
+                    <label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Observação / Comentário</label>
                     <textarea 
                       value={shareCommentText} 
                       onChange={e => setShareCommentText(e.target.value)} 
-                      placeholder="Instruções para a regional..."
+                      placeholder="Ex: Instruções para processamento regional..."
                       className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 h-[52px] resize-none"
                     />
                   </div>
