@@ -87,13 +87,21 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-  // Filtro corrigido para o Pop-up de Compartilhamento (Baseado na lista carregada)
+  // Filtro corrigido para o Pop-up de Compartilhamento (Ignora Finalizados)
   const northShared = useMemo(() => 
-    requests.filter(r => r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br'), 
+    requests.filter(r => 
+      r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br' &&
+      r.status !== RequestStatus.FATURADO && 
+      r.status !== RequestStatus.ANALISE
+    ), 
   [requests]);
   
   const southShared = useMemo(() => 
-    requests.filter(r => r.sharedWithEmail?.toLowerCase() === 'financeiro.sul@viagroup.com.br'), 
+    requests.filter(r => 
+      r.sharedWithEmail?.toLowerCase() === 'financeiro.sul@viagroup.com.br' &&
+      r.status !== RequestStatus.FATURADO && 
+      r.status !== RequestStatus.ANALISE
+    ), 
   [requests]);
 
   const handleApprove = async () => {
@@ -105,7 +113,7 @@ const DashboardFinanceiro: React.FC = () => {
       
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
-        approverObservation: comment,
+        approverObservation: comment, // Salvo em OBSERVACAO_APROVADORES
         errorObservation: ''
       });
       await loadData(); setSelectedId(null);
@@ -120,7 +128,7 @@ const DashboardFinanceiro: React.FC = () => {
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason, 
-        approverObservation: rejectComment
+        approverObservation: rejectComment // Salvo em OBSERVACAO_APROVADORES
       });
       await loadData(); setIsRejectModalOpen(false); setSelectedId(null);
     } catch (e) { alert("Erro ao reprovar."); } finally { setIsProcessingAction(false); }
@@ -172,15 +180,20 @@ const DashboardFinanceiro: React.FC = () => {
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
-              // Lógica de Status Corrigida
+              // Lógica de Status Corrigida e Aprimorada
               let displayStatus: any = r.status;
               
               const isShared = r.sharedWithEmail && r.sharedWithEmail.trim() !== '';
               const isNotFinalOrAnalise = r.status !== RequestStatus.FATURADO && r.status !== RequestStatus.ANALISE;
 
-              if (isMaster && isShared && isNotFinalOrAnalise) {
+              if (!isMaster) {
+                // Usuário Comum: Sempre visualiza como Pendente o que está com ele
+                displayStatus = RequestStatus.PENDENTE;
+              } else if (isShared && isNotFinalOrAnalise) {
+                // Master: Visualiza como Compartilhado se pendente e compartilhado
                 displayStatus = RequestStatus.COMPARTILHADO;
               } else if (r.status === RequestStatus.APROVADO) {
+                // Itens novos vindos do Fiscal
                 displayStatus = RequestStatus.PENDENTE;
               }
 
@@ -260,7 +273,7 @@ const DashboardFinanceiro: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Comentários</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Comentários (OBSERVACAO_APROVADORES)</label>
                 <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none resize-none" />
               </div>
               <div className="flex gap-4 pt-4">
@@ -301,7 +314,7 @@ const DashboardFinanceiro: React.FC = () => {
                     {northShared.length > 0 ? northShared.map(h => (
                       <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
                         <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={h.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : h.status} className="scale-75 origin-right" />
+                        <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
                       </div>
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                   </div>
@@ -312,7 +325,7 @@ const DashboardFinanceiro: React.FC = () => {
                     {southShared.length > 0 ? southShared.map(h => (
                       <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
                         <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={h.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : h.status} className="scale-75 origin-right" />
+                        <Badge status={RequestStatus.PENDENTE} className="scale-75 origin-right" />
                       </div>
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                   </div>
