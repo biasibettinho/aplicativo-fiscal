@@ -103,7 +103,7 @@ const DashboardFiscal: React.FC = () => {
       
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
-        generalObservation: comment,
+        approverObservation: comment, // Salvo na nova coluna
         errorObservation: '' // Limpa erro se aprovar
       });
       await loadData(); 
@@ -125,7 +125,7 @@ const DashboardFiscal: React.FC = () => {
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason, // OBS_ERRO
-        generalObservation: rejectComment // Observa_x00e7__x00e3_o
+        approverObservation: rejectComment // Salvo na nova coluna OBSERVACAO_APROVADORES
       });
       
       await loadData();
@@ -330,23 +330,44 @@ const DashboardFiscal: React.FC = () => {
                     </div>
                   </section>
 
-                  <section className="space-y-6">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-3 italic">
-                      <Paperclip size={16} className="mr-2" /> Documentos Anexados {isFetchingAttachments && <Loader2 size={14} className="ml-2 animate-spin text-blue-600" />}
-                    </h3>
+                  <section className="space-y-6 flex flex-col gap-6">
+                    <div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-3 italic">
+                        <Paperclip size={16} className="mr-2" /> Documentos Anexados {isFetchingAttachments && <Loader2 size={14} className="ml-2 animate-spin text-blue-600" />}
+                      </h3>
+                      <div className="space-y-4 pt-4">
+                        {mainAttachments.length > 0 && (
+                          <div className="space-y-3">
+                            <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Nota Fiscal Principal</p>
+                            {mainAttachments.map(att => (
+                              <div key={att.id} className="p-4 bg-white border border-blue-100 rounded-2xl flex items-center shadow group hover:border-blue-500 transition-all">
+                                <div className="bg-blue-600 text-white p-3 rounded-xl mr-4 group-hover:scale-110 transition-transform"><FileText size={20}/></div>
+                                <div className="flex-1 truncate"><span className="text-gray-900 font-bold text-xs block truncate">{att.fileName}</span></div>
+                                <button onClick={() => handleViewFile(att.storageUrl)} className="ml-4 p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors"><ExternalLink size={16} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Exibição separada das observações */}
                     <div className="space-y-4">
-                      {mainAttachments.length > 0 && (
-                        <div className="space-y-3">
-                          <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest ml-1">Nota Fiscal Principal</p>
-                          {mainAttachments.map(att => (
-                            <div key={att.id} className="p-4 bg-white border border-blue-100 rounded-2xl flex items-center shadow group hover:border-blue-500 transition-all">
-                              <div className="bg-blue-600 text-white p-3 rounded-xl mr-4 group-hover:scale-110 transition-transform"><FileText size={20}/></div>
-                              <div className="flex-1 truncate"><span className="text-gray-900 font-bold text-xs block truncate">{att.fileName}</span></div>
-                              <button onClick={() => handleViewFile(att.storageUrl)} className="ml-4 p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-600 hover:text-white transition-colors"><ExternalLink size={16} /></button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                       <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner">
+                          <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação do Solicitante</span>
+                          <p className="text-sm font-medium text-slate-600 italic">
+                            {selectedRequest.generalObservation ? `"${selectedRequest.generalObservation}"` : 'Sem observações.'}
+                          </p>
+                       </div>
+
+                       {selectedRequest.approverObservation && (
+                         <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
+                            <span className="text-[9px] font-black text-blue-400 uppercase block mb-2 italic flex items-center"><CheckCircle size={12} className="mr-2"/> Observação dos Aprovadores</span>
+                            <p className="text-sm font-bold text-blue-700 italic leading-relaxed">
+                              "{selectedRequest.approverObservation}"
+                            </p>
+                         </div>
+                       )}
                     </div>
                   </section>
                 </div>

@@ -69,7 +69,8 @@ export interface PaymentRequest {
   statusManual?: string;
   errorType?: string;
   errorObservation?: string;
-  generalObservation?: string;
+  generalObservation?: string; // Observação do Solicitante
+  approverObservation?: string; // Observação dos Aprovadores (Nova Coluna)
   orderNumbers: string;
   invoiceNumber: string;
   payee: string;

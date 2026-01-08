@@ -20,6 +20,7 @@ const FIELD_MAP = {
   status: 'Status',
   branch: 'Filial',
   generalObservation: 'Observa_x00e7__x00e3_o',
+  approverObservation: 'OBSERVACAO_APROVADORES', // Nova coluna para aprovadores
   paymentMethod: 'MET_PAGAMENTO',
   pixKey: 'CAMPO_PIX',
   paymentDate: 'DATA_PAG',
@@ -30,7 +31,7 @@ const FIELD_MAP = {
   account: 'CONTA',
   accountType: 'TIPO_CONTA',
   sharedWithEmail: 'PESSOA_COMPARTILHADA',
-  errorObservation: 'OBS_ERRO' // Mapeamento da coluna OBS_ERRO
+  errorObservation: 'OBS_ERRO' 
 };
 
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -166,6 +167,7 @@ export const sharepointService = {
           account: f[FIELD_MAP.account] || '',
           accountType: f[FIELD_MAP.accountType] || '',
           generalObservation: f[FIELD_MAP.generalObservation] || '',
+          approverObservation: f[FIELD_MAP.approverObservation] || '', // Mapeamento da nova coluna
           statusManual: f[FIELD_MAP.statusManual] || '',
           sharedWithEmail: f[FIELD_MAP.sharedWithEmail] || '',
           errorObservation: f[FIELD_MAP.errorObservation] || '',

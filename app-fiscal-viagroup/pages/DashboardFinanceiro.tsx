@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  DollarSign, Search, Banknote, FileText, ExternalLink, Paperclip, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3
+  DollarSign, Search, Banknote, FileText, ExternalLink, Paperclip, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe
 } from 'lucide-react';
 
 const DashboardFinanceiro: React.FC = () => {
@@ -42,15 +42,20 @@ const DashboardFinanceiro: React.FC = () => {
     if (!authState.user || !authState.token) return;
     const data = await requestService.getRequestsFiltered(authState.user, authState.token);
     
-    const financeOnly = data.filter(r => [
+    let filtered = data.filter(r => [
       RequestStatus.APROVADO, 
       RequestStatus.ANALISE, 
       RequestStatus.FATURADO, 
       RequestStatus.ERRO_FINANCEIRO,
       RequestStatus.COMPARTILHADO
     ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail !== ''));
+
+    // Regra de Visibilidade Financeiro Comum: Apenas o que foi compartilhado com ele
+    if (authState.user.role === UserRole.FINANCEIRO) {
+      filtered = filtered.filter(r => r.sharedWithEmail?.toLowerCase() === authState.user?.email.toLowerCase());
+    }
     
-    setRequests(financeOnly);
+    setRequests(filtered);
   };
 
   useEffect(() => { loadData(); }, [authState.user, authState.token]);
@@ -101,10 +106,9 @@ const DashboardFinanceiro: React.FC = () => {
     { label: 'Pendente', value: RequestStatus.PENDENTE },
   ];
 
-  // Filtro de compartilhamento - Busca itens onde PESSOA_COMPARTILHADA contenha o e-mail
-  const sharedHistory = useMemo(() => {
-    return requests.filter(r => r.sharedWithEmail === shareEmail);
-  }, [requests, shareEmail]);
+  // Listagem dividida regionalmente para o pop-up de compartilhamento
+  const northShared = useMemo(() => requests.filter(r => r.sharedWithEmail === 'financeiro.norte@viagroup.com.br'), [requests]);
+  const southShared = useMemo(() => requests.filter(r => r.sharedWithEmail === 'financeiro.sul@viagroup.com.br'), [requests]);
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token) return;
@@ -115,7 +119,7 @@ const DashboardFinanceiro: React.FC = () => {
       
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
-        generalObservation: comment,
+        approverObservation: comment, // Salvo na nova coluna
         errorObservation: ''
       });
       await loadData(); 
@@ -136,8 +140,8 @@ const DashboardFinanceiro: React.FC = () => {
       
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
-        errorObservation: rejectReason, // OBS_ERRO
-        generalObservation: rejectComment // Observa_x00e7__x00e3_o
+        errorObservation: rejectReason, 
+        approverObservation: rejectComment // Salvo na nova coluna
       });
       
       await loadData();
@@ -260,9 +264,16 @@ const DashboardFinanceiro: React.FC = () => {
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
+              // Regra Master: Se compartilhado, status 'Compartilhado'
+              // Regra Comum: Sempre 'Pendente' (visto que só veem o compartilhado)
               let displayStatus: any = r.status;
-              if (r.status === RequestStatus.APROVADO) displayStatus = RequestStatus.PENDENTE;
-              if (r.status === RequestStatus.ANALISE && !isMaster) displayStatus = RequestStatus.APROVADO;
+              if (isMaster && r.sharedWithEmail) {
+                displayStatus = RequestStatus.COMPARTILHADO;
+              } else if (!isMaster) {
+                displayStatus = RequestStatus.PENDENTE;
+              } else if (r.status === RequestStatus.APROVADO) {
+                displayStatus = RequestStatus.PENDENTE;
+              }
 
               return (
                 <div 
@@ -340,7 +351,6 @@ const DashboardFinanceiro: React.FC = () => {
                       <Landmark size={14} className="mr-2"/> Dados p/ Liquidação
                     </h3>
                     <div className="space-y-8">
-                      {/* Lógica Favorecido - Invisível se vazio */}
                       {selectedRequest.payee && selectedRequest.payee.trim() !== '' && (
                         <div>
                           <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span>
@@ -360,18 +370,38 @@ const DashboardFinanceiro: React.FC = () => {
                     </div>
                   </section>
 
-                  <section className="space-y-6">
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-3 italic">
-                      <Paperclip size={16} className="mr-2" /> Documentação
-                    </h3>
+                  <section className="space-y-6 flex flex-col gap-6">
+                    <div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center border-b pb-3 italic">
+                        <Paperclip size={16} className="mr-2" /> Documentação
+                      </h3>
+                      <div className="space-y-4 pt-4">
+                        {[...mainAttachments, ...secondaryAttachments].map(att => (
+                          <div key={att.id} className="p-4 bg-white border border-indigo-100 rounded-2xl flex items-center shadow group hover:border-indigo-500 transition-all">
+                            <div className={`p-3 rounded-xl mr-4 group-hover:scale-110 transition-transform bg-indigo-600 text-white`}><FileText size={20}/></div>
+                            <div className="flex-1 truncate"><span className="text-gray-900 font-bold text-xs block truncate">{att.fileName}</span></div>
+                            <button onClick={() => handleViewFile(att.storageUrl)} className="ml-4 p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors"><ExternalLink size={16} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="space-y-4">
-                      {[...mainAttachments, ...secondaryAttachments].map(att => (
-                        <div key={att.id} className="p-4 bg-white border border-indigo-100 rounded-2xl flex items-center shadow group hover:border-indigo-500 transition-all">
-                          <div className={`p-3 rounded-xl mr-4 group-hover:scale-110 transition-transform bg-indigo-600 text-white`}><FileText size={20}/></div>
-                          <div className="flex-1 truncate"><span className="text-gray-900 font-bold text-xs block truncate">{att.fileName}</span></div>
-                          <button onClick={() => handleViewFile(att.storageUrl)} className="ml-4 p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors"><ExternalLink size={16} /></button>
+                      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner">
+                        <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação do Solicitante</span>
+                        <p className="text-sm font-medium text-slate-600 italic">
+                          {selectedRequest.generalObservation ? `"${selectedRequest.generalObservation}"` : 'Sem observações.'}
+                        </p>
+                      </div>
+
+                      {selectedRequest.approverObservation && (
+                        <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
+                          <span className="text-[9px] font-black text-indigo-400 uppercase block mb-2 italic flex items-center"><CheckCircle size={12} className="mr-2"/> Histórico de Aprovação</span>
+                          <p className="text-sm font-bold text-indigo-900 italic">
+                            "{selectedRequest.approverObservation}"
+                          </p>
                         </div>
-                      ))}
+                      )}
                     </div>
                   </section>
                 </div>
@@ -437,58 +467,86 @@ const DashboardFinanceiro: React.FC = () => {
         </div>
       )}
 
+      {/* Modal de Compartilhamento Regionalizado */}
       {isShareModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative animate-in zoom-in duration-200 border border-gray-100 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative animate-in zoom-in duration-200 border border-gray-100 flex flex-col max-h-[90vh]">
             <div className="bg-indigo-600 p-6 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-3">
                 <Share2 size={24} />
-                <h3 className="text-lg font-black uppercase italic leading-none tracking-tight">Compartilhar Fluxo</h3>
+                <h3 className="text-lg font-black uppercase italic leading-none tracking-tight">Divisão Regional de Fluxo</h3>
               </div>
               <button onClick={() => setIsShareModalOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X size={20}/></button>
             </div>
             
-            <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar">
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2 ml-1 text-center">Selecionar Responsável Regional</label>
-                <select 
-                  value={shareEmail}
-                  onChange={e => setShareEmail(e.target.value)}
-                  className="w-full p-4 bg-indigo-50 border border-indigo-100 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="financeiro.sul@viagroup.com.br">financeiro.sul@viagroup.com.br</option>
-                  <option value="financeiro.norte@viagroup.com.br">financeiro.norte@viagroup.com.br</option>
-                </select>
-              </div>
-
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b pb-2 italic">Histórico de Compartilhamento p/ {shareEmail}</h4>
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                  {sharedHistory.length > 0 ? sharedHistory.map(h => (
-                    <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
-                      <div className="truncate flex-1">
-                        <span className="text-[10px] font-black text-indigo-600 block leading-none mb-1">#{h.id}</span>
-                        <p className="text-xs font-bold text-gray-700 truncate">{h.title}</p>
-                      </div>
-                      <Badge status={h.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : h.status} className="scale-75 origin-right" />
-                    </div>
-                  )) : (
-                    <p className="text-center py-6 text-gray-300 font-bold italic text-[10px] uppercase">Nenhuma pendência compartilhada.</p>
-                  )}
+            <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
+              <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
+                <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block mb-3 ml-1 text-center">Selecionar Responsável p/ {selectedRequest?.title}</label>
+                <div className="flex gap-4">
+                  <select 
+                    value={shareEmail}
+                    onChange={e => setShareEmail(e.target.value)}
+                    className="flex-1 p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="financeiro.sul@viagroup.com.br">financeiro.sul@viagroup.com.br</option>
+                    <option value="financeiro.norte@viagroup.com.br">financeiro.norte@viagroup.com.br</option>
+                  </select>
+                  <button 
+                    onClick={handleShare}
+                    disabled={isProcessingAction}
+                    className="px-6 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 transition-all flex items-center shrink-0 disabled:opacity-50"
+                  >
+                    {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />}
+                    Compartilhar
+                  </button>
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-4 shrink-0">
-                <button onClick={() => setIsShareModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400 hover:text-gray-600 transition-colors">Fechar</button>
-                <button 
-                  onClick={handleShare}
-                  disabled={isProcessingAction}
-                  className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center disabled:opacity-50"
-                >
-                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />}
-                  Confirmar Compartilhamento
-                </button>
+              <div className="grid grid-cols-2 gap-8">
+                {/* Coluna Norte */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b pb-2 italic flex items-center">
+                    <Globe size={14} className="mr-2" /> Regional Norte
+                  </h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {northShared.length > 0 ? northShared.map(h => (
+                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
+                        <div className="truncate flex-1">
+                          <span className="text-[10px] font-black text-indigo-600 block leading-none mb-1">#{h.id}</span>
+                          <p className="text-xs font-bold text-gray-700 truncate">{h.title}</p>
+                        </div>
+                        <Badge status={h.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : h.status} className="scale-75 origin-right" />
+                      </div>
+                    )) : (
+                      <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Coluna Sul */}
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest border-b pb-2 italic flex items-center">
+                    <Globe size={14} className="mr-2" /> Regional Sul
+                  </h4>
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                    {southShared.length > 0 ? southShared.map(h => (
+                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
+                        <div className="truncate flex-1">
+                          <span className="text-[10px] font-black text-indigo-600 block leading-none mb-1">#{h.id}</span>
+                          <p className="text-xs font-bold text-gray-700 truncate">{h.title}</p>
+                        </div>
+                        <Badge status={h.status === RequestStatus.APROVADO ? RequestStatus.PENDENTE : h.status} className="scale-75 origin-right" />
+                      </div>
+                    )) : (
+                      <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-center pt-4 border-t border-gray-100">
+                <button onClick={() => setIsShareModalOpen(false)} className="px-10 py-3 text-[10px] font-black uppercase text-gray-400 hover:text-gray-600 transition-colors">Fechar Painel</button>
               </div>
             </div>
           </div>
