@@ -40,9 +40,14 @@ const DashboardFinanceiro: React.FC = () => {
     if (!authState.user || !authState.token) return;
     const data = await requestService.getRequestsFiltered(authState.user, authState.token);
     
+    // Filtro base para a tela Financeira
     let filtered = data.filter(r => [
-      RequestStatus.APROVADO, RequestStatus.ANALISE, RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO, RequestStatus.COMPARTILHADO
-    ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail !== ''));
+      RequestStatus.APROVADO, 
+      RequestStatus.ANALISE, 
+      RequestStatus.FATURADO, 
+      RequestStatus.ERRO_FINANCEIRO, 
+      RequestStatus.COMPARTILHADO
+    ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail.trim() !== ''));
 
     // Regra: Financeiro Comum vê apenas o que foi compartilhado com ele
     if (authState.user.role === UserRole.FINANCEIRO) {
@@ -82,9 +87,14 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-  // Regionalização no Pop-up (Baseada em PESSOA_COMPARTILHADA na lista principal)
-  const northShared = useMemo(() => requests.filter(r => r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br'), [requests]);
-  const southShared = useMemo(() => requests.filter(r => r.sharedWithEmail?.toLowerCase() === 'financeiro.sul@viagroup.com.br'), [requests]);
+  // Filtro corrigido para o Pop-up de Compartilhamento (Baseado na lista carregada)
+  const northShared = useMemo(() => 
+    requests.filter(r => r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br'), 
+  [requests]);
+  
+  const southShared = useMemo(() => 
+    requests.filter(r => r.sharedWithEmail?.toLowerCase() === 'financeiro.sul@viagroup.com.br'), 
+  [requests]);
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token) return;
@@ -95,7 +105,7 @@ const DashboardFinanceiro: React.FC = () => {
       
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
-        approverObservation: comment, // Salvo exclusivamente em OBSERVACAO_APROVADORES
+        approverObservation: comment,
         errorObservation: ''
       });
       await loadData(); setSelectedId(null);
@@ -110,7 +120,7 @@ const DashboardFinanceiro: React.FC = () => {
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason, 
-        approverObservation: rejectComment // Salvo exclusivamente em OBSERVACAO_APROVADORES
+        approverObservation: rejectComment
       });
       await loadData(); setIsRejectModalOpen(false); setSelectedId(null);
     } catch (e) { alert("Erro ao reprovar."); } finally { setIsProcessingAction(false); }
@@ -162,11 +172,17 @@ const DashboardFinanceiro: React.FC = () => {
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
-              // Lógica de Status solicitado: Master vê 'Compartilhado' se PESSOA_COMPARTILHADA preenchida. Comum vê 'Pendente'.
+              // Lógica de Status Corrigida
               let displayStatus: any = r.status;
-              if (isMaster && r.sharedWithEmail && r.sharedWithEmail !== '') displayStatus = RequestStatus.COMPARTILHADO;
-              else if (!isMaster) displayStatus = RequestStatus.PENDENTE;
-              else if (r.status === RequestStatus.APROVADO) displayStatus = RequestStatus.PENDENTE;
+              
+              const isShared = r.sharedWithEmail && r.sharedWithEmail.trim() !== '';
+              const isNotFinalOrAnalise = r.status !== RequestStatus.FATURADO && r.status !== RequestStatus.ANALISE;
+
+              if (isMaster && isShared && isNotFinalOrAnalise) {
+                displayStatus = RequestStatus.COMPARTILHADO;
+              } else if (r.status === RequestStatus.APROVADO) {
+                displayStatus = RequestStatus.PENDENTE;
+              }
 
               return (
                 <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'}`}>
@@ -197,6 +213,7 @@ const DashboardFinanceiro: React.FC = () => {
                       <button onClick={handleApprove} disabled={isProcessingAction} className="px-10 py-3.5 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-green-700 flex items-center disabled:opacity-50">
                         {isProcessingAction ? <Loader2 size={18} className="animate-spin mr-2" /> : <CheckCircle size={18} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
                       </button>
+                      {isReworking && <button onClick={() => setIsReworking(false)} className="p-3.5 text-gray-400 hover:text-gray-600"><X size={20}/></button>}
                     </>
                   )}
                 </div>
@@ -214,7 +231,7 @@ const DashboardFinanceiro: React.FC = () => {
                    <section className="space-y-4">
                       <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner"><span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação Solicitante</span><p className="text-sm font-medium text-slate-600 italic">"{selectedRequest.generalObservation || 'Sem obs.'}"</p></div>
                       {selectedRequest.approverObservation && (
-                        <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100"><span className="text-[9px] font-black text-indigo-400 uppercase block mb-2 italic flex items-center"><CheckCircle size={12} className="mr-2"/> Histórico de Aprovação (Aprovadores)</span><p className="text-sm font-bold text-indigo-900 italic">"{selectedRequest.approverObservation}"</p></div>
+                        <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100"><span className="text-[9px] font-black text-indigo-400 uppercase block mb-2 italic flex items-center"><CheckCircle size={12} className="mr-2"/> Histórico de Aprovação</span><p className="text-sm font-bold text-indigo-900 italic">"{selectedRequest.approverObservation}"</p></div>
                       )}
                    </section>
                 </div>
@@ -225,6 +242,37 @@ const DashboardFinanceiro: React.FC = () => {
           )}
         </div>
       </div>
+
+      {isRejectModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
+            <div className="bg-red-600 p-6 text-white flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-black uppercase italic">Reprovar Financeiro</h3>
+              <button onClick={() => setIsRejectModalOpen(false)}><X size={20}/></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Motivo</label>
+                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none">
+                  <option value="Sem método de pagamento">Sem método de pagamento</option>
+                  <option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Comentários</label>
+                <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none resize-none" />
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Voltar</button>
+                <button onClick={handleConfirmReject} disabled={isProcessingAction} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl disabled:opacity-50">
+                   Confirmar Reprovação
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Compartilhamento Regionalizado */}
       {isShareModalOpen && (
