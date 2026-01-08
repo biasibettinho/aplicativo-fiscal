@@ -33,6 +33,8 @@ const FIELD_MAP = {
   account: 'CONTA',
   accountType: 'TIPO_CONTA',
   sharedWithEmail: 'PESSOA_COMPARTILHADA',
+  sharedByName: 'PESSOA_COMPARTILHOU',
+  shareComment: 'COMENTARIO_COMPARTILHAMENTO',
   errorObservation: 'OBS_ERRO' 
 };
 
@@ -168,6 +170,8 @@ export const sharepointService = {
           statusFinal: f[FIELD_MAP.statusFinal] || '',
           statusEspelho: f[FIELD_MAP.statusEspelho] || '',
           sharedWithEmail: f[FIELD_MAP.sharedWithEmail] || '',
+          sharedByName: f[FIELD_MAP.sharedByName] || '',
+          shareComment: f[FIELD_MAP.shareComment] || '',
           errorObservation: f[FIELD_MAP.errorObservation] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,

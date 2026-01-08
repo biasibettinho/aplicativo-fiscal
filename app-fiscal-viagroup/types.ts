@@ -89,8 +89,9 @@ export interface PaymentRequest {
   finalizedAt?: string;
   sharedWithUserId?: string;
   sharedByUserId?: string;
+  sharedByName?: string; // Coluna PESSOA_COMPARTILHOU
   sharedWithEmail?: string; 
-  shareComment?: string;
+  shareComment?: string; // Coluna COMENTARIO_COMPARTILHAMENTO
   attachments?: Attachment[];
 }
 
