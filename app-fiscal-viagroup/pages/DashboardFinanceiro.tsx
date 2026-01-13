@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
@@ -116,8 +115,8 @@ const DashboardFinanceiro: React.FC = () => {
   }, [requests]);
 
   /**
-   * CORREÇÃO CIRÚRGICA: Filtros regionais sem restrição de status.
-   * A única regra é a correspondência de e-mail (normalizado com trim e lowercase).
+   * FILTRO REGIONAL: Sem restrição de status para exibir histórico completo.
+   * Adicionado trim() e toLowerCase() para robustez na comparação.
    */
   const northShared = useMemo(() => 
     requests.filter(r => 
@@ -276,7 +275,7 @@ const DashboardFinanceiro: React.FC = () => {
                   ) : (
                     <>
                       <button onClick={() => setIsRejectModalOpen(true)} disabled={isProcessingAction} className="px-6 py-3.5 text-red-600 font-black text-[10px] uppercase border-2 border-red-100 rounded-2xl hover:bg-red-50 flex items-center shadow-sm disabled:opacity-50"><XCircle size={18} className="mr-2" /> Reprovar</button>
-                      <button onClick={handleApprove} disabled={isProcessingAction} className="px-10 py-3.5 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-green-700 flex items-center disabled:opacity-50 transition-all">
+                      <button onClick={handleApprove} disabled={isProcessingAction} className="px-10 py-3.5 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-green-700 flex items-center disabled:opacity-50 transition-all active:scale-95">
                         {isProcessingAction ? <Loader2 size={18} className="animate-spin mr-2" /> : <CheckCircle size={18} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
                       </button>
                       {isReworking && <button onClick={() => setIsReworking(false)} className="p-3.5 text-gray-400 hover:text-gray-600"><X size={20}/></button>}
