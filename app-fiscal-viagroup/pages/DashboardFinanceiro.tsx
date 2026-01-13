@@ -115,19 +115,23 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
+  /**
+   * CORREÇÃO: Removida restrição de status para exibir histórico completo de compartilhamento.
+   * Adicionado trim() para garantir robustez na comparação de e-mails.
+   */
   const northShared = useMemo(() => 
     requests.filter(r => 
-      r.sharedWithEmail?.toLowerCase() === 'financeiro.norte@viagroup.com.br' &&
-      r.status !== RequestStatus.FATURADO && 
-      r.status !== RequestStatus.ANALISE
+      r.sharedWithEmail?.trim().toLowerCase() === 'financeiro.norte@viagroup.com.br'
     ), 
   [requests]);
   
+  /**
+   * CORREÇÃO: Removida restrição de status para exibir histórico completo de compartilhamento.
+   * Adicionado trim() para garantir robustez na comparação de e-mails.
+   */
   const southShared = useMemo(() => 
     requests.filter(r => 
-      r.sharedWithEmail?.toLowerCase() === 'financeiro.sul@viagroup.com.br' &&
-      r.status !== RequestStatus.FATURADO && 
-      r.status !== RequestStatus.ANALISE
+      r.sharedWithEmail?.trim().toLowerCase() === 'financeiro.sul@viagroup.com.br'
     ), 
   [requests]);
 
@@ -353,81 +357,4 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Voltar</button>
-                <button onClick={handleConfirmReject} disabled={isProcessingAction} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl disabled:opacity-50 transition-all hover:bg-red-700">
-                   {isProcessingAction ? <Loader2 size={16} className="animate-spin" /> : 'Confirmar Reprovação'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Compartilhamento Regionalizado */}
-      {isShareModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            <div className="bg-indigo-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><Share2 size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Divisão Regional</h3></div><button onClick={() => setIsShareModalOpen(false)}><X size={20}/></button></div>
-            <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
-              <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 space-y-4">
-                <label className="text-[10px] font-black text-indigo-400 uppercase block text-center tracking-widest">Configurações de Compartilhamento</label>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Regional de Destino</label>
-                    <select value={shareEmail} onChange={e => setShareEmail(e.target.value)} className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500">
-                      <option value="financeiro.sul@viagroup.com.br">financeiro.sul@viagroup.com.br</option>
-                      <option value="financeiro.norte@viagroup.com.br">financeiro.norte@viagroup.com.br</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Observação / Comentário</label>
-                    <textarea 
-                      value={shareCommentText} 
-                      onChange={e => setShareCommentText(e.target.value)} 
-                      placeholder="Ex: Instruções para processamento regional..."
-                      className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 h-[52px] resize-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-center pt-2">
-                  <button onClick={handleShare} disabled={isProcessingAction} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center disabled:opacity-50 transition-all active:scale-95">
-                    {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <Globe size={16} className="mr-2" />} Confirmar Compartilhamento
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b pb-2 italic flex items-center"><Globe size={14} className="mr-2" /> Regional Norte</h4>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    {northShared.length > 0 ? northShared.map(h => (
-                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
-                        <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
-                      </div>
-                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio / Sem pendências</p>}
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest border-b pb-2 italic flex items-center"><Globe size={14} className="mr-2" /> Regional Sul</h4>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    {southShared.length > 0 ? southShared.map(h => (
-                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
-                        <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
-                      </div>
-                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio / Sem pendências</p>}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default DashboardFinanceiro;
+                <button onClick={handleConfirmReject} disabled
