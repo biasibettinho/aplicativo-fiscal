@@ -116,7 +116,8 @@ const DashboardFinanceiro: React.FC = () => {
   }, [requests]);
 
   /**
-   * FILTRO REGIONAL: Sem restrição de status para exibir histórico completo.
+   * CORREÇÃO CIRÚRGICA: Filtros regionais sem restrição de status.
+   * A única regra é a correspondência de e-mail (normalizado com trim e lowercase).
    */
   const northShared = useMemo(() => 
     requests.filter(r => 
