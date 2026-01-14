@@ -284,6 +284,7 @@ export const sharepointService = {
 
   deleteAttachment: async (listGuid: string, itemId: string, fileName: string): Promise<boolean> => {
     try {
+      console.log(`[DEBUG-SP] Tentando deletar anexo: ${fileName} do item ${itemId} na lista ${listGuid}`);
       const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/getByFileName('${fileName}')`;
       const response = await spRestFetch(url, {
         method: 'POST',
@@ -291,15 +292,17 @@ export const sharepointService = {
           'X-HTTP-Method': 'DELETE'
         }
       });
+      console.log(`[DEBUG-SP] Resultado deleção: ${response.status} ${response.statusText}`);
       return response.ok;
     } catch (e) {
-      console.error("Erro ao deletar anexo:", e);
+      console.error("[DEBUG-SP] Erro ao deletar anexo:", e);
       return false;
     }
   },
 
   uploadAttachment: async (listGuid: string, itemId: string, file: File): Promise<boolean> => {
     try {
+      console.log(`[DEBUG-SP] Subindo arquivo: ${file.name} para item ${itemId}`);
       const spToken = await authService.getSharePointToken();
       const arrayBuffer = await file.arrayBuffer();
       const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/add(FileName='${file.name}')`;
@@ -313,45 +316,46 @@ export const sharepointService = {
         },
         body: arrayBuffer
       });
+      console.log(`[DEBUG-SP] Resultado upload: ${response.status} ${response.statusText}`);
       return response.ok;
     } catch (e) {
-      console.error("Erro ao subir anexo:", e);
+      console.error("[DEBUG-SP] Erro ao subir anexo:", e);
       return false;
     }
   },
 
-  /**
-   * Remove todos os itens da lista auxiliar vinculados a uma solicitação (E seus anexos).
-   */
   deleteSecondaryItemsByRequestId: async (requestId: string): Promise<void> => {
     try {
+      console.log(`[DEBUG-SP] Buscando itens secundários para ID_SOL: ${requestId}`);
       const filter = `ID_SOL eq '${requestId}'`;
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
       const res = await spRestFetch(url);
       if (res.ok) {
         const data = await res.json();
         const items = data.d?.results || [];
+        console.log(`[DEBUG-SP] Encontrados ${items.length} itens secundários para remover.`);
         for (const item of items) {
-          // Deleta o item (Isso remove os anexos dele automaticamente)
-          await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
+          console.log(`[DEBUG-SP] Deletando item secundário ID: ${item.Id}...`);
+          const delRes = await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
             method: 'POST',
             headers: { 
               'X-HTTP-Method': 'DELETE', 
               'IF-MATCH': '*' 
             }
           });
+          console.log(`[DEBUG-SP] Deleção item ${item.Id} status: ${delRes.status}`);
         }
+      } else {
+        console.error(`[DEBUG-SP] Falha ao buscar itens secundários: ${res.status}`);
       }
     } catch (e) {
-      console.error("Erro ao limpar lista secundária:", e);
+      console.error("[DEBUG-SP] Erro ao limpar lista secundária:", e);
     }
   },
 
-  /**
-   * Cria um novo registro na lista auxiliar e sobe o arquivo.
-   */
   createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
     try {
+      console.log(`[DEBUG-SP] Criando item secundário para ID_SOL: ${requestId} com arquivo: ${file.name}`);
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
       const body = JSON.stringify({
         '__metadata': { 'type': 'SP.Data.Lista_x005f_Auxiliar_x005f_AnexosListItem' },
@@ -365,11 +369,15 @@ export const sharepointService = {
       if (res.ok) {
         const data = await res.json();
         const newItemId = data.d.Id;
-        return await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
+        console.log(`[DEBUG-SP] Item secundário criado. ID: ${newItemId}. Iniciando upload do anexo...`);
+        const uploadSuccess = await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
+        console.log(`[DEBUG-SP] Upload no item secundário finalizado. Sucesso: ${uploadSuccess}`);
+        return uploadSuccess;
       }
+      console.error(`[DEBUG-SP] Falha ao criar registro na lista secundária: ${res.status}`);
       return false;
     } catch (e) {
-      console.error("Erro ao criar item secundário:", e);
+      console.error("[DEBUG-SP] Erro ao criar item secundário:", e);
       return false;
     }
   },

@@ -148,7 +148,10 @@ const DashboardSolicitante: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authState.token || !authState.user) return;
+    if (!authState.token || !authState.user) {
+      console.error("[DEBUG-UI] Erro: Token ou AuthState ausente.");
+      return;
+    }
     
     if (!invoiceFile && !isEditing) {
       alert("A Nota Fiscal é obrigatória para prosseguir.");
@@ -156,46 +159,63 @@ const DashboardSolicitante: React.FC = () => {
     }
 
     setIsSubmitting(true);
+    console.log("[DEBUG-UI] Iniciando processo de submissão...");
+
     try {
       if (isEditing && selectedRequest) {
-        // FLUXO DE EDIÇÃO DIRETO (GESTÃO MANUAL DE ANEXOS)
-        
+        console.log("[DEBUG-UI] Modo: EDIÇÃO");
+        console.log("[DEBUG-UI] Request ID:", selectedRequest.id);
+        console.log("[DEBUG-UI] Graph ID:", selectedRequest.graphId);
+        console.log("[DEBUG-UI] Novo arquivo NF:", !!invoiceFile);
+        console.log("[DEBUG-UI] Novo arquivo Boleto:", !!ticketFile);
+
         // 1. Atualiza dados de texto na lista principal
         setSubmissionStep('Atualizando dados da solicitação...');
-        await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+        console.log("[DEBUG-UI] Atualizando metadados via Graph...");
+        const textUpdateRes = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
           ...formData,
-          status: RequestStatus.PENDENTE, // Retorna para pendente após correção
+          status: RequestStatus.PENDENTE,
           approverObservation: 'Correção realizada pelo solicitante.'
         });
+        console.log("[DEBUG-UI] Resultado update texto:", textUpdateRes ? 'Sucesso' : 'Falha');
 
         // 2. Gerencia Nota Fiscal (Lista Principal - Anexo Direto)
         if (invoiceFile) {
           setSubmissionStep('Substituindo Nota Fiscal...');
-          // Deleta anexo(s) atual(is) da lista principal
+          console.log("[DEBUG-UI] Buscando anexos atuais para substituição...");
           const currentMainAtts = await sharepointService.getItemAttachments(authState.token, selectedRequest.id);
+          console.log(`[DEBUG-UI] Encontrados ${currentMainAtts.length} anexos na Main.`);
+          
           for (const att of currentMainAtts) {
+            console.log(`[DEBUG-UI] Removendo anexo antigo: ${att.fileName}`);
             await sharepointService.deleteAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, att.fileName);
           }
-          // Sobe a nova Nota Fiscal
-          await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
+          
+          console.log(`[DEBUG-UI] Subindo nova Nota Fiscal: ${invoiceFile.name}`);
+          const upRes = await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
+          console.log("[DEBUG-UI] Resultado upload NF:", upRes);
         }
 
         // 3. Gerencia Boletos (Lista Secundária - Itens Separados)
         if (ticketFile) {
           setSubmissionStep('Substituindo Boletos auxiliares...');
-          // Deleta todos os itens antigos vinculados a esta solicitação na lista secundária
+          console.log(`[DEBUG-UI] Limpando registros antigos na lista secundária para ID_SOL: ${selectedRequest.id}`);
           await sharepointService.deleteSecondaryItemsByRequestId(selectedRequest.id);
-          // Cria o novo item com o anexo na lista secundária
-          await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
+          
+          console.log(`[DEBUG-UI] Criando novo registro secundário para: ${ticketFile.name}`);
+          const auxRes = await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
+          console.log("[DEBUG-UI] Resultado gestão boleto auxiliar:", auxRes);
         }
 
         setSubmissionStep('Finalizando...');
+        console.log("[DEBUG-UI] Edição concluída. Sincronizando UI...");
         await syncData(true);
-        await fetchAllAttachments();
+        // await fetchAllAttachments(); // Comentado para evitar race condition com cache do SP
         handleCancelCreate();
         alert("Solicitação corrigida com sucesso!");
       } else {
         // FLUXO DE CRIAÇÃO (MANTIDO VIA POWER AUTOMATE)
+        console.log("[DEBUG-UI] Modo: CRIAÇÃO (via Power Automate)");
         setSubmissionStep('Enviando para o SharePoint...');
         const submissionData: any = {
           ...formData,
@@ -208,6 +228,7 @@ const DashboardSolicitante: React.FC = () => {
           ticket: ticketFile 
         });
         if (success) {
+          console.log("[DEBUG-UI] Criação solicitada com sucesso.");
           await syncData(true);
           handleCancelCreate();
         } else {
@@ -215,11 +236,12 @@ const DashboardSolicitante: React.FC = () => {
         }
       }
     } catch (e) {
-      console.error("Erro ao processar solicitação:", e);
-      alert("Erro crítico de comunicação. Os dados foram preservados, verifique sua conexão.");
+      console.error("[DEBUG-UI] ERRO CRÍTICO NO SUBMIT:", e);
+      alert("Erro crítico de comunicação. Verifique os logs no console.");
     } finally {
       setIsSubmitting(false);
       setSubmissionStep('');
+      console.log("[DEBUG-UI] Processo finalizado.");
     }
   };
 
