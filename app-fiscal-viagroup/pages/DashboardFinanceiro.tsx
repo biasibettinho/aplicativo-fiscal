@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
@@ -231,12 +230,20 @@ const DashboardFinanceiro: React.FC = () => {
   };
 
   const handleShare = async () => {
-    if (!selectedRequest || !authState.token || !authState.user) return;
+    if (!selectedRequest || !authState.token || !authState.user) {
+        alert("[ERRO] Falta email ou solicitação selecionada!");
+        return;
+    }
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
     
     const comment = shareCommentText.trim();
+
+    console.log(`[DEBUG-SHARE] ID: ${selectedRequest.id}, GraphID: ${selectedRequest.graphId}`);
+    console.log(`[DEBUG-SHARE] Email compartilhado: ${shareEmail}`);
+    console.log(`[DEBUG-SHARE] Comentário: ${comment}`);
+    alert(`[TESTE] Compartilhando ${selectedRequest.id} com ${shareEmail}`);
     
-    // Atualização Otimista
+    // Atualização Otimista Local
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
         ...r, 
         sharedWithEmail: shareEmail,
@@ -249,12 +256,15 @@ const DashboardFinanceiro: React.FC = () => {
 
     try {
       // Persistência Crítica: Envia dados mapeados corretamente para o service
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+      const updateResult = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
         sharedByName: authState.user.name,
         shareComment: comment
       });
+
+      console.log("[DEBUG-SHARE] Resultado do update:", updateResult);
+
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
         ATUALIZACAO: 'Compartilhado',
         OBSERVACAO: `Compartilhado com ${shareEmail}`,
@@ -262,9 +272,10 @@ const DashboardFinanceiro: React.FC = () => {
         usuario_logado: authState.user.name
       });
       setShareCommentText('');
-    } catch (e) { 
-      console.error("Erro no compartilhamento:", e);
-      alert("Falha ao salvar compartilhamento. Recarregando..."); 
+      alert("Compartilhamento concluído!");
+    } catch (e: any) { 
+      console.error("[DEBUG-SHARE] Erro no compartilhamento:", e);
+      alert(`[ERRO] ${e.message}`);
       loadData(true);
     } finally { 
       setIsProcessingAction(false); 

@@ -195,16 +195,32 @@ export const sharepointService = {
         if ((data as any)[key] !== undefined) fields[spField] = (data as any)[key];
       });
 
+      console.log("[DEBUG-UPDATE] Payload enviado para SharePoint:", fields);
+      console.log("[DEBUG-UPDATE] GraphID:", graphId);
+      alert(`[TESTE COMPARTILHAR] Enviando: ${fields.PESSOA_COMPARTILHADA || 'VAZIO'}`);
+
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fields)
       });
-      if (!response.ok) return null;
-      return await response.json();
-    } catch (e) {
+      
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("[DEBUG-UPDATE] Erro no update:", response.status, errorBody);
+        alert(`[ERRO UPDATE] Status: ${response.status}. Ver console!`);
+        return null;
+      }
+      
+      const result = await response.json();
+      console.log("[DEBUG-UPDATE] Resposta do SharePoint:", result);
+      alert(`[SUCESSO UPDATE] Item atualizado!`);
+      
+      return result;
+    } catch (e: any) {
       console.error("Erro updateRequest:", e);
+      alert(`[ERRO CRÍTICO UPDATE] ${e.message}`);
       return null;
     }
   },
@@ -424,10 +440,31 @@ export const sharepointService = {
 
   getHistoryLogs: async (accessToken: string, requestId: string): Promise<any[]> => {
     try {
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?expand=fields&$filter=fields/ID_SOL eq ${requestId}&$orderby=createdDateTime desc`;
+      const idAsNumber = parseInt(requestId, 10);
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?expand=fields&$filter=fields/ID_SOL eq ${idAsNumber}&$orderby=createdDateTime desc`;
+      
+      console.log("[DEBUG-HISTORY] Request ID:", requestId, "Como número:", idAsNumber);
+      console.log("[DEBUG-HISTORY] Endpoint:", endpoint);
+      alert(`[TESTE HISTÓRICO] Buscando histórico para ID: ${idAsNumber}`);
+
       const response = await graphFetch(endpoint, accessToken);
-      if (!response.ok) return [];
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[DEBUG-HISTORY] Falha: ${response.status}`, errorText);
+        alert(`[ERRO HISTÓRICO] Status: ${response.status}. Ver console!`);
+        return [];
+      }
+      
       const data = await response.json();
+      console.log("[DEBUG-HISTORY] Resposta bruta:", data);
+      console.log("[DEBUG-HISTORY] Quantidade de logs:", data.value?.length || 0);
+      
+      if (!data.value || data.value.length === 0) {
+        alert("[TESTE HISTÓRICO] Nenhum log encontrado! Verifique se ID_SOL está preenchido na lista.");
+      } else {
+        alert(`[SUCESSO HISTÓRICO] ${data.value.length} registros encontrados!`);
+      }
+
       return (data.value || []).map((item: any) => ({
         id: item.id,
         createdAt: item.createdDateTime,
@@ -436,8 +473,9 @@ export const sharepointService = {
         msg: item.fields.MSG_OBSERVACAO,
         user: item.fields.usuario_logado
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error("Erro ao buscar histórico:", e);
+      alert(`[ERRO CRÍTICO HISTÓRICO] ${e.message}`);
       return [];
     }
   }
