@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { authService } from './authService';
 
@@ -73,6 +72,12 @@ async function spRestFetch(url: string, options: RequestInit = {}) {
   }
   return res;
 }
+
+const stripHtml = (html: any) => {
+  if (!html) return '';
+  const text = html.toString();
+  return text.replace(/<[^>]*>?/gm, '').trim();
+};
 
 export const sharepointService = {
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
@@ -157,7 +162,6 @@ export const sharepointService = {
       console.table(itemsWithSharing);
 
       // Log de todos os campos do primeiro item (para verificar nomes de campo)
-      // Fix: allItems is an array, corrected to allItems[0]
       if (allItems.length > 0) {
         console.log('=== DEBUG SHAREPOINT - Campos disponíveis no primeiro item:', 
           Object.keys(allItems[0].fields || {})
@@ -199,8 +203,8 @@ export const sharepointService = {
           statusManual: f[FIELD_MAP.statusManual] || '',
           statusFinal: f[FIELD_MAP.statusFinal] || '',
           statusEspelho: f[FIELD_MAP.statusEspelho] || '',
-          // Tenta pegar de várias formas possíveis para garantir
-          sharedWithEmail: (f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada'] || '').toString().toLowerCase().trim(),
+          // Tenta pegar de várias formas possíveis para garantir e limpa HTML
+          sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada']).toLowerCase(),
           sharedByName: f[FIELD_MAP.sharedByName] || '',
           shareComment: f[FIELD_MAP.shareComment] || '',
           errorObservation: f[FIELD_MAP.errorObservation] || '',

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
@@ -32,6 +31,9 @@ const DashboardFinanceiro: React.FC = () => {
   const [shareEmail, setShareEmail] = useState('financeiro.norte@viagroup.com.br');
   const [shareCommentText, setShareCommentText] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
+
+  // Função auxiliar local para limpeza de HTML
+  const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
   const isMaster = useMemo(() => {
     return authState.user?.role === UserRole.FINANCEIRO_MASTER || authState.user?.role === UserRole.ADMIN_MASTER;
@@ -76,13 +78,13 @@ const DashboardFinanceiro: React.FC = () => {
     console.log('=== DEBUG FINANCEIRO - Email do usuário logado:', userEmail);
 
     const sharedWithMe = data.filter(r => {
-      // Garante que ambos lados da comparação estejam normalizados
-      const sharedEmail = (r.sharedWithEmail || '').toLowerCase().trim();
+      // Limpa HTML, remove espaços e normaliza para minúsculo
+      const sharedEmail = stripHtml(r.sharedWithEmail || '').toLowerCase();
       const myEmail = userEmail.toLowerCase().trim();
       
       // Log detalhado para cada item que tem algo no campo shared
       if (sharedEmail.length > 0) {
-         console.log(`[DEBUG COMPARE] Item ${r.id}: "${sharedEmail}" vs Meu: "${myEmail}"`);
+         console.log(`[DEBUG CLEAN] Item ${r.id}: "${sharedEmail}" vs Meu: "${myEmail}"`);
       }
 
       // Lógica de comparação robusta
@@ -97,7 +99,7 @@ const DashboardFinanceiro: React.FC = () => {
     if (data.length > 0) {
       const debugInfo = data
         .filter(r => r.sharedWithEmail && r.sharedWithEmail.length > 0)
-        .map(r => `ID: ${r.id} | Email: "${r.sharedWithEmail}"`)
+        .map(r => `ID: ${r.id} | Email: "${stripHtml(r.sharedWithEmail || '')}"`)
         .join('\n');
 
       alert(`DIAGNÓSTICO COMPARTILHAMENTO:\n\n` +
@@ -114,7 +116,7 @@ const DashboardFinanceiro: React.FC = () => {
     console.table(sharedWithMe.map(r => ({
       id: r.id,
       titulo: r.title,
-      compartilhadoCom: r.sharedWithEmail,
+      compartilhadoCom: stripHtml(r.sharedWithEmail || ''),
       compartilhadoPor: r.sharedByName
     })));
 
@@ -125,10 +127,10 @@ const DashboardFinanceiro: React.FC = () => {
       RequestStatus.FATURADO, 
       RequestStatus.ERRO_FINANCEIRO, 
       RequestStatus.COMPARTILHADO
-    ].includes(r.status) || (r.sharedWithEmail && r.sharedWithEmail.trim() !== ''));
+    ].includes(r.status) || (r.sharedWithEmail && stripHtml(r.sharedWithEmail).trim() !== ''));
 
     if (authState.user.role === UserRole.FINANCEIRO) {
-      filtered = filtered.filter(r => r.sharedWithEmail?.toLowerCase() === authState.user?.email.toLowerCase());
+      filtered = filtered.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === authState.user?.email.toLowerCase());
     }
     setRequests(filtered);
   };
@@ -166,17 +168,17 @@ const DashboardFinanceiro: React.FC = () => {
 
   /**
    * FILTRO REGIONAL: Sem restrição de status para exibir histórico completo.
-   * Adicionado trim() e toLowerCase() para robustez na comparação.
+   * Adicionado stripHtml() para limpar dados do SharePoint.
    */
   const northShared = useMemo(() => 
     requests.filter(r => 
-      r.sharedWithEmail?.trim().toLowerCase() === 'financeiro.norte@viagroup.com.br'
+      stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.norte@viagroup.com.br'
     ), 
   [requests]);
   
   const southShared = useMemo(() => 
     requests.filter(r => 
-      r.sharedWithEmail?.trim().toLowerCase() === 'financeiro.sul@viagroup.com.br'
+      stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br'
     ), 
   [requests]);
 
