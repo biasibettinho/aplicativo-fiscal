@@ -471,20 +471,19 @@ export const sharepointService = {
     let pageCount = 0;
     let allMatches: any[] = [];
     let idKey: string | null = null;
-    const MAX_PAGES = 30; // Segurança para não travar o app em listas gigantescas
+    const MAX_PAGES = 30; // Segurana para não travar o app em listas gigantescas
 
     try {
-      console.log("[DEBUG-HISTORY] Iniciando busca paginada profunda...");
-      console.log("[DEBUG-HISTORY] RequestId alvo:", requestId);
+      console.log("[DEBUG-HISTORY] 🔍 Iniciando busca paginada completa...");
+      console.log("[DEBUG-HISTORY] 🎯 RequestId alvo:", requestId);
 
       while (nextLink && pageCount < MAX_PAGES) {
         pageCount++;
-        console.log(`[DEBUG-HISTORY] Lendo página ${pageCount}...`);
-        
-        const response = await graphFetch(nextLink, accessToken);
+        console.log("[DEBUG-HISTORY] 📄 Lendo página", pageCount, "...");
 
+        const response = await graphFetch(nextLink, accessToken);
         if (!response.ok) {
-          console.error(`[DEBUG-HISTORY] Falha na página ${pageCount}:`, response.status);
+          console.error("[DEBUG-HISTORY] ❌ Falha na página", pageCount, ":", response.status);
           break;
         }
 
@@ -493,7 +492,7 @@ export const sharepointService = {
         nextLink = data['@odata.nextLink'] || null;
 
         if (pageItems.length === 0) {
-          console.log("[DEBUG-HISTORY] Página vazia. Encerrando.");
+          console.log("[DEBUG-HISTORY] 📭 Página vazia. Encerrando.");
           break;
         }
 
@@ -502,7 +501,7 @@ export const sharepointService = {
           for (const item of pageItems) {
             idKey = detectIdSolFieldKey(item.fields);
             if (idKey) {
-              console.log("[DEBUG-HISTORY] Campo ID_SOL detectado como:", idKey);
+              console.log("[DEBUG-HISTORY] 🔑 Campo ID_SOL detectado como:", idKey);
               break;
             }
           }
@@ -529,32 +528,33 @@ export const sharepointService = {
           });
 
           if (matches.length > 0) {
-            console.log(`[DEBUG-HISTORY] Encontrados ${matches.length} registros na página ${pageCount}!`);
+            console.log("[DEBUG-HISTORY] ✅ Encontrados", matches.length, "registros na página", pageCount, "!");
             allMatches = [...allMatches, ...matches];
-            
-            // EARLY STOP: Se encontramos registros, assumimos que o histórico de um ID está agrupado.
-            // Paramos a busca para economizar recursos e tempo do usuário.
-            break; 
+            // ⚠️ NÃO FAZER BREAK AQUI - continuar buscando nas próximas páginas
+          }
+
+          // Log de diagnóstico: mostra o que foi lido nesta página
+          if (pageItems.length > 0) {
+            const sampleIds = pageItems.slice(0, 5).map((x: any) => x.fields?.[idKey!]);
+            console.log("[DEBUG-HISTORY] 📋 Amostra IDs (Página", pageCount, "):", sampleIds);
           }
         }
-
-        // Log de diagnóstico: mostra o que foi lido nesta página
-        if (idKey && pageItems.length > 0) {
-          const sampleIds = pageItems.slice(0, 5).map((x: any) => x.fields?.[idKey!]);
-          console.log(`[DEBUG-HISTORY] Amostra IDs Página ${pageCount}:`, sampleIds);
-        }
       }
 
-      console.log(`[DEBUG-HISTORY] Busca finalizada em ${pageCount} páginas.`);
-      
+      console.log("[DEBUG-HISTORY] 📊 Total acumulado:", allMatches.length, "registros em", pageCount, "páginas.");
+
       if (allMatches.length === 0) {
-        console.warn("[DEBUG-HISTORY] Nenhum registro encontrado após busca profunda.");
-        alert(`[INFO] Histórico não localizado para ID ${requestId} (Buscado em ${pageCount} páginas).`);
+        console.warn("[DEBUG-HISTORY] ⚠️ Nenhum registro encontrado após busca completa.");
+        alert(`[INFO] Histórico não localizado para ID ${requestId}. Buscado em ${pageCount} páginas.`);
       } else {
-        alert(`[SUCESSO] ${allMatches.length} registros de histórico encontrados!`);
+        alert(`[SUCESSO] ✅ ${allMatches.length} registros de histórico encontrados!`);
       }
 
-      return allMatches.map((item: any) => ({
+      // Remove duplicatas (por segurança) e ordena por data desc
+      const uniqueMatches = Array.from(new Map(allMatches.map(item => [item.id, item])).values());
+      uniqueMatches.sort((a: any, b: any) => new Date(b.createdDateTime).getTime() - new Date(a.createdDateTime).getTime());
+
+      return uniqueMatches.map((item: any) => ({
         id: item.id,
         createdAt: item.createdDateTime,
         status: item.fields?.ATUALIZACAO || '',
@@ -564,7 +564,7 @@ export const sharepointService = {
       }));
 
     } catch (e: any) {
-      console.error("[DEBUG-HISTORY] Erro crítico no loop de paginação:", e);
+      console.error("[DEBUG-HISTORY] 💥 Erro crítico no loop de paginação:", e);
       alert(`[ERRO CRÍTICO HISTÓRICO] ${e.message}`);
       return [];
     }
