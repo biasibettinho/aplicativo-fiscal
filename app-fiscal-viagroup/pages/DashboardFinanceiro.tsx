@@ -135,14 +135,25 @@ const DashboardFinanceiro: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
+  /**
+   * TAREFA 2: Logs e Alertas no ponto de chamada do histórico
+   */
   const handleOpenHistory = async () => {
     if (!selectedRequest || !authState.token) return;
+    
+    console.log("[DEBUG-HISTORY-UI] SelectedRequest ID:", selectedRequest.id);
+    alert(`[HIST DEBUG UI] Buscando histórico para a solicitação ID: ${selectedRequest.id}`);
+    
     setIsHistoryModalOpen(true);
     setIsFetchingHistory(true);
     try {
       const logs = await sharepointService.getHistoryLogs(authState.token, selectedRequest.id);
       setHistoryLogs(logs);
-    } catch (e) { console.error(e); } finally { setIsFetchingHistory(false); }
+    } catch (e) { 
+      console.error("[DEBUG-HISTORY-UI] Erro ao carregar histórico:", e); 
+    } finally { 
+      setIsFetchingHistory(false); 
+    }
   };
 
   const availableBranches = useMemo(() => {

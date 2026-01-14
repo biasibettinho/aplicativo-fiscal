@@ -34,9 +34,21 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA',
   sharedWithEmail: 'PESSOA_COMPARTILHADA',
   sharedByName: 'PESSOA_COMPARTILHOU',
-  // Fix: Uncommented shareComment to resolve compilation error where it is used in getRequests.
   shareComment: 'COMENTARIO_COMPARTILHAMENTO',
   errorObservation: 'OBS_ERRO' 
+};
+
+/**
+ * TAREFA 1: Função auxiliar para detectar a chave real do campo ID_SOL no fields do Graph
+ */
+const detectIdSolFieldKey = (fieldsObj: any): string | null => {
+  if (!fieldsObj) return null;
+  if (fieldsObj.ID_SOL !== undefined) return "ID_SOL";
+
+  const keys = Object.keys(fieldsObj);
+  // Procura por qualquer chave que contenha ID e SOL (ex: ID_x005f_SOL, id_sol, IdSol)
+  const found = keys.find(k => k.toLowerCase().includes("id") && k.toLowerCase().includes("sol"));
+  return found || null;
 };
 
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -456,11 +468,9 @@ export const sharepointService = {
 
   getHistoryLogs: async (accessToken: string, requestId: string): Promise<any[]> => {
     try {
-      // BUSCA TODOS (até 500) e filtra localmente para evitar erro 400 em queries complexas/customizadas no Graph API
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?$expand=fields&$orderby=createdDateTime desc&$top=500`;
-      
-      console.log(`[DEBUG-HISTORY] Carregando logs e filtrando localmente para ID: ${requestId}`);
-      alert(`[TESTE HISTÓRICO] Carregando logs e filtrando localmente para ID: ${requestId}`);
+      console.log(`[DEBUG-HISTORY] Buscando histórico. Endpoint:`, endpoint);
+      console.log(`[DEBUG-HISTORY] RequestId alvo:`, requestId);
 
       const response = await graphFetch(endpoint, accessToken);
 
@@ -473,24 +483,47 @@ export const sharepointService = {
         } catch {}
 
         console.error("[DEBUG-HISTORY] Erro na requisição:", response.status, errorDetail);
-        alert(`[ERRO HISTÓRICO] ${response.status}: ${errorDetail}`);
+        alert(`[ERRO HISTÓRICO] ${response.status}`);
         return [];
       }
 
       const data = await response.json();
       const allLogs = data.value || [];
       
-      // Filtra no cliente para garantir compatibilidade com tipos (string vs number)
+      console.log("[DEBUG-HISTORY] Total de logs brutos carregados:", allLogs.length);
+
+      // TAREFA 1 (continuação): Detectar a chave correta no primeiro item que tiver fields
+      let idKey: string | null = null;
+      if (allLogs.length > 0) {
+        for (let i = 0; i < Math.min(allLogs.length, 5); i++) {
+          const keys = Object.keys(allLogs[i].fields || {});
+          console.log(`[DEBUG-HISTORY] Amostra de chaves (Item ${i}):`, keys);
+          if (!idKey) idKey = detectIdSolFieldKey(allLogs[i].fields);
+        }
+      }
+
+      alert(`[HIST DEBUG] Total: ${allLogs.length} | Chave Detectada: ${idKey}`);
+
+      if (!idKey) {
+        console.warn("[DEBUG-HISTORY] Não foi possível detectar a chave para ID_SOL. Verifique o console.");
+        alert("[HIST DEBUG] Falha ao detectar campo ID_SOL no SharePoint.");
+        return [];
+      }
+
+      // Filtra localmente garantindo comparação de string (evita problemas de Number vs String)
       const filtered = allLogs.filter((item: any) => 
-        item.fields?.ID_SOL?.toString() === requestId.toString()
+        item.fields?.[idKey!]?.toString() === requestId.toString()
       );
 
-      console.log(`[DEBUG-HISTORY] Total carregado: ${allLogs.length}, Filtrados para solicitação: ${filtered.length}`);
+      console.log(`[DEBUG-HISTORY] Filtragem local concluída. Encontrados: ${filtered.length}`);
 
       if (filtered.length === 0) {
+        // Logar amostra para ajudar a entender o porquê da falha no filtro
+        console.log("[DEBUG-HISTORY] Amostra de valores no campo '" + idKey + "':", 
+          allLogs.slice(0, 10).map((x: any) => x.fields?.[idKey!]));
         alert("[INFO] Nenhum histórico encontrado para este ID.");
       } else {
-        alert(`[SUCESSO] ${filtered.length} registros de histórico carregados!`);
+        alert(`[SUCESSO] ${filtered.length} registros encontrados!`);
       }
 
       return filtered.map((item: any) => ({
