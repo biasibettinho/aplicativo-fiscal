@@ -88,15 +88,42 @@ const DashboardFinanceiro: React.FC = () => {
   };
 
   const resolveDisplayStatus = (r: PaymentRequest): string => {
-    if (r.status === RequestStatus.ERRO_FINANCEIRO) return RequestStatus.ERRO_FINANCEIRO;
-    if (!isMaster && r.status === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
-    if (r.statusFinal && r.statusFinal.trim() !== '') return r.statusFinal;
-    if (authState.user?.email.toLowerCase() === 'sofia.ferneda@viagroup.com.br') {
-      if (r.statusManual && r.statusManual.trim() !== '') return r.statusManual;
+    // 1) Erro tem prioridade máxima
+    if (r.status === RequestStatus.ERRO_FINANCEIRO) {
+      return RequestStatus.ERRO_FINANCEIRO;
     }
-    if (r.statusManual === 'Compartilhado') return 'Compartilhado';
-    let fallback = r.statusEspelho && r.statusEspelho.trim() !== '' ? r.statusEspelho : r.status;
-    if (fallback === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
+
+    // 2) FATURADO deve sempre prevalecer (ignora statusManual/statusFinal antigos)
+    if (r.status === RequestStatus.FATURADO) {
+      return RequestStatus.FATURADO;
+    }
+
+    // 3) Financeiro Comum vê "Aprovado" como "Pendente"
+    if (!isMaster && r.status === RequestStatus.APROVADO) {
+      return RequestStatus.PENDENTE;
+    }
+
+    // 4) Prioriza statusFinal (campo manual do SharePoint)
+    if (r.statusFinal && r.statusFinal.trim() !== "") {
+      return r.statusFinal;
+    }
+
+    // 5) statusManual (Compartilhado etc.) só vale se NÃO estiver finalizado
+    if (
+      r.statusManual &&
+      r.statusManual.trim() !== "" &&
+      ![RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(r.status as RequestStatus)
+    ) {
+      return r.statusManual;
+    }
+
+    // 6) Fallback para statusEspelho ou status padrão
+    let fallback = r.statusEspelho && r.statusEspelho.trim() !== "" ? r.statusEspelho : r.status;
+
+    if (fallback === RequestStatus.APROVADO) {
+      return RequestStatus.PENDENTE;
+    }
+
     return fallback;
   };
 
@@ -158,16 +185,13 @@ const DashboardFinanceiro: React.FC = () => {
   const handleOpenHistory = async () => {
     if (!selectedRequest || !authState.token) return;
     
-    console.log("[DEBUG-HISTORY-UI] SelectedRequest ID:", selectedRequest.id);
-    alert(`[HIST DEBUG UI] Buscando histórico para a solicitação ID: ${selectedRequest.id}`);
-    
     setIsHistoryModalOpen(true);
     setIsFetchingHistory(true);
     try {
       const logs = await sharepointService.getHistoryLogs(authState.token, selectedRequest.id);
       setHistoryLogs(logs);
     } catch (e) { 
-      console.error("[DEBUG-HISTORY-UI] Erro ao carregar histórico:", e); 
+      console.error(e); 
     } finally { 
       setIsFetchingHistory(false); 
     }
@@ -259,16 +283,12 @@ const DashboardFinanceiro: React.FC = () => {
 
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) {
-        alert("[ERRO] Falta email ou solicitação selecionada!");
+        alert("Erro: Dados insuficientes para compartilhamento.");
         return;
     }
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
     
     const comment = shareCommentText.trim();
-
-    console.log(`[DEBUG-SHARE] ID: ${selectedRequest.id}, GraphID: ${selectedRequest.graphId}`);
-    console.log(`[DEBUG-SHARE] Regional Destino: ${shareEmail}`);
-    alert(`[TESTE] Compartilhando ${selectedRequest.id} com ${shareEmail}`);
     
     // Atualização Otimista Local
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
@@ -282,13 +302,11 @@ const DashboardFinanceiro: React.FC = () => {
 
     try {
       // Persistência: Envia apenas campos estáveis para o SharePoint via Graph
-      const updateResult = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
         sharedByName: authState.user?.name || 'Sistema'
       });
-
-      console.log("[DEBUG-SHARE] Resultado do update:", updateResult);
 
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
         ATUALIZACAO: 'Compartilhado',
@@ -299,8 +317,8 @@ const DashboardFinanceiro: React.FC = () => {
       setShareCommentText('');
       alert("Compartilhamento concluído!");
     } catch (e: any) { 
-      console.error("[DEBUG-SHARE] Erro no compartilhamento:", e);
-      alert(`[ERRO] ${e.message}`);
+      console.error(e);
+      alert(`Erro ao compartilhar: ${e.message}`);
       loadData(true);
     } finally { 
       setIsProcessingAction(false); 
