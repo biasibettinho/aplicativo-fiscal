@@ -469,8 +469,9 @@ export const sharepointService = {
   getHistoryLogs: async (accessToken: string, requestId: string): Promise<any[]> => {
     try {
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?$expand=fields&$orderby=createdDateTime desc&$top=500`;
-      console.log(`[DEBUG-HISTORY] Buscando histórico. Endpoint:`, endpoint);
-      console.log(`[DEBUG-HISTORY] RequestId alvo:`, requestId);
+      
+      console.log(`[DEBUG-HISTORY] Endpoint:`, endpoint);
+      console.log(`[DEBUG-HISTORY] RequestId buscado:`, requestId, "| Tipo:", typeof requestId);
 
       const response = await graphFetch(endpoint, accessToken);
 
@@ -481,7 +482,7 @@ export const sharepointService = {
           const errorJson = await responseClone.json();
           errorDetail = JSON.stringify(errorJson);
         } catch {}
-
+        
         console.error("[DEBUG-HISTORY] Erro na requisição:", response.status, errorDetail);
         alert(`[ERRO HISTÓRICO] ${response.status}`);
         return [];
@@ -489,41 +490,69 @@ export const sharepointService = {
 
       const data = await response.json();
       const allLogs = data.value || [];
-      
-      console.log("[DEBUG-HISTORY] Total de logs brutos carregados:", allLogs.length);
 
-      // TAREFA 1 (continuação): Detectar a chave correta no primeiro item que tiver fields
+      console.log("[DEBUG-HISTORY] Total de logs carregados:", allLogs.length);
+
+      // Detecta a chave do campo ID_SOL
       let idKey: string | null = null;
       if (allLogs.length > 0) {
-        for (let i = 0; i < Math.min(allLogs.length, 5); i++) {
+        for (let i = 0; i < Math.min(allLogs.length, 3); i++) {
           const keys = Object.keys(allLogs[i].fields || {});
-          console.log(`[DEBUG-HISTORY] Amostra de chaves (Item ${i}):`, keys);
+          console.log(`[DEBUG-HISTORY] Keys do item ${i}:`, keys);
           if (!idKey) idKey = detectIdSolFieldKey(allLogs[i].fields);
         }
       }
 
-      alert(`[HIST DEBUG] Total: ${allLogs.length} | Chave Detectada: ${idKey}`);
+      console.log("[DEBUG-HISTORY] Campo detectado:", idKey);
+      alert(`[HIST DEBUG] Total: ${allLogs.length} | Campo: ${idKey || 'NÃO DETECTADO'}`);
 
       if (!idKey) {
-        console.warn("[DEBUG-HISTORY] Não foi possível detectar a chave para ID_SOL. Verifique o console.");
-        alert("[HIST DEBUG] Falha ao detectar campo ID_SOL no SharePoint.");
+        console.error("[DEBUG-HISTORY] Campo ID_SOL não encontrado!");
+        alert("[ERRO] Campo ID_SOL não detectado. Ver console.");
         return [];
       }
 
-      // Filtra localmente garantindo comparação de string (evita problemas de Number vs String)
-      const filtered = allLogs.filter((item: any) => 
-        item.fields?.[idKey!]?.toString() === requestId.toString()
-      );
+      // ==================== DEBUG CRÍTICO ====================
+      // Vamos logar os 10 primeiros valores REAIS do campo
+      console.log(`[DEBUG-HISTORY] ===== VALORES REAIS DO CAMPO '${idKey}' =====`);
+      const sample = allLogs.slice(0, 10).map((item: any, idx: number) => {
+        const fieldValue = item.fields?.[idKey!];
+        console.log(`  [${idx}] Valor:`, fieldValue, "| Tipo:", typeof fieldValue, "| toString():`, fieldValue?.toString());
+        return fieldValue;
+      });
+      console.log("[DEBUG-HISTORY] Amostra de valores:", sample);
+      console.log("[DEBUG-HISTORY] Comparando com:", requestId, "| Tipo:", typeof requestId);
+      // =======================================================
 
-      console.log(`[DEBUG-HISTORY] Filtragem local concluída. Encontrados: ${filtered.length}`);
+      // Filtro com TRÊS estratégias de comparação (para cobrir todos os casos)
+      const filtered = allLogs.filter((item: any) => {
+        const fieldValue = item.fields?.[idKey!];
+        
+        // Estratégia 1: Comparação direta (string === string)
+        if (fieldValue === requestId) return true;
+        
+        // Estratégia 2: Comparação após toString()
+        if (fieldValue?.toString() === requestId.toString()) return true;
+        
+        // Estratégia 3: Comparação numérica (caso um seja string "6848" e outro número 6848)
+        const numericRequest = parseInt(requestId, 10);
+        const numericField = typeof fieldValue === 'number' ? fieldValue : parseInt(fieldValue, 10);
+        if (!isNaN(numericRequest) && !isNaN(numericField) && numericRequest === numericField) return true;
+        
+        return false;
+      });
+
+      console.log("[DEBUG-HISTORY] Registros filtrados:", filtered.length);
 
       if (filtered.length === 0) {
-        // Logar amostra para ajudar a entender o porquê da falha no filtro
-        console.log("[DEBUG-HISTORY] Amostra de valores no campo '" + idKey + "':", 
-          allLogs.slice(0, 10).map((x: any) => x.fields?.[idKey!]));
+        console.warn("[DEBUG-HISTORY] ❌ Nenhum match encontrado!");
+        console.warn("[DEBUG-HISTORY] Valores esperados vs encontrados:");
+        console.warn("  - Esperado:", requestId);
+        console.warn("  - Encontrados (amostra):", sample);
         alert("[INFO] Nenhum histórico encontrado para este ID.");
       } else {
-        alert(`[SUCESSO] ${filtered.length} registros encontrados!`);
+        console.log("[DEBUG-HISTORY] ✅ Histórico encontrado!");
+        alert(`[SUCESSO] ✅ ${filtered.length} registros de histórico!`);
       }
 
       return filtered.map((item: any) => ({
@@ -534,8 +563,9 @@ export const sharepointService = {
         msg: item.fields?.MSG_OBSERVACAO || '',
         user: item.fields?.usuario_logado || ''
       }));
+
     } catch (e: any) {
-      console.error("Erro getHistoryLogs:", e);
+      console.error("Erro crítico getHistoryLogs:", e);
       alert(`[ERRO CRÍTICO HISTÓRICO] ${e.message}`);
       return [];
     }
