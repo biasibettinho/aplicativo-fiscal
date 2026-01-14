@@ -6,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History
+  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History, Copy
 } from 'lucide-react';
 
 const DashboardFinanceiro: React.FC = () => {
@@ -153,17 +153,23 @@ const DashboardFinanceiro: React.FC = () => {
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
+    
+    let targetStatus: RequestStatus;
+    let comment: string;
+    if (isMaster) {
+      targetStatus = RequestStatus.FATURADO;
+      comment = 'Faturamento concluído pelo Master.';
+    } else {
+      targetStatus = RequestStatus.ANALISE;
+      comment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
+    }
+    
+    // Atualização Otimista
+    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment } : r));
+    setSelectedId(null);
     setIsProcessingAction(true);
+
     try {
-      let targetStatus: RequestStatus;
-      let comment: string;
-      if (isMaster) {
-        targetStatus = RequestStatus.FATURADO;
-        comment = 'Faturamento concluído pelo Master.';
-      } else {
-        targetStatus = RequestStatus.ANALISE;
-        comment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
-      }
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         approverObservation: comment,
@@ -175,19 +181,25 @@ const DashboardFinanceiro: React.FC = () => {
         MSG_OBSERVACAO: comment,
         usuario_logado: authState.user.name
       });
-      
-      // Update local
-      setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment } : r));
-      alert("Solicitação aprovada com sucesso!");
-      setSelectedId(null);
-    } catch (e) { alert("Erro ao aprovar."); } finally { setIsProcessingAction(false); }
+    } catch (e) { 
+      alert("Erro ao aprovar no servidor. Recarregando..."); 
+      loadData();
+    } finally { setIsProcessingAction(false); }
   };
 
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
+    
+    const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
+    const logObs = `Reprovado: ${rejectReason}`;
+    
+    // Atualização Otimista
+    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } : r));
+    setIsRejectModalOpen(false);
+    setSelectedId(null);
     setIsProcessingAction(true);
+
     try {
-      const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason, 
@@ -195,24 +207,33 @@ const DashboardFinanceiro: React.FC = () => {
       });
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
         ATUALIZACAO: targetStatus,
-        OBSERVACAO: `Reprovado: ${rejectReason}`,
+        OBSERVACAO: logObs,
         MSG_OBSERVACAO: rejectComment,
         usuario_logado: authState.user.name
       });
-      
-      // Update local
-      setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } : r));
-      alert("Solicitação reprovada.");
-      setIsRejectModalOpen(false);
-      setSelectedId(null);
-    } catch (e) { alert("Erro ao reprovar."); } finally { setIsProcessingAction(false); }
+    } catch (e) { 
+      alert("Erro ao reprovar no servidor. Recarregando..."); 
+      loadData();
+    } finally { setIsProcessingAction(false); }
   };
 
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
+    
+    // Atualização Otimista
+    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
+        ...r, 
+        sharedWithEmail: shareEmail,
+        shareComment: shareCommentText.trim(),
+        sharedByName: authState.user?.name,
+        statusManual: 'Compartilhado'
+    } : r));
+    setIsShareModalOpen(false);
     setIsProcessingAction(true);
+
     try {
+      // Persistência Crítica: Envia dados mapeados corretamente para o service
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
@@ -225,22 +246,11 @@ const DashboardFinanceiro: React.FC = () => {
         MSG_OBSERVACAO: shareCommentText.trim(),
         usuario_logado: authState.user.name
       });
-
-      // Update Local - CRÍTICO: Atualiza o estado sem reload
-      setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
-          ...r, 
-          sharedWithEmail: shareEmail,
-          shareComment: shareCommentText.trim(),
-          sharedByName: authState.user?.name,
-          statusManual: 'Compartilhado'
-      } : r));
-
-      alert("Solicitação compartilhada com sucesso!");
-      setIsShareModalOpen(false);
       setShareCommentText('');
     } catch (e) { 
       console.error("Erro no compartilhamento:", e);
-      alert("Erro ao salvar informações de compartilhamento."); 
+      alert("Falha ao salvar no servidor. Recarregando..."); 
+      loadData();
     } finally { 
       setIsProcessingAction(false); 
     }
@@ -282,7 +292,7 @@ const DashboardFinanceiro: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
-      {/* Toolbar Superior Reestilizada */}
+      {/* Toolbar Superior */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-64 min-w-[200px]">
@@ -312,7 +322,6 @@ const DashboardFinanceiro: React.FC = () => {
           </div>
         </div>
 
-        {/* Botões de Ação no Topo Direito */}
         {selectedRequest && (
           <div className="flex items-center space-x-2 animate-in slide-in-from-right duration-300">
             <button onClick={handleOpenHistory} className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200" title="Histórico"><History size={18}/></button>
@@ -321,9 +330,11 @@ const DashboardFinanceiro: React.FC = () => {
               <button onClick={() => setIsReworking(true)} className="px-4 py-2 bg-amber-50 text-amber-700 font-black text-[10px] uppercase rounded-xl flex items-center border border-amber-100 shadow-sm hover:bg-amber-100 transition-all"><Edit3 size={16} className="mr-2" /> Editar Ações</button>
             ) : (
               <>
-                <button onClick={() => setIsRejectModalOpen(true)} disabled={isProcessingAction} className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center disabled:opacity-50 transition-all"><XCircle size={16} className="mr-2" /> Reprovar</button>
-                <button onClick={handleApprove} disabled={isProcessingAction} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center disabled:opacity-50 transition-all active:scale-95">
-                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
+                <button onClick={() => setIsRejectModalOpen(true)} className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center">
+                  <XCircle size={16} className="mr-2" /> Reprovar
+                </button>
+                <button onClick={handleApprove} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95">
+                  <CheckCircle size={16} className="mr-2" /> {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
                 </button>
                 {isReworking && <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600"><X size={18}/></button>}
               </>
@@ -336,7 +347,7 @@ const DashboardFinanceiro: React.FC = () => {
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
-            {filteredRequests.map(r => {
+            {filteredRequests.slice(0, 100).map(r => {
               const dStatus = resolveDisplayStatus(r);
               const urgent = isUrgent(r);
               return (
@@ -365,8 +376,14 @@ const DashboardFinanceiro: React.FC = () => {
                 </div>
                 <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-4">{selectedRequest.title}</h2>
                 <div className="flex space-x-6">
-                   <p className="text-sm font-black text-indigo-600 uppercase italic">NF: <span className="text-slate-900">{selectedRequest.invoiceNumber}</span></p>
-                   <p className="text-sm font-black text-indigo-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
+                   <div className="flex items-center">
+                    <p className="text-sm font-black text-indigo-600 uppercase italic">NF: <span className="text-slate-900">{selectedRequest.invoiceNumber}</span></p>
+                    {selectedRequest.invoiceNumber && <button onClick={() => navigator.clipboard.writeText(selectedRequest.invoiceNumber)} className="ml-2 text-gray-400 hover:text-blue-600 p-1" title="Copiar NF"><Copy size={14}/></button>}
+                   </div>
+                   <div className="flex items-center">
+                    <p className="text-sm font-black text-indigo-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
+                    {selectedRequest.orderNumbers && <button onClick={() => navigator.clipboard.writeText(selectedRequest.orderNumbers)} className="ml-2 text-gray-400 hover:text-blue-600 p-1" title="Copiar Pedido"><Copy size={14}/></button>}
+                   </div>
                 </div>
               </div>
 
@@ -376,20 +393,38 @@ const DashboardFinanceiro: React.FC = () => {
                       <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center"><Landmark size={14} className="mr-2"/> Detalhes de Pagamento</h3>
                       <div className="space-y-6">
                         <div className="grid grid-cols-1 gap-6">
-                           <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span><p className="text-xl font-black text-slate-900 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p></div>
+                           <div>
+                            <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span>
+                            <div className="flex items-center">
+                              <p className="text-xl font-black text-slate-900 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
+                              {selectedRequest.payee && <button onClick={() => navigator.clipboard.writeText(selectedRequest.payee)} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={14}/></button>}
+                            </div>
+                           </div>
                            <div className="grid grid-cols-2 gap-4">
                               <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-black text-indigo-700 uppercase italic">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
                               <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span><p className="text-sm font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p></div>
                            </div>
                            
                            {selectedRequest.paymentMethod === 'PIX' && (
-                             <div className="pt-2"><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span><p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400"/> {selectedRequest.pixKey}</p></div>
+                             <div className="pt-2">
+                              <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span>
+                              <div className="flex items-center">
+                                <p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400"/> {selectedRequest.pixKey}</p>
+                                <button onClick={() => navigator.clipboard.writeText(selectedRequest.pixKey || '')} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={12}/></button>
+                              </div>
+                             </div>
                            )}
                            
                            {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
                              <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-indigo-100/50">
-                                <p className="mb-1">BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p>
-                                <p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>
+                                <div className="flex items-center mb-1">
+                                  <p>BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p>
+                                  {selectedRequest.bank && <button onClick={() => navigator.clipboard.writeText(selectedRequest.bank)} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={12}/></button>}
+                                </div>
+                                <div className="flex items-center">
+                                  <p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>
+                                  <button onClick={() => navigator.clipboard.writeText(`${selectedRequest.agency} ${selectedRequest.account}`)} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={12}/></button>
+                                </div>
                              </div>
                            )}
                         </div>
@@ -397,7 +432,6 @@ const DashboardFinanceiro: React.FC = () => {
                    </section>
 
                    <section className="space-y-6">
-                      {/* Anexos Separados Explicitamente */}
                       <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
                         <div>
                           <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3>
@@ -410,7 +444,6 @@ const DashboardFinanceiro: React.FC = () => {
                              )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem NF anexada</p>}
                           </div>
                         </div>
-
                         <div>
                           <h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2"><Paperclip size={14} className="mr-2"/> Boletos / Outros</h3>
                           <div className="space-y-2">
@@ -454,8 +487,8 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-gray-400 font-bold hover:bg-gray-100 rounded-xl">Cancelar</button>
-                <button onClick={handleConfirmReject} disabled={isProcessingAction} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl disabled:opacity-50 transition-all hover:bg-red-700">
-                   {isProcessingAction ? <Loader2 size={16} className="animate-spin" /> : 'Confirmar Reprovação'}
+                <button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700">
+                   Confirmar Reprovação
                 </button>
               </div>
             </div>
@@ -514,8 +547,8 @@ const DashboardFinanceiro: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex justify-center pt-2">
-                  <button onClick={handleShare} disabled={isProcessingAction} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center disabled:opacity-50 transition-all active:scale-95">
-                    {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <Globe size={16} className="mr-2" />} Confirmar Compartilhamento
+                  <button onClick={handleShare} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center transition-all active:scale-95">
+                    <Globe size={16} className="mr-2" /> Confirmar Compartilhamento
                   </button>
                 </div>
               </div>
