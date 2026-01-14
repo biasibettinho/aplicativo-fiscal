@@ -9,6 +9,19 @@ import {
   DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History, Copy
 } from 'lucide-react';
 
+const CopyButton = ({ text }: { text: string }) => (
+  <button 
+    onClick={(e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(text);
+    }}
+    className="ml-1.5 p-1 text-gray-300 hover:text-indigo-500 hover:bg-indigo-50 rounded transition-all"
+    title="Copiar"
+  >
+    <Copy size={12} />
+  </button>
+);
+
 const DashboardFinanceiro: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
@@ -183,7 +196,7 @@ const DashboardFinanceiro: React.FC = () => {
       });
     } catch (e) { 
       alert("Erro ao aprovar no servidor. Recarregando..."); 
-      loadData();
+      loadData(true);
     } finally { setIsProcessingAction(false); }
   };
 
@@ -213,7 +226,7 @@ const DashboardFinanceiro: React.FC = () => {
       });
     } catch (e) { 
       alert("Erro ao reprovar no servidor. Recarregando..."); 
-      loadData();
+      loadData(true);
     } finally { setIsProcessingAction(false); }
   };
 
@@ -221,11 +234,13 @@ const DashboardFinanceiro: React.FC = () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
     
+    const comment = shareCommentText.trim();
+    
     // Atualização Otimista
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
         ...r, 
         sharedWithEmail: shareEmail,
-        shareComment: shareCommentText.trim(),
+        shareComment: comment,
         sharedByName: authState.user?.name,
         statusManual: 'Compartilhado'
     } : r));
@@ -238,19 +253,19 @@ const DashboardFinanceiro: React.FC = () => {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
         sharedByName: authState.user.name,
-        shareComment: shareCommentText.trim()
+        shareComment: comment
       });
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
         ATUALIZACAO: 'Compartilhado',
         OBSERVACAO: `Compartilhado com ${shareEmail}`,
-        MSG_OBSERVACAO: shareCommentText.trim(),
+        MSG_OBSERVACAO: comment,
         usuario_logado: authState.user.name
       });
       setShareCommentText('');
     } catch (e) { 
       console.error("Erro no compartilhamento:", e);
-      alert("Falha ao salvar no servidor. Recarregando..."); 
-      loadData();
+      alert("Falha ao salvar compartilhamento. Recarregando..."); 
+      loadData(true);
     } finally { 
       setIsProcessingAction(false); 
     }
@@ -278,15 +293,6 @@ const DashboardFinanceiro: React.FC = () => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [requests, searchTerm, branchFilter, statusFilter, isMaster]);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
-        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <span className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Carregando solicitações...</span>
-      </div>
-    );
-  }
 
   const isFinalized = selectedRequest && [RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(selectedRequest.status);
 
@@ -334,7 +340,7 @@ const DashboardFinanceiro: React.FC = () => {
                   <XCircle size={16} className="mr-2" /> Reprovar
                 </button>
                 <button onClick={handleApprove} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95">
-                  <CheckCircle size={16} className="mr-2" /> {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
+                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
                 </button>
                 {isReworking && <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600"><X size={18}/></button>}
               </>
@@ -347,22 +353,38 @@ const DashboardFinanceiro: React.FC = () => {
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
-            {filteredRequests.slice(0, 100).map(r => {
-              const dStatus = resolveDisplayStatus(r);
-              const urgent = isUrgent(r);
-              return (
-                <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}>
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
-                    <div className="flex items-center space-x-2">
-                      {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
-                      <Badge status={dStatus} className="scale-90 origin-right" />
-                    </div>
-                  </div>
-                  <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
+            {isLoading ? (
+                <div className="flex flex-col items-center justify-center h-40">
+                    <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mb-2" />
+                    <span className="text-[10px] text-gray-400 font-black uppercase tracking-tighter italic">Sincronizando...</span>
                 </div>
-              );
-            })}
+            ) : (
+                filteredRequests.slice(0, 100).map(r => {
+                  const dStatus = resolveDisplayStatus(r);
+                  const urgent = isUrgent(r);
+                  return (
+                    <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
+                        <div className="flex items-center space-x-2">
+                          {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
+                          <Badge status={dStatus} className="scale-90 origin-right" />
+                        </div>
+                      </div>
+                      <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
+                      
+                      {r.sharedWithEmail && (
+                          <div className="flex items-center gap-1 mt-2">
+                              <Share2 size={10} className="text-purple-600" />
+                              <span className="text-[9px] font-black text-purple-600 uppercase truncate max-w-[150px] tracking-tighter italic">
+                                  Divisão: {r.sharedWithEmail}
+                              </span>
+                          </div>
+                      )}
+                    </div>
+                  );
+                })
+            )}
           </div>
         </div>
 
@@ -378,11 +400,11 @@ const DashboardFinanceiro: React.FC = () => {
                 <div className="flex space-x-6">
                    <div className="flex items-center">
                     <p className="text-sm font-black text-indigo-600 uppercase italic">NF: <span className="text-slate-900">{selectedRequest.invoiceNumber}</span></p>
-                    {selectedRequest.invoiceNumber && <button onClick={() => navigator.clipboard.writeText(selectedRequest.invoiceNumber)} className="ml-2 text-gray-400 hover:text-blue-600 p-1" title="Copiar NF"><Copy size={14}/></button>}
+                    {selectedRequest.invoiceNumber && <CopyButton text={selectedRequest.invoiceNumber} />}
                    </div>
                    <div className="flex items-center">
                     <p className="text-sm font-black text-indigo-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
-                    {selectedRequest.orderNumbers && <button onClick={() => navigator.clipboard.writeText(selectedRequest.orderNumbers)} className="ml-2 text-gray-400 hover:text-blue-600 p-1" title="Copiar Pedido"><Copy size={14}/></button>}
+                    {selectedRequest.orderNumbers && <CopyButton text={selectedRequest.orderNumbers} />}
                    </div>
                 </div>
               </div>
@@ -397,7 +419,7 @@ const DashboardFinanceiro: React.FC = () => {
                             <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span>
                             <div className="flex items-center">
                               <p className="text-xl font-black text-slate-900 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
-                              {selectedRequest.payee && <button onClick={() => navigator.clipboard.writeText(selectedRequest.payee)} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={14}/></button>}
+                              {selectedRequest.payee && <CopyButton text={selectedRequest.payee} />}
                             </div>
                            </div>
                            <div className="grid grid-cols-2 gap-4">
@@ -410,7 +432,7 @@ const DashboardFinanceiro: React.FC = () => {
                               <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span>
                               <div className="flex items-center">
                                 <p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400"/> {selectedRequest.pixKey}</p>
-                                <button onClick={() => navigator.clipboard.writeText(selectedRequest.pixKey || '')} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={12}/></button>
+                                {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
                               </div>
                              </div>
                            )}
@@ -419,11 +441,11 @@ const DashboardFinanceiro: React.FC = () => {
                              <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-indigo-100/50">
                                 <div className="flex items-center mb-1">
                                   <p>BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p>
-                                  {selectedRequest.bank && <button onClick={() => navigator.clipboard.writeText(selectedRequest.bank)} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={12}/></button>}
+                                  {selectedRequest.bank && <CopyButton text={selectedRequest.bank} />}
                                 </div>
                                 <div className="flex items-center">
                                   <p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>
-                                  <button onClick={() => navigator.clipboard.writeText(`${selectedRequest.agency} ${selectedRequest.account}`)} className="ml-2 text-gray-300 hover:text-indigo-500"><Copy size={12}/></button>
+                                  {selectedRequest.account && <CopyButton text={`${selectedRequest.agency} / ${selectedRequest.account}`} />}
                                 </div>
                              </div>
                            )}
@@ -432,6 +454,7 @@ const DashboardFinanceiro: React.FC = () => {
                    </section>
 
                    <section className="space-y-6">
+                      {/* Anexos Separados Explicitamente */}
                       <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
                         <div>
                           <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3>

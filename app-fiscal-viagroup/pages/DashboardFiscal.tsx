@@ -9,6 +9,19 @@ import {
   Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3, Banknote, Smartphone, Info, Copy
 } from 'lucide-react';
 
+const CopyButton = ({ text }: { text: string }) => (
+  <button 
+    onClick={(e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(text);
+    }}
+    className="ml-1.5 p-1 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded transition-all"
+    title="Copiar"
+  >
+    <Copy size={12} />
+  </button>
+);
+
 const DashboardFiscal: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
@@ -33,9 +46,9 @@ const DashboardFiscal: React.FC = () => {
 
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const data = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(data);
@@ -116,7 +129,7 @@ const DashboardFiscal: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert("Erro ao processar aprovação no servidor. Recarregando dados...");
-      loadData();
+      loadData(true);
     } finally {
       setIsProcessingAction(false);
     }
@@ -149,7 +162,7 @@ const DashboardFiscal: React.FC = () => {
     } catch (e) {
       console.error(e);
       alert("Erro ao processar reprovação no servidor. Recarregando dados...");
-      loadData();
+      loadData(true);
     } finally {
       setIsProcessingAction(false);
     }
@@ -169,15 +182,6 @@ const DashboardFiscal: React.FC = () => {
       return matchesSearch && matchesBranch && matchesStatus && matchesDate;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, dateFilter, branchFilter, statusFilter]);
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
-        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <span className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Carregando solicitações...</span>
-      </div>
-    );
-  }
 
   const isFinalized = selectedRequest && [RequestStatus.APROVADO, RequestStatus.ERRO_FISCAL, RequestStatus.FATURADO].includes(selectedRequest.status);
 
@@ -224,7 +228,7 @@ const DashboardFiscal: React.FC = () => {
                   <XCircle size={16} className="mr-2" /> Reprovar
                 </button>
                 <button onClick={handleApprove} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95">
-                  <CheckCircle size={16} className="mr-2" />
+                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />}
                   {isMaster ? 'Aprovar Lançamento' : 'Validar e Encaminhar'}
                 </button>
                 {isReworking && <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600"><X size={18}/></button>}
@@ -235,27 +239,36 @@ const DashboardFiscal: React.FC = () => {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden">
+        {/* Listagem Lateral */}
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Solicitações ({filteredRequests.length})</span>
           </div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
-            {filteredRequests.slice(0, 100).map(r => (
-              <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-blue-50 border-l-8 border-blue-600 shadow-inner' : 'hover:bg-gray-50'}`}>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
-                  <Badge status={r.status} className="scale-90 origin-right" />
+            {isLoading ? (
+                <div className="flex flex-col items-center justify-center h-40">
+                    <Loader2 className="w-6 h-6 text-blue-600 animate-spin mb-2" />
+                    <span className="text-[10px] text-gray-400 font-black uppercase tracking-tighter italic">Carregando...</span>
                 </div>
-                <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
-                <div className="flex justify-between items-center mt-2">
-                  <span className="text-[9px] text-blue-500 font-bold italic uppercase tracking-widest">{r.branch}</span>
-                  <span className="text-[9px] text-gray-400 font-medium">{new Date(r.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-            ))}
+            ) : (
+                filteredRequests.slice(0, 100).map(r => (
+                  <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-blue-50 border-l-8 border-blue-600 shadow-inner' : 'hover:bg-gray-50'}`}>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
+                      <Badge status={r.status} className="scale-90 origin-right" />
+                    </div>
+                    <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-[9px] text-blue-500 font-bold italic uppercase tracking-widest">{r.branch}</span>
+                      <span className="text-[9px] text-gray-400 font-medium">{new Date(r.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))
+            )}
           </div>
         </div>
 
+        {/* Detalhes */}
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
@@ -268,15 +281,11 @@ const DashboardFiscal: React.FC = () => {
                 <div className="flex space-x-6">
                   <div className="flex items-center">
                     <p className="text-sm font-black text-blue-600 uppercase italic">NF: <span className="text-slate-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</span></p>
-                    {selectedRequest.invoiceNumber && (
-                      <button onClick={() => navigator.clipboard.writeText(stripHtml(selectedRequest.invoiceNumber))} className="ml-2 text-gray-400 hover:text-blue-600 p-1" title="Copiar NF"><Copy size={14}/></button>
-                    )}
+                    {selectedRequest.invoiceNumber && <CopyButton text={stripHtml(selectedRequest.invoiceNumber)} />}
                   </div>
                   <div className="flex items-center">
                     <p className="text-sm font-black text-blue-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
-                    {selectedRequest.orderNumbers && (
-                      <button onClick={() => navigator.clipboard.writeText(selectedRequest.orderNumbers)} className="ml-2 text-gray-400 hover:text-blue-600 p-1" title="Copiar Pedido"><Copy size={14}/></button>
-                    )}
+                    {selectedRequest.orderNumbers && <CopyButton text={selectedRequest.orderNumbers} />}
                   </div>
                 </div>
               </div>
@@ -291,7 +300,7 @@ const DashboardFiscal: React.FC = () => {
                           <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Razão Social</span>
                           <div className="flex items-center">
                             <p className="text-xl font-bold text-slate-700 uppercase">{selectedRequest.payee || '---'}</p>
-                            {selectedRequest.payee && <button onClick={() => navigator.clipboard.writeText(selectedRequest.payee)} className="ml-2 text-gray-300 hover:text-blue-500"><Copy size={14}/></button>}
+                            {selectedRequest.payee && <CopyButton text={selectedRequest.payee} />}
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -303,7 +312,7 @@ const DashboardFiscal: React.FC = () => {
                           <div className="pt-2 flex items-center text-blue-600">
                             <Smartphone size={14} className="mr-2"/>
                             <p className="text-[10px] font-black uppercase tracking-tight">Chave PIX: {selectedRequest.pixKey}</p>
-                            {selectedRequest.pixKey && <button onClick={() => navigator.clipboard.writeText(selectedRequest.pixKey)} className="ml-2 text-blue-300 hover:text-blue-500"><Copy size={12}/></button>}
+                            {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
                           </div>
                         )}
                         
@@ -311,11 +320,11 @@ const DashboardFiscal: React.FC = () => {
                           <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-blue-100/50">
                             <div className="flex items-center mb-1">
                               <p>BANCO: <span className="text-blue-600">{selectedRequest.bank}</span></p>
-                              {selectedRequest.bank && <button onClick={() => navigator.clipboard.writeText(selectedRequest.bank)} className="ml-2 text-gray-300 hover:text-blue-500"><Copy size={12}/></button>}
+                              {selectedRequest.bank && <CopyButton text={selectedRequest.bank} />}
                             </div>
                             <div className="flex items-center">
                               <p>AGÊNCIA/CONTA: <span className="text-blue-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>
-                              <button onClick={() => navigator.clipboard.writeText(`${selectedRequest.agency} ${selectedRequest.account}`)} className="ml-2 text-gray-300 hover:text-blue-500"><Copy size={12}/></button>
+                              {selectedRequest.account && <CopyButton text={`${selectedRequest.agency} / ${selectedRequest.account}`} />}
                             </div>
                           </div>
                         )}
