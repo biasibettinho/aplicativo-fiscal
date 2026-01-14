@@ -517,7 +517,7 @@ export const sharepointService = {
       console.log(`[DEBUG-HISTORY] ===== VALORES REAIS DO CAMPO '${idKey}' =====`);
       const sample = allLogs.slice(0, 10).map((item: any, idx: number) => {
         const fieldValue = item.fields?.[idKey!];
-        console.log(`  [${idx}] Valor:`, fieldValue, "| Tipo:", typeof fieldValue, "| toString():`, fieldValue?.toString());
+        console.log(`  [${idx}] Valor:`, fieldValue, "| Tipo:", typeof fieldValue, "| toString():", fieldValue?.toString());
         return fieldValue;
       });
       console.log("[DEBUG-HISTORY] Amostra de valores:", sample);
