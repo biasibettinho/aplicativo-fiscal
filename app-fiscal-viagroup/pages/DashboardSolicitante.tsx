@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
@@ -21,6 +20,7 @@ const DashboardSolicitante: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionStep, setSubmissionStep] = useState('');
   
   // Filtros de Lista
   const [searchTerm, setSearchTerm] = useState('');
@@ -78,35 +78,29 @@ const DashboardSolicitante: React.FC = () => {
     return () => clearInterval(interval);
   }, [authState.user, authState.token]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchAllAttachments = async () => {
-      if (selectedRequest && authState.token) {
-        setIsFetchingAttachments(true);
-        try {
-          // Busca na lista principal e na lista auxiliar (ID_SOL)
-          const [main, secondary] = await Promise.all([
-            sharepointService.getItemAttachments(authState.token, selectedRequest.id),
-            sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
-          ]);
-          
-          if (isMounted) {
-            setMainAttachments(main || []);
-            setSecondaryAttachments(secondary || []);
-          }
-        } catch (e) {
-          console.error("Erro crítico ao carregar anexos:", e);
-        } finally {
-          if (isMounted) setIsFetchingAttachments(false);
-        }
-      } else {
-        setMainAttachments([]);
-        setSecondaryAttachments([]);
+  const fetchAllAttachments = async () => {
+    if (selectedId && authState.token) {
+      setIsFetchingAttachments(true);
+      try {
+        const [main, secondary] = await Promise.all([
+          sharepointService.getItemAttachments(authState.token, selectedId),
+          sharepointService.getSecondaryAttachments(authState.token, selectedId)
+        ]);
+        setMainAttachments(main || []);
+        setSecondaryAttachments(secondary || []);
+      } catch (e) {
+        console.error("Erro crítico ao carregar anexos:", e);
+      } finally {
+        setIsFetchingAttachments(false);
       }
-    };
-    
-    if (selectedId) fetchAllAttachments();
-    return () => { isMounted = false; };
+    } else {
+      setMainAttachments([]);
+      setSecondaryAttachments([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllAttachments();
   }, [selectedId, authState.token]);
 
   const handleStartEdit = () => {
@@ -163,39 +157,65 @@ const DashboardSolicitante: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const submissionData: any = {
-        ...formData,
-        createdByUserId: authState.user.id,
-        createdByName: authState.user.name,
-        status: RequestStatus.PROCESSANDO,
-      };
-
-      let success = false;
-
       if (isEditing && selectedRequest) {
-        success = await requestService.updateRequest(selectedRequest.id, submissionData, authState.token, {
-          invoice: invoiceFile,
-          ticket: ticketFile
+        // FLUXO DE EDIÇÃO DIRETO (SEM POWER AUTOMATE PARA ANEXOS)
+        setSubmissionStep('Atualizando dados principais...');
+        await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+          ...formData,
+          status: RequestStatus.PENDENTE, // Volta para pendente após correção
+          approverObservation: 'Solicitação corrigida pelo usuário.'
         });
+
+        // Gerencia Nota Fiscal
+        if (invoiceFile) {
+          setSubmissionStep('Substituindo Nota Fiscal...');
+          // Deleta arquivos atuais da lista principal
+          for (const att of mainAttachments) {
+            await sharepointService.deleteAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, att.fileName);
+          }
+          // Sobe o novo
+          await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
+        }
+
+        // Gerencia Boletos
+        if (ticketFile) {
+          setSubmissionStep('Substituindo Boletos...');
+          // Limpa lista secundária vinculada
+          await sharepointService.clearSecondaryItems(selectedRequest.id);
+          // Cria novo item secundário
+          await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
+        }
+
+        setSubmissionStep('Finalizando...');
+        await syncData(true);
+        await fetchAllAttachments();
+        handleCancelCreate();
       } else {
-        success = await requestService.createRequest(authState.token, submissionData, { 
+        // FLUXO DE CRIAÇÃO (MANTIDO VIA POWER AUTOMATE PARA CONVENIÊNCIA DE TRIGGER)
+        setSubmissionStep('Criando Solicitação...');
+        const submissionData: any = {
+          ...formData,
+          createdByUserId: authState.user.id,
+          createdByName: authState.user.name,
+          status: RequestStatus.PROCESSANDO,
+        };
+        const success = await requestService.createRequest(authState.token, submissionData, { 
           invoice: invoiceFile, 
           ticket: ticketFile 
         });
-      }
-
-      if (success) {
-        await syncData(true);
-        handleCancelCreate();
-      } else {
-        // REGRA DE REENVIO: Não limpa o formulário, apenas avisa o usuário.
-        alert("O Power Automate não respondeu como esperado. Verifique sua conexão e tente reenviar.");
+        if (success) {
+          await syncData(true);
+          handleCancelCreate();
+        } else {
+          alert("O Power Automate não respondeu. Tente reenviar.");
+        }
       }
     } catch (e) {
       console.error("Erro ao processar solicitação:", e);
-      alert("Erro de comunicação com o servidor de automação. Os dados foram preservados, tente enviar novamente.");
+      alert("Erro crítico na comunicação. Verifique sua conexão.");
     } finally {
       setIsSubmitting(false);
+      setSubmissionStep('');
     }
   };
 
@@ -235,11 +255,12 @@ const DashboardSolicitante: React.FC = () => {
           <div className="bg-white/10 p-8 rounded-[3rem] border border-white/10 shadow-2xl flex flex-col items-center max-w-sm">
             <Loader2 className="animate-spin text-blue-400 mb-6" size={60} />
             <h2 className="text-2xl font-black uppercase italic mb-4">
-              {isEditing ? 'Atualizando Solicitação' : 'Criando Solicitação...'}
+              {isEditing ? 'Atualizando...' : 'Criando Solicitação...'}
             </h2>
-            <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest">
-              Aguardando confirmação do Power Automate. Por favor, não feche esta janela.
+            <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest mb-2">
+              {submissionStep || 'Processando dados no SharePoint...'}
             </p>
+            <p className="text-[10px] text-white/40 uppercase font-black">Por favor, aguarde.</p>
           </div>
         </div>
       )}
@@ -286,7 +307,6 @@ const DashboardSolicitante: React.FC = () => {
                 <option value={RequestStatus.ERRO_FINANCEIRO}>Erro - Financeiro</option>
               </select>
             </div>
-            {/* Filtros de Data Reintroduzidos */}
             <div>
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest block mb-1 ml-1">De</label>
               <input 
@@ -365,7 +385,7 @@ const DashboardSolicitante: React.FC = () => {
 
                 <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="col-span-2 flex items-center mb-1"><CreditCard className="text-blue-400 mr-3" size={20} /><h3 className="text-lg font-black text-white uppercase italic tracking-tight">Financeiro</h3></div>
-                  {formData.paymentMethod === 'TED/DEPOSITO' && (
+                  {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'TED' || formData.paymentMethod === 'DEPOSITO') && (
                     <div className="col-span-2">
                       <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Nome do Favorecido / Razão Social</label>
                       <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} />
@@ -391,7 +411,7 @@ const DashboardSolicitante: React.FC = () => {
                   )}
 
                   {/* Campos Condicionais TED/DEPOSITO */}
-                  {formData.paymentMethod === 'TED/DEPOSITO' && (
+                  {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'TED' || formData.paymentMethod === 'DEPOSITO') && (
                     <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4">
                       <div className="col-span-2 md:col-span-1">
                         <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Banco</label>
@@ -421,14 +441,14 @@ const DashboardSolicitante: React.FC = () => {
                       <input id="invoice-upload" type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)} />
                       <label htmlFor="invoice-upload" className="flex flex-col items-center text-center cursor-pointer">
                          <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${invoiceFile ? 'bg-blue-500' : 'bg-blue-600'}`}><FileText size={20} /></div>
-                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{invoiceFile ? invoiceFile.name : (isEditing ? 'Atualizar Nota Fiscal (Se necessário)' : 'Nota Fiscal (Obrigatório)')}</p>
+                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{invoiceFile ? invoiceFile.name : (isEditing ? 'Substituir Nota Fiscal' : 'Nota Fiscal (Obrigatório)')}</p>
                       </label>
                    </div>
                    <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${ticketFile ? 'bg-indigo-600/20 border-indigo-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
                       <input id="ticket-upload" type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => setTicketFile(e.target.files?.[0] || null)} />
                       <label htmlFor="ticket-upload" className="flex flex-col items-center text-center cursor-pointer">
                          <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${ticketFile ? 'bg-indigo-500' : 'bg-indigo-600'}`}><Paperclip size={20} /></div>
-                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{ticketFile ? ticketFile.name : (isEditing ? 'Atualizar Boleto (Se necessário)' : 'Boleto / Comprovante')}</p>
+                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{ticketFile ? ticketFile.name : (isEditing ? 'Substituir Boleto' : 'Boleto / Comprovante')}</p>
                       </label>
                    </div>
                 </div>
@@ -447,7 +467,7 @@ const DashboardSolicitante: React.FC = () => {
                   <button type="button" onClick={handleCancelCreate} className="px-6 py-4 text-white/40 font-black text-xs uppercase hover:text-white transition-colors">Cancelar</button>
                   <button disabled={isSubmitting} className="px-12 py-4 bg-blue-600 text-white rounded-[1.5rem] font-black text-xs uppercase italic shadow-2xl hover:bg-blue-700 transition-all flex items-center shadow-blue-900/40 active:scale-95 disabled:opacity-50">
                     {isSubmitting ? <Loader2 className="animate-spin mr-3" size={16} /> : <Send className="mr-3" size={16} />}
-                    {isEditing ? 'Atualizar e Reenviar' : 'Submeter p/ Fluxo'}
+                    {isEditing ? 'Confirmar Correção' : 'Submeter p/ Fluxo'}
                   </button>
                 </div>
               </div>

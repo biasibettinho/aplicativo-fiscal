@@ -63,14 +63,10 @@ async function spRestFetch(url: string, options: RequestInit = {}) {
   const headers: any = {
     Authorization: `Bearer ${spToken}`,
     'Accept': 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
     ...options.headers,
   };
   const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const txt = await res.text();
-    console.error(`[SP REST ERROR] URL: ${url}`, { status: res.status, errorBody: txt });
-    return res;
-  }
   return res;
 }
 
@@ -283,6 +279,88 @@ export const sharepointService = {
     } catch (e) {
       console.error("Erro getSecondaryAttachments (Boletos):", e);
       return [];
+    }
+  },
+
+  deleteAttachment: async (listGuid: string, itemId: string, fileName: string): Promise<boolean> => {
+    try {
+      const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/getByFileName('${fileName}')`;
+      const response = await spRestFetch(url, {
+        method: 'POST',
+        headers: {
+          'X-HTTP-Method': 'DELETE'
+        }
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro ao deletar anexo:", e);
+      return false;
+    }
+  },
+
+  uploadAttachment: async (listGuid: string, itemId: string, file: File): Promise<boolean> => {
+    try {
+      const spToken = await authService.getSharePointToken();
+      const arrayBuffer = await file.arrayBuffer();
+      const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/add(FileName='${file.name}')`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${spToken}`,
+          'Accept': 'application/json;odata=verbose',
+          'Content-Type': file.type
+        },
+        body: arrayBuffer
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro ao subir anexo:", e);
+      return false;
+    }
+  },
+
+  clearSecondaryItems: async (mainItemId: string): Promise<void> => {
+    try {
+      const filter = `ID_SOL eq '${mainItemId}'`;
+      const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
+      const res = await spRestFetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const items = data.d?.results || [];
+        for (const item of items) {
+          await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
+            method: 'POST',
+            headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' }
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Erro ao limpar lista secundária:", e);
+    }
+  },
+
+  createSecondaryItemWithAttachment: async (mainItemId: string, file: File): Promise<boolean> => {
+    try {
+      const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
+      const body = JSON.stringify({
+        '__metadata': { 'type': 'SP.Data.Lista_x005f_Auxiliar_x005f_AnexosListItem' },
+        'ID_SOL': mainItemId,
+        'Title': `Anexo de ${mainItemId}`
+      });
+      const res = await spRestFetch(url, {
+        method: 'POST',
+        body: body
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newItemId = data.d.Id;
+        return await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
+      }
+      return false;
+    } catch (e) {
+      console.error("Erro ao criar item secundário:", e);
+      return false;
     }
   },
 
