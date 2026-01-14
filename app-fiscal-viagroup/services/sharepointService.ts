@@ -44,13 +44,18 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
     Accept: "application/json",
     ...options.headers,
   };
+
   const res = await fetch(url, { ...options, headers });
+
+  // NÃO LEIA O BODY AQUI! Apenas logue o status.
   if (!res.ok) {
-    const txt = await res.text();
-    console.error(`[MS GRAPH ERROR] URL: ${url}`, { status: res.status, errorBody: txt });
-    return res;
+    console.error(`[MS GRAPH ERROR] URL: ${url}`, { 
+      status: res.status, 
+      statusText: res.statusText 
+    });
   }
-  return res;
+
+  return res; // Retorna a response intacta
 }
 
 async function spRestFetch(url: string, options: RequestInit = {}) {
@@ -195,9 +200,8 @@ export const sharepointService = {
         if ((data as any)[key] !== undefined) fields[spField] = (data as any)[key];
       });
 
-      console.log("[DEBUG-UPDATE] Payload enviado para SharePoint:", fields);
+      console.log("[DEBUG-UPDATE] Payload:", fields);
       console.log("[DEBUG-UPDATE] GraphID:", graphId);
-      alert(`[TESTE COMPARTILHAR] Enviando: ${fields.PESSOA_COMPARTILHADA || 'VAZIO'}`);
 
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
       const response = await graphFetch(endpoint, accessToken, {
@@ -206,21 +210,34 @@ export const sharepointService = {
         body: JSON.stringify(fields)
       });
       
+      // LÊ O BODY APENAS UMA VEZ
       if (!response.ok) {
-        const errorBody = await response.text();
-        console.error("[DEBUG-UPDATE] Erro no update:", response.status, errorBody);
-        alert(`[ERRO UPDATE] Status: ${response.status}. Ver console!`);
+        let errorDetail = `Status ${response.status}`;
+        try {
+          const responseClone = response.clone();
+          try {
+            const errorJson = await responseClone.json();
+            errorDetail = JSON.stringify(errorJson);
+          } catch {
+            errorDetail = await response.text();
+          }
+        } catch {
+          errorDetail = "Não foi possível ler o erro.";
+        }
+        
+        console.error("[DEBUG-UPDATE] Erro no update:", response.status, errorDetail);
+        alert(`[ERRO UPDATE] ${response.status}: ${errorDetail.substring(0, 100)}`);
         return null;
       }
       
       const result = await response.json();
-      console.log("[DEBUG-UPDATE] Resposta do SharePoint:", result);
-      alert(`[SUCESSO UPDATE] Item atualizado!`);
+      console.log("[DEBUG-UPDATE] Sucesso:", result);
+      alert("[SUCESSO UPDATE] Dados salvos!");
       
       return result;
     } catch (e: any) {
-      console.error("Erro updateRequest:", e);
-      alert(`[ERRO CRÍTICO UPDATE] ${e.message}`);
+      console.error("Erro crítico updateRequest:", e);
+      alert(`[ERRO CRÍTICO] ${e.message}`);
       return null;
     }
   },
@@ -443,27 +460,40 @@ export const sharepointService = {
       const idAsNumber = parseInt(requestId, 10);
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?expand=fields&$filter=fields/ID_SOL eq ${idAsNumber}&$orderby=createdDateTime desc`;
       
-      console.log("[DEBUG-HISTORY] Request ID:", requestId, "Como número:", idAsNumber);
+      console.log("[DEBUG-HISTORY] Buscando ID:", idAsNumber);
       console.log("[DEBUG-HISTORY] Endpoint:", endpoint);
-      alert(`[TESTE HISTÓRICO] Buscando histórico para ID: ${idAsNumber}`);
 
       const response = await graphFetch(endpoint, accessToken);
+
+      // LÊ APENAS UMA VEZ
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[DEBUG-HISTORY] Falha: ${response.status}`, errorText);
-        alert(`[ERRO HISTÓRICO] Status: ${response.status}. Ver console!`);
+        let errorDetail = `Status ${response.status}`;
+        try {
+          const responseClone = response.clone();
+          try {
+            const errorJson = await responseClone.json();
+            errorDetail = JSON.stringify(errorJson);
+          } catch {
+            errorDetail = await response.text();
+          }
+        } catch {
+          errorDetail = "Erro desconhecido.";
+        }
+
+        console.error("[DEBUG-HISTORY] Erro:", errorDetail);
+        alert(`[ERRO HISTÓRICO] ${response.status}`);
         return [];
       }
-      
+
       const data = await response.json();
-      console.log("[DEBUG-HISTORY] Resposta bruta:", data);
-      console.log("[DEBUG-HISTORY] Quantidade de logs:", data.value?.length || 0);
-      
+      console.log("[DEBUG-HISTORY] Logs encontrados:", data.value?.length || 0);
+
       if (!data.value || data.value.length === 0) {
-        alert("[TESTE HISTÓRICO] Nenhum log encontrado! Verifique se ID_SOL está preenchido na lista.");
-      } else {
-        alert(`[SUCESSO HISTÓRICO] ${data.value.length} registros encontrados!`);
+        alert("[INFO] Nenhum histórico encontrado para este ID.");
+        return [];
       }
+
+      alert(`[SUCESSO] ${data.value.length} registros de histórico!`);
 
       return (data.value || []).map((item: any) => ({
         id: item.id,
@@ -474,7 +504,7 @@ export const sharepointService = {
         user: item.fields.usuario_logado
       }));
     } catch (e: any) {
-      console.error("Erro ao buscar histórico:", e);
+      console.error("Erro getHistoryLogs:", e);
       alert(`[ERRO CRÍTICO HISTÓRICO] ${e.message}`);
       return [];
     }
