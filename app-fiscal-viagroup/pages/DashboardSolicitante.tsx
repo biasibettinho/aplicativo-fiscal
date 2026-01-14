@@ -235,7 +235,7 @@ const DashboardSolicitante: React.FC = () => {
           <div className="bg-white/10 p-8 rounded-[3rem] border border-white/10 shadow-2xl flex flex-col items-center max-w-sm">
             <Loader2 className="animate-spin text-blue-400 mb-6" size={60} />
             <h2 className="text-2xl font-black uppercase italic mb-4">
-              {isEditing ? 'Atualizando Solicitação' : 'Enviando p/ Automação'}
+              {isEditing ? 'Atualizando Solicitação' : 'Criando Solicitação...'}
             </h2>
             <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest">
               Aguardando confirmação do Power Automate. Por favor, não feche esta janela.
@@ -365,10 +365,12 @@ const DashboardSolicitante: React.FC = () => {
 
                 <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="col-span-2 flex items-center mb-1"><CreditCard className="text-blue-400 mr-3" size={20} /><h3 className="text-lg font-black text-white uppercase italic tracking-tight">Financeiro</h3></div>
-                  <div className="col-span-2">
-                    <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Nome do Favorecido / Razão Social</label>
-                    <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} />
-                  </div>
+                  {formData.paymentMethod === 'TED/DEPOSITO' && (
+                    <div className="col-span-2">
+                      <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Nome do Favorecido / Razão Social</label>
+                      <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.payee} onChange={e => setFormData({...formData, payee: e.target.value})} />
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Método</label>
                     <select className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold uppercase" value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value})}>

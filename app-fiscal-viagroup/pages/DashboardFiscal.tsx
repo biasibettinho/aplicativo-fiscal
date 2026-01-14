@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
@@ -173,42 +174,56 @@ const DashboardFiscal: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
-      {/* Toolbar */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center gap-6">
-        <div className="relative w-64 min-w-[200px]">
-          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Buscar ID ou NF..." 
-            value={searchTerm} 
-            onChange={e => setSearchTerm(e.target.value)} 
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" 
-          />
-        </div>
-        
-        <div className="flex items-center gap-5">
-          <div className="flex flex-col">
-            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> Data Criação</label>
-            <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
+      {/* Toolbar Superior Reestilizada */}
+      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="relative w-64 min-w-[200px]">
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input 
+              type="text" 
+              placeholder="Buscar ID ou NF..." 
+              value={searchTerm} 
+              onChange={e => setSearchTerm(e.target.value)} 
+              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" 
+            />
           </div>
-          <div className="flex flex-col">
-            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Filial</label>
-            <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
-              <option value="">Todas as Filiais</option>
-              {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col">
-            <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Filter size={10} className="mr-1"/> Status</label>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
-              <option value="">Todos</option>
-              <option value={RequestStatus.APROVADO}>Aprovado</option>
-              <option value={RequestStatus.ERRO_FISCAL}>Erro - Fiscal</option>
-              <option value={RequestStatus.ANALISE}>Em Análise</option>
-              <option value={RequestStatus.PENDENTE}>Pendente</option>
-            </select>
+          
+          <div className="flex items-center gap-5">
+            <div className="flex flex-col">
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> Criação</label>
+              <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Filial</label>
+              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
+                <option value="">Todas</option>
+                {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
           </div>
         </div>
+
+        {/* Botões de Ação no Topo Direito */}
+        {selectedRequest && (
+          <div className="flex items-center space-x-2 animate-in slide-in-from-right duration-300">
+            {isFinalized && !isReworking ? (
+              <button onClick={() => setIsReworking(true)} className="px-4 py-2 bg-amber-100 text-amber-700 font-black text-[10px] uppercase rounded-xl flex items-center shadow-sm hover:bg-amber-200 transition-all">
+                <Edit3 size={16} className="mr-2" /> Editar Ações
+              </button>
+            ) : (
+              <>
+                <button onClick={() => setIsRejectModalOpen(true)} disabled={isProcessingAction} className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center disabled:opacity-50">
+                  <XCircle size={16} className="mr-2" /> Reprovar
+                </button>
+                <button onClick={handleApprove} disabled={isProcessingAction} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center disabled:opacity-50">
+                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />}
+                  {isMaster ? 'Aprovar Lançamento' : 'Validar e Encaminhar'}
+                </button>
+                {isReworking && <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600"><X size={18}/></button>}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden">
@@ -238,56 +253,38 @@ const DashboardFiscal: React.FC = () => {
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
-              <div className="p-10 border-b flex justify-between items-center bg-gray-50/20">
-                <div className="max-w-[60%]">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <Badge status={selectedRequest.status} />
-                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{isMaster ? 'Modo Master' : 'Modo Analista'}</span>
-                  </div>
-                  <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate">{selectedRequest.title}</h2>
-                  <div className="mt-2 flex space-x-4">
-                    <p className="text-sm font-black text-blue-600 uppercase italic">NF: <span className="text-slate-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</span></p>
-                    <p className="text-sm font-black text-blue-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
-                  </div>
+              <div className="p-10 border-b flex flex-col bg-gray-50/20">
+                <div className="flex items-center space-x-3 mb-4">
+                  <Badge status={selectedRequest.status} />
+                  <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{isMaster ? 'Fiscal Master' : 'Fiscal Analista'}</span>
                 </div>
-                <div className="flex space-x-3">
-                  {isFinalized && !isReworking ? (
-                    <button onClick={() => setIsReworking(true)} className="px-6 py-3.5 bg-amber-100 text-amber-700 font-black text-[10px] uppercase rounded-2xl flex items-center shadow-sm hover:bg-amber-200 transition-all">
-                      <Edit3 size={18} className="mr-2" /> Editar Ações
-                    </button>
-                  ) : (
-                    <>
-                      <button onClick={() => setIsRejectModalOpen(true)} disabled={isProcessingAction} className="px-6 py-3.5 text-red-600 font-black text-[10px] uppercase border-2 border-red-100 rounded-2xl hover:bg-red-50 flex items-center shadow-sm disabled:opacity-50">
-                        <XCircle size={18} className="mr-2" /> Reprovar
-                      </button>
-                      <button onClick={handleApprove} disabled={isProcessingAction} className="px-10 py-3.5 bg-green-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-green-700 flex items-center disabled:opacity-50">
-                        {isProcessingAction ? <Loader2 size={18} className="animate-spin mr-2" /> : <CheckCircle size={18} className="mr-2" />}
-                        {isMaster ? 'Aprovar Lançamento' : 'Validar e Encaminhar'}
-                      </button>
-                      {isReworking && <button onClick={() => setIsReworking(false)} className="p-3.5 text-gray-400 hover:text-gray-600"><X size={20}/></button>}
-                    </>
-                  )}
+                <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-4">{selectedRequest.title}</h2>
+                <div className="flex space-x-6">
+                  <p className="text-sm font-black text-blue-600 uppercase italic">NF: <span className="text-slate-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</span></p>
+                  <p className="text-sm font-black text-blue-600 uppercase italic">Pedido (OC): <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                   <section className="bg-blue-50/30 p-10 rounded-[3rem] border border-blue-50 shadow-inner">
-                    <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-8 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência</h3>
+                    <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-8 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência de Dados</h3>
                     <div className="space-y-6">
-                      <div className="grid grid-cols-2 gap-6">
-                        <div className="col-span-2"><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Beneficiário</span><p className="text-xl font-bold text-slate-700 uppercase">{selectedRequest.payee || '---'}</p></div>
-                        <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
-                        <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
+                      <div className="grid grid-cols-1 gap-6">
+                        <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Razão Social</span><p className="text-xl font-bold text-slate-700 uppercase">{selectedRequest.payee || '---'}</p></div>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                           <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método Pagamento</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
+                        </div>
                         
                         {selectedRequest.paymentMethod === 'PIX' && (
-                          <div className="col-span-2 pt-2 flex items-center text-blue-600"><Smartphone size={14} className="mr-2"/><p className="text-[10px] font-black uppercase tracking-tight">PIX: {selectedRequest.pixKey}</p></div>
+                          <div className="pt-2 flex items-center text-blue-600"><Smartphone size={14} className="mr-2"/><p className="text-[10px] font-black uppercase tracking-tight">Chave PIX: {selectedRequest.pixKey}</p></div>
                         )}
                         
                         {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
-                          <div className="col-span-2 pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-3 rounded-xl border border-blue-100/50">
-                            <p>BANCO: {selectedRequest.bank}</p>
-                            <p>AGÊNCIA/CONTA: {selectedRequest.agency} / {selectedRequest.account} ({selectedRequest.accountType})</p>
+                          <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-blue-100/50">
+                            <p className="mb-1">BANCO: <span className="text-blue-600">{selectedRequest.bank}</span></p>
+                            <p>AGÊNCIA/CONTA: <span className="text-blue-600">{selectedRequest.agency} / {selectedRequest.account}</span> ({selectedRequest.accountType})</p>
                           </div>
                         )}
                       </div>
@@ -295,22 +292,30 @@ const DashboardFiscal: React.FC = () => {
                   </section>
                   
                   <section className="space-y-6">
-                    <div className="bg-white p-8 rounded-[2rem] border-2 border-blue-50 shadow-sm relative">
-                      <h3 className="text-xs font-black text-blue-600 uppercase italic mb-4 flex items-center border-b pb-2"><FileText size={16} className="mr-2"/> Anexos</h3>
-                      <div className="space-y-3 max-h-[150px] overflow-y-auto custom-scrollbar">
-                         {mainAttachments.map(att => (
-                           <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                             <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                             <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600"><ExternalLink size={14}/></button>
-                           </div>
-                         ))}
-                         {secondaryAttachments.map(att => (
-                           <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
-                             <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                             <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-indigo-600"><ExternalLink size={14}/></button>
-                           </div>
-                         ))}
-                         {mainAttachments.length === 0 && secondaryAttachments.length === 0 && <p className="text-center text-[10px] font-black text-gray-300 uppercase">Sem anexos</p>}
+                    {/* Anexos Separados Explicitamente */}
+                    <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
+                      <div>
+                        <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3>
+                        <div className="space-y-2">
+                          {mainAttachments.length > 0 ? mainAttachments.map(att => (
+                            <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                              <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                              <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
+                            </div>
+                          )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Nenhuma NF anexada</p>}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2"><Paperclip size={14} className="mr-2"/> Boletos / Outros</h3>
+                        <div className="space-y-2">
+                          {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
+                            <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                              <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                              <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-indigo-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
+                            </div>
+                          )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>}
+                        </div>
                       </div>
                     </div>
 
@@ -343,7 +348,7 @@ const DashboardFiscal: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block tracking-widest">Comentários (OBSERVACAO_APROVADORES)</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block tracking-widest">Comentários Adicionais</label>
                 <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-800 outline-none resize-none" />
               </div>
               <div className="flex gap-4 pt-4">
