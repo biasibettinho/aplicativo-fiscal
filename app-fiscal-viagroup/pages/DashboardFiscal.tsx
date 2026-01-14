@@ -90,7 +90,7 @@ const DashboardFiscal: React.FC = () => {
   }, [authState.user]);
 
   const handleApprove = async () => {
-    if (!selectedRequest || !authState.token) return;
+    if (!selectedRequest || !authState.token || !authState.user) return;
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.APROVADO : RequestStatus.ANALISE;
@@ -100,6 +100,12 @@ const DashboardFiscal: React.FC = () => {
         status: targetStatus,
         approverObservation: comment,
         errorObservation: ''
+      });
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
+        ATUALIZACAO: targetStatus,
+        OBSERVACAO: comment,
+        MSG_OBSERVACAO: comment,
+        usuario_logado: authState.user.name
       });
       await loadData(); 
       setSelectedId(null);
@@ -112,7 +118,7 @@ const DashboardFiscal: React.FC = () => {
   };
 
   const handleConfirmReject = async () => {
-    if (!selectedRequest || !authState.token) return;
+    if (!selectedRequest || !authState.token || !authState.user) return;
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.ERRO_FISCAL : RequestStatus.ANALISE;
@@ -120,6 +126,12 @@ const DashboardFiscal: React.FC = () => {
         status: targetStatus,
         errorObservation: rejectReason,
         approverObservation: rejectComment 
+      });
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
+        ATUALIZACAO: targetStatus,
+        OBSERVACAO: `Reprovado Fiscal: ${rejectReason}`,
+        MSG_OBSERVACAO: rejectComment,
+        usuario_logado: authState.user.name
       });
       await loadData();
       setIsRejectModalOpen(false);
@@ -233,6 +245,10 @@ const DashboardFiscal: React.FC = () => {
                     <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{isMaster ? 'Modo Master' : 'Modo Analista'}</span>
                   </div>
                   <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate">{selectedRequest.title}</h2>
+                  <div className="mt-2 flex space-x-4">
+                    <p className="text-sm font-black text-blue-600 uppercase italic">NF: <span className="text-slate-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</span></p>
+                    <p className="text-sm font-black text-blue-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
+                  </div>
                 </div>
                 <div className="flex space-x-3">
                   {isFinalized && !isReworking ? (
@@ -259,48 +275,49 @@ const DashboardFiscal: React.FC = () => {
                   <section className="bg-blue-50/30 p-10 rounded-[3rem] border border-blue-50 shadow-inner">
                     <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-8 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência</h3>
                     <div className="space-y-6">
-                      <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Nota Fiscal</span><p className="text-4xl font-black text-slate-900 leading-none">{stripHtml(selectedRequest.invoiceNumber) || '---'}</p></div>
-                      {selectedRequest.payee && selectedRequest.payee.trim() !== '' && (
-                        <div className="pt-4 border-t border-blue-100/50">
-                           <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Beneficiário</span>
-                           <p className="text-lg font-bold text-slate-700 uppercase">{selectedRequest.payee}</p>
-                        </div>
-                      )}
-                      
-                      {/* Espelhamento de Pagamento */}
-                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-blue-100/50">
+                      <div className="grid grid-cols-2 gap-6">
+                        <div className="col-span-2"><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Beneficiário</span><p className="text-xl font-bold text-slate-700 uppercase">{selectedRequest.payee || '---'}</p></div>
                         <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
                         <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
+                        
+                        {selectedRequest.paymentMethod === 'PIX' && (
+                          <div className="col-span-2 pt-2 flex items-center text-blue-600"><Smartphone size={14} className="mr-2"/><p className="text-[10px] font-black uppercase tracking-tight">PIX: {selectedRequest.pixKey}</p></div>
+                        )}
+                        
+                        {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
+                          <div className="col-span-2 pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-3 rounded-xl border border-blue-100/50">
+                            <p>BANCO: {selectedRequest.bank}</p>
+                            <p>AGÊNCIA/CONTA: {selectedRequest.agency} / {selectedRequest.account} ({selectedRequest.accountType})</p>
+                          </div>
+                        )}
                       </div>
-
-                      {selectedRequest.paymentMethod === 'PIX' && selectedRequest.pixKey && (
-                        <div className="pt-2 flex items-center text-blue-600"><Smartphone size={14} className="mr-2"/><p className="text-[10px] font-black uppercase">PIX: {selectedRequest.pixKey}</p></div>
-                      )}
-                      
-                      {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
-                        <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-3 rounded-xl border border-blue-100/50">
-                          <p>BANCO: {selectedRequest.bank}</p>
-                          <p>AGÊNCIA: {selectedRequest.agency}</p>
-                          <p>CONTA: {selectedRequest.account} ({selectedRequest.accountType})</p>
-                        </div>
-                      )}
-
-                      {selectedRequest.orderNumbers && (
-                        <div className="pt-2 flex items-center text-slate-400"><Info size={14} className="mr-2"/><p className="text-[10px] font-black uppercase">Pedido / OC: {selectedRequest.orderNumbers}</p></div>
-                      )}
                     </div>
                   </section>
-                  <section className="space-y-4">
+                  
+                  <section className="space-y-6">
+                    <div className="bg-white p-8 rounded-[2rem] border-2 border-blue-50 shadow-sm relative">
+                      <h3 className="text-xs font-black text-blue-600 uppercase italic mb-4 flex items-center border-b pb-2"><FileText size={16} className="mr-2"/> Anexos</h3>
+                      <div className="space-y-3 max-h-[150px] overflow-y-auto custom-scrollbar">
+                         {mainAttachments.map(att => (
+                           <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                             <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                             <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600"><ExternalLink size={14}/></button>
+                           </div>
+                         ))}
+                         {secondaryAttachments.map(att => (
+                           <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                             <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                             <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-indigo-600"><ExternalLink size={14}/></button>
+                           </div>
+                         ))}
+                         {mainAttachments.length === 0 && secondaryAttachments.length === 0 && <p className="text-center text-[10px] font-black text-gray-300 uppercase">Sem anexos</p>}
+                      </div>
+                    </div>
+
                     <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner">
                       <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação do Solicitante</span>
-                      <p className="text-sm font-medium text-slate-600 italic">{selectedRequest.generalObservation ? `"${selectedRequest.generalObservation}"` : 'Sem observações.'}</p>
+                      <p className="text-sm font-medium text-slate-600 italic leading-relaxed">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
                     </div>
-                    {selectedRequest.approverObservation && (
-                      <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100">
-                        <span className="text-[9px] font-black text-blue-400 uppercase block mb-2 italic flex items-center"><CheckCircle size={12} className="mr-2"/> Observação dos Aprovadores</span>
-                        <p className="text-sm font-bold text-blue-700 italic leading-relaxed">"{selectedRequest.approverObservation}"</p>
-                      </div>
-                    )}
                   </section>
                 </div>
               </div>

@@ -5,7 +5,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info
+  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History
 } from 'lucide-react';
 
 const DashboardFinanceiro: React.FC = () => {
@@ -14,7 +14,9 @@ const DashboardFinanceiro: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
+  const [historyLogs, setHistoryLogs] = useState<any[]>([]);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
+  const [isFetchingHistory, setIsFetchingHistory] = useState(false);
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -32,6 +34,7 @@ const DashboardFinanceiro: React.FC = () => {
   const [shareCommentText, setShareCommentText] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
   const [sharedStatusFilter, setSharedStatusFilter] = useState('PENDENTE');
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   // Função auxiliar local para limpeza de HTML
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
@@ -39,6 +42,17 @@ const DashboardFinanceiro: React.FC = () => {
   const isMaster = useMemo(() => {
     return authState.user?.role === UserRole.FINANCEIRO_MASTER || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
+
+  const isUrgent = (req: PaymentRequest) => {
+    if (req.status === RequestStatus.FATURADO || req.statusFinal === 'Faturado') return false;
+    if (!req.paymentDate) return false;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const deadline = new Date(today);
+    deadline.setDate(today.getDate() + 3);
+    const paymentDate = new Date(req.paymentDate);
+    return paymentDate <= deadline;
+  };
 
   const resolveDisplayStatus = (r: PaymentRequest): string => {
     if (r.status === RequestStatus.ERRO_FINANCEIRO) return RequestStatus.ERRO_FINANCEIRO;
@@ -53,9 +67,9 @@ const DashboardFinanceiro: React.FC = () => {
     return fallback;
   };
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
       const data = await requestService.getRequestsFiltered(authState.user, authState.token);
       let filtered = data.filter(r => [
@@ -73,18 +87,23 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e) {
       console.error(e);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => { loadData(); }, [authState.user, authState.token]);
+
+  useEffect(() => {
+    const interval = setInterval(() => { loadData(true); }, 60000);
+    return () => clearInterval(interval);
+  }, [authState.user, authState.token]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
   useEffect(() => {
     setIsReworking(false);
     let isMounted = true;
-    const fetchAtts = async () => {
+    const fetchDetails = async () => {
       if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
         try {
@@ -99,9 +118,19 @@ const DashboardFinanceiro: React.FC = () => {
         } catch (e) { console.error(e); } finally { if (isMounted) setIsFetchingAttachments(false); }
       } else { setMainAttachments([]); setSecondaryAttachments([]); }
     };
-    fetchAtts();
+    fetchDetails();
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
+
+  const handleOpenHistory = async () => {
+    if (!selectedRequest || !authState.token) return;
+    setIsHistoryModalOpen(true);
+    setIsFetchingHistory(true);
+    try {
+      const logs = await sharepointService.getHistoryLogs(authState.token, selectedRequest.id);
+      setHistoryLogs(logs);
+    } catch (e) { console.error(e); } finally { setIsFetchingHistory(false); }
+  };
 
   const availableBranches = useMemo(() => {
     const branches = requests.map(r => r.branch).filter(b => b && b.trim() !== '');
@@ -139,12 +168,18 @@ const DashboardFinanceiro: React.FC = () => {
         approverObservation: comment,
         errorObservation: ''
       });
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
+        ATUALIZACAO: targetStatus,
+        OBSERVACAO: comment,
+        MSG_OBSERVACAO: comment,
+        usuario_logado: authState.user.name
+      });
       await loadData(); setSelectedId(null);
     } catch (e) { alert("Erro ao aprovar."); } finally { setIsProcessingAction(false); }
   };
 
   const handleConfirmReject = async () => {
-    if (!selectedRequest || !authState.token) return;
+    if (!selectedRequest || !authState.token || !authState.user) return;
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
@@ -152,6 +187,12 @@ const DashboardFinanceiro: React.FC = () => {
         status: targetStatus,
         errorObservation: rejectReason, 
         approverObservation: rejectComment
+      });
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
+        ATUALIZACAO: targetStatus,
+        OBSERVACAO: `Reprovado: ${rejectReason}`,
+        MSG_OBSERVACAO: rejectComment,
+        usuario_logado: authState.user.name
       });
       await loadData(); setIsRejectModalOpen(false); setSelectedId(null);
     } catch (e) { alert("Erro ao reprovar."); } finally { setIsProcessingAction(false); }
@@ -168,17 +209,16 @@ const DashboardFinanceiro: React.FC = () => {
         sharedByName: authState.user.name,
         shareComment: shareCommentText.trim()
       });
-      
-      // Update Otimista
-      setRequests(prev => prev.map(r => 
-        r.id === selectedRequest.id 
-          ? { ...r, sharedWithEmail: shareEmail, shareComment: shareCommentText.trim(), sharedByName: authState.user?.name, statusManual: 'Compartilhado' } 
-          : r
-      ));
-
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
+        ATUALIZACAO: 'Compartilhado',
+        OBSERVACAO: `Compartilhado com ${shareEmail}`,
+        MSG_OBSERVACAO: shareCommentText.trim(),
+        usuario_logado: authState.user.name
+      });
       alert("Solicitação compartilhada com sucesso!");
       setIsShareModalOpen(false);
       setShareCommentText('');
+      await loadData();
     } catch (e) { 
       console.error("Erro no compartilhamento:", e);
       alert("Erro ao salvar informações de compartilhamento."); 
@@ -201,7 +241,13 @@ const DashboardFinanceiro: React.FC = () => {
         }
       }
       return matchesSearch && matchesBranch && matchesStatus;
-    }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }).sort((a, b) => {
+      const urgentA = isUrgent(a);
+      const urgentB = isUrgent(b);
+      if (urgentA && !urgentB) return -1;
+      if (!urgentA && urgentB) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }, [requests, searchTerm, branchFilter, statusFilter, isMaster]);
 
   if (isLoading) {
@@ -252,9 +298,16 @@ const DashboardFinanceiro: React.FC = () => {
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {filteredRequests.map(r => {
               const dStatus = resolveDisplayStatus(r);
+              const urgent = isUrgent(r);
               return (
-                <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'}`}>
-                  <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black text-gray-400">#{r.id}</span><Badge status={dStatus} className="scale-90 origin-right" /></div>
+                <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
+                    <div className="flex items-center space-x-2">
+                      {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
+                      <Badge status={dStatus} className="scale-90 origin-right" />
+                    </div>
+                  </div>
                   <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
                 </div>
               );
@@ -267,10 +320,18 @@ const DashboardFinanceiro: React.FC = () => {
             <>
               <div className="p-10 border-b flex justify-between items-center bg-gray-50/20">
                 <div className="max-w-[50%]">
-                   <div className="flex items-center space-x-3 mb-2"><Badge status={resolveDisplayStatus(selectedRequest)} /></div>
+                   <div className="flex items-center space-x-3 mb-2">
+                      <Badge status={resolveDisplayStatus(selectedRequest)} />
+                      {isUrgent(selectedRequest) && <span className="text-[9px] font-black bg-red-100 text-red-600 px-2 py-0.5 rounded flex items-center"><AlertTriangle size={10} className="mr-1"/> URGENTE</span>}
+                   </div>
                    <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate">{selectedRequest.title}</h2>
+                   <div className="mt-2 flex space-x-4">
+                      <p className="text-sm font-black text-indigo-600 uppercase">NF: <span className="text-slate-900">{selectedRequest.invoiceNumber}</span></p>
+                      <p className="text-sm font-black text-indigo-600 uppercase">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
+                   </div>
                 </div>
-                <div className="flex space-x-3">
+                <div className="flex space-x-2">
+                  <button onClick={handleOpenHistory} className="p-3.5 bg-gray-100 text-gray-600 rounded-2xl hover:bg-gray-200 transition-all shadow-sm flex items-center" title="Histórico"><History size={20}/></button>
                   {isMaster && <button onClick={() => setIsShareModalOpen(true)} className="px-6 py-3.5 bg-indigo-100 text-indigo-600 rounded-2xl font-black text-[10px] uppercase italic flex items-center hover:bg-indigo-200 transition-all shadow-sm"><Share2 size={18} className="mr-2" /> Divisão Regional</button>}
                   {isFinalized && !isReworking ? (
                     <button onClick={() => setIsReworking(true)} className="px-6 py-3.5 bg-amber-100 text-amber-700 font-black text-[10px] uppercase rounded-2xl flex items-center shadow-sm hover:bg-amber-200 transition-all"><Edit3 size={18} className="mr-2" /> Editar Ações</button>
@@ -291,35 +352,46 @@ const DashboardFinanceiro: React.FC = () => {
                    <section className="bg-indigo-50/30 p-10 rounded-[3rem] border border-indigo-50 shadow-inner">
                       <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center"><Landmark size={14} className="mr-2"/> Pagamento</h3>
                       <div className="space-y-6">
-                        {selectedRequest.payee && selectedRequest.payee.trim() !== '' && (<div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido</span><p className="text-2xl font-black text-slate-900 break-words leading-tight">{selectedRequest.payee}</p></div>)}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-6">
+                           <div className="col-span-2"><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido</span><p className="text-xl font-black text-slate-900 break-words leading-tight">{selectedRequest.payee || '---'}</p></div>
                            <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span><p className="text-sm font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p></div>
                            <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-black text-indigo-700 uppercase italic">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                           
+                           {selectedRequest.paymentMethod === 'PIX' && (
+                             <div className="col-span-2 pt-2"><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span><p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400"/> {selectedRequest.pixKey}</p></div>
+                           )}
+                           
+                           {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
+                             <div className="col-span-2 pt-2 grid grid-cols-2 gap-2">
+                                <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Banco</span><p className="text-xs font-bold text-slate-800">{selectedRequest.bank}</p></div>
+                                <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Ag/Conta</span><p className="text-xs font-bold text-slate-800">{selectedRequest.agency} / {selectedRequest.account}</p></div>
+                             </div>
+                           )}
                         </div>
-                        
-                        {/* Espelhamento de Dados Bancários/PIX */}
-                        {selectedRequest.paymentMethod === 'PIX' && selectedRequest.pixKey && (
-                          <div className="pt-4 border-t border-indigo-100/50 flex items-center"><Smartphone size={16} className="text-indigo-400 mr-2"/><p className="text-xs font-bold text-slate-800">Chave PIX: {selectedRequest.pixKey}</p></div>
-                        )}
-                        {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
-                          <div className="pt-4 border-t border-indigo-100/50 space-y-2">
-                             <div className="flex justify-between"><span className="text-[9px] font-black text-indigo-300 uppercase">Banco/Ag/Conta</span><p className="text-[10px] font-bold text-slate-800">{selectedRequest.bank} / {selectedRequest.agency} / {selectedRequest.account}</p></div>
-                             <div className="flex justify-between"><span className="text-[9px] font-black text-indigo-300 uppercase">Tipo</span><p className="text-[10px] font-bold text-slate-800">{selectedRequest.accountType}</p></div>
-                          </div>
-                        )}
-                        {selectedRequest.orderNumbers && (
-                          <div className="pt-4 border-t border-indigo-100/50 flex items-center"><Info size={16} className="text-indigo-400 mr-2"/><p className="text-xs font-bold text-slate-800 uppercase tracking-tighter">Pedido (OC): {selectedRequest.orderNumbers}</p></div>
-                        )}
                       </div>
                    </section>
+
                    <section className="space-y-4">
+                      <div className="bg-white p-8 rounded-[2rem] border-2 border-blue-50 shadow-sm relative">
+                        <h3 className="text-xs font-black text-blue-600 uppercase italic mb-4 flex items-center border-b pb-2"><FileText size={16} className="mr-2"/> Anexos</h3>
+                        <div className="space-y-3 max-h-[150px] overflow-y-auto custom-scrollbar">
+                           {mainAttachments.map(att => (
+                             <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100">
+                               <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                               <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600"><ExternalLink size={14}/></button>
+                             </div>
+                           ))}
+                           {secondaryAttachments.map(att => (
+                             <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                               <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                               <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-indigo-600"><ExternalLink size={14}/></button>
+                             </div>
+                           ))}
+                           {mainAttachments.length === 0 && secondaryAttachments.length === 0 && <p className="text-center text-[10px] font-black text-gray-300 uppercase">Nenhum anexo encontrado</p>}
+                        </div>
+                      </div>
+
                       <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner"><span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação Solicitante</span><p className="text-sm font-medium text-slate-600 italic">"{selectedRequest.generalObservation || 'Sem obs.'}"</p></div>
-                      {selectedRequest.approverObservation && (
-                        <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100"><span className="text-[9px] font-black text-indigo-400 uppercase block mb-2 italic flex items-center"><CheckCircle size={12} className="mr-2"/> Histórico de Aprovação</span><p className="text-sm font-bold text-indigo-900 italic">"{selectedRequest.approverObservation}"</p></div>
-                      )}
-                      {selectedRequest.shareComment && (
-                        <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100"><span className="text-[9px] font-black text-purple-400 uppercase block mb-2 italic flex items-center"><Share2 size={12} className="mr-2"/> Obs. Compartilhamento (por {selectedRequest.sharedByName})</span><p className="text-sm font-bold text-purple-900 italic">"{selectedRequest.shareComment}"</p></div>
-                      )}
                    </section>
                 </div>
               </div>
@@ -333,7 +405,7 @@ const DashboardFinanceiro: React.FC = () => {
       {isRejectModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col animate-in zoom-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
             <div className="bg-red-600 p-6 text-white flex justify-between items-center"><h3 className="text-lg font-black uppercase italic tracking-tight">Reprovar Financeiro</h3><button onClick={() => setIsRejectModalOpen(false)}><X size={20}/></button></div>
             <div className="p-8 space-y-6">
               <div>
@@ -353,6 +425,35 @@ const DashboardFinanceiro: React.FC = () => {
                    {isProcessingAction ? <Loader2 size={16} className="animate-spin" /> : 'Confirmar Reprovação'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsHistoryModalOpen(false)}></div>
+          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
+            <div className="bg-gray-900 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><History size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Histórico de Ações</h3></div><button onClick={() => setIsHistoryModalOpen(false)}><X size={20}/></button></div>
+            <div className="p-8 space-y-4 overflow-y-auto custom-scrollbar">
+               {isFetchingHistory ? (
+                 <div className="flex justify-center p-10"><Loader2 className="animate-spin text-gray-400"/></div>
+               ) : historyLogs.length > 0 ? (
+                 historyLogs.map(log => (
+                   <div key={log.id} className="p-6 bg-gray-50 border border-gray-100 rounded-3xl">
+                      <div className="flex justify-between items-center mb-4">
+                        <Badge status={log.status} />
+                        <span className="text-[10px] font-black text-gray-400 uppercase flex items-center"><Clock size={12} className="mr-1"/> {new Date(log.createdAt).toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm font-black text-slate-800 mb-2 uppercase">{log.obs}</p>
+                      {log.msg && <p className="text-xs font-medium text-slate-500 italic bg-white p-3 rounded-xl border border-gray-100">"{log.msg}"</p>}
+                      <div className="mt-4 pt-2 border-t border-gray-100 flex items-center">
+                        <div className="w-5 h-5 bg-indigo-100 rounded-full flex items-center justify-center text-[8px] font-black text-indigo-600 mr-2 uppercase">{log.user?.[0]}</div>
+                        <span className="text-[10px] font-black text-indigo-400 uppercase">{log.user}</span>
+                      </div>
+                   </div>
+                 ))
+               ) : <p className="text-center py-20 text-gray-300 font-black uppercase">Nenhum registro encontrado</p>}
             </div>
           </div>
         </div>

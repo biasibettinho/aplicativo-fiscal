@@ -10,6 +10,7 @@ const GRAPH_SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
 const SECONDARY_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
 const USER_LIST_ID = 'aab3f85b-2541-4974-ab1a-e0a0ee688b4e';
+const HISTORY_LIST_ID = '4b5c196a-26bf-419a-8bab-c59f8f64e612';
 const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
 
 const FIELD_MAP = {
@@ -174,7 +175,6 @@ export const sharepointService = {
           statusManual: f[FIELD_MAP.statusManual] || '',
           statusFinal: f[FIELD_MAP.statusFinal] || '',
           statusEspelho: f[FIELD_MAP.statusEspelho] || '',
-          // Limpa HTML do e-mail compartilhado para normalização
           sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada']).toLowerCase(),
           sharedByName: f[FIELD_MAP.sharedByName] || '',
           shareComment: f[FIELD_MAP.shareComment] || '',
@@ -189,56 +189,6 @@ export const sharepointService = {
     } catch (e) {
       console.error("Erro getRequests:", e);
       return [];
-    }
-  },
-
-  createRequest: async (accessToken: string, data: Partial<PaymentRequest>): Promise<any> => {
-    try {
-      const fields: any = {};
-      Object.entries(FIELD_MAP).forEach(([key, spField]) => {
-        if ((data as any)[key] !== undefined) fields[spField] = (data as any)[key];
-      });
-      
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items`;
-      const response = await graphFetch(endpoint, accessToken, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields })
-      });
-      if (!response.ok) return null;
-      return await response.json();
-    } catch (e) {
-      console.error("Erro createRequest:", e);
-      return null;
-    }
-  },
-
-  addAttachment: async (accessToken: string, itemId: string, file: File): Promise<boolean> => {
-    try {
-      const spToken = await authService.getSharePointToken();
-      if (!spToken) return false;
-
-      const reader = new FileReader();
-      const fileData = await new Promise<ArrayBuffer>((resolve) => {
-        reader.onload = () => resolve(reader.result as ArrayBuffer);
-        reader.readAsArrayBuffer(file);
-      });
-
-      const url = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles/add(FileName='${file.name}')`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${spToken}`,
-          'Accept': 'application/json;odata=verbose',
-          'Content-Type': file.type
-        },
-        body: fileData
-      });
-
-      return response.ok;
-    } catch (e) {
-      console.error("Erro addAttachment:", e);
-      return false;
     }
   },
 
@@ -332,6 +282,49 @@ export const sharepointService = {
       return allSecondaryAttachments;
     } catch (e) {
       console.error("Erro getSecondaryAttachments (Boletos):", e);
+      return [];
+    }
+  },
+
+  addHistoryLog: async (accessToken: string, requestId: number, logData: { ATUALIZACAO: string, OBSERVACAO: string, MSG_OBSERVACAO: string, usuario_logado: string }): Promise<boolean> => {
+    try {
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items`;
+      const response = await graphFetch(endpoint, accessToken, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            ID_SOL: requestId,
+            ATUALIZACAO: logData.ATUALIZACAO,
+            OBSERVACAO: logData.OBSERVACAO,
+            MSG_OBSERVACAO: logData.MSG_OBSERVACAO,
+            usuario_logado: logData.usuario_logado
+          }
+        })
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro ao adicionar log de histórico:", e);
+      return false;
+    }
+  },
+
+  getHistoryLogs: async (accessToken: string, requestId: string): Promise<any[]> => {
+    try {
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?expand=fields&$filter=fields/ID_SOL eq ${requestId}&$orderby=createdDateTime desc`;
+      const response = await graphFetch(endpoint, accessToken);
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.value || []).map((item: any) => ({
+        id: item.id,
+        createdAt: item.createdDateTime,
+        status: item.fields.ATUALIZACAO,
+        obs: item.fields.OBSERVACAO,
+        msg: item.fields.MSG_OBSERVACAO,
+        user: item.fields.usuario_logado
+      }));
+    } catch (e) {
+      console.error("Erro ao buscar histórico:", e);
       return [];
     }
   }
