@@ -167,6 +167,11 @@ export const sharepointService = {
       return allItems.map((item: any) => {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
+        
+        // 🔍 DEBUG: Log de dado bruto por item
+        const rawShared = f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'];
+        if (rawShared) console.log(`[DEBUG ITEM ${numericId}] Raw Shared: "${rawShared}"`);
+
         const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || '';
 
         let pDate = f[FIELD_MAP.paymentDate] || '';
@@ -194,7 +199,8 @@ export const sharepointService = {
           statusManual: f[FIELD_MAP.statusManual] || '',
           statusFinal: f[FIELD_MAP.statusFinal] || '',
           statusEspelho: f[FIELD_MAP.statusEspelho] || '',
-          sharedWithEmail: f[FIELD_MAP.sharedWithEmail] || '',
+          // Tenta pegar de várias formas possíveis para garantir
+          sharedWithEmail: (f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada'] || '').toString().toLowerCase().trim(),
           sharedByName: f[FIELD_MAP.sharedByName] || '',
           shareComment: f[FIELD_MAP.shareComment] || '',
           errorObservation: f[FIELD_MAP.errorObservation] || '',

@@ -76,13 +76,39 @@ const DashboardFinanceiro: React.FC = () => {
     console.log('=== DEBUG FINANCEIRO - Email do usuário logado:', userEmail);
 
     const sharedWithMe = data.filter(r => {
+      // Garante que ambos lados da comparação estejam normalizados
       const sharedEmail = (r.sharedWithEmail || '').toLowerCase().trim();
-      return sharedEmail !== '' && (
-        sharedEmail === userEmail ||
-        sharedEmail === 'financeiro.sul@viagroup.com.br' ||
-        sharedEmail === 'financeiro.norte@viagroup.com.br'
-      );
+      const myEmail = userEmail.toLowerCase().trim();
+      
+      // Log detalhado para cada item que tem algo no campo shared
+      if (sharedEmail.length > 0) {
+         console.log(`[DEBUG COMPARE] Item ${r.id}: "${sharedEmail}" vs Meu: "${myEmail}"`);
+      }
+
+      // Lógica de comparação robusta
+      const isDirectShare = sharedEmail === myEmail;
+      const isRegionalSul = sharedEmail === 'financeiro.sul@viagroup.com.br';
+      const isRegionalNorte = sharedEmail === 'financeiro.norte@viagroup.com.br';
+
+      return sharedEmail !== '' && (isDirectShare || isRegionalSul || isRegionalNorte);
     });
+
+    // 🚨 DEBUG VISUAL TEMPORÁRIO 🚨
+    if (data.length > 0) {
+      const debugInfo = data
+        .filter(r => r.sharedWithEmail && r.sharedWithEmail.length > 0)
+        .map(r => `ID: ${r.id} | Email: "${r.sharedWithEmail}"`)
+        .join('\n');
+
+      alert(`DIAGNÓSTICO COMPARTILHAMENTO:\n\n` +
+        `Total de Itens: ${data.length}\n` +
+        `Itens com Campo Compartilhado Preenchido: ${data.filter(r => r.sharedWithEmail).length}\n\n` +
+        `Lista de Itens Compartilhados:\n${debugInfo || 'Nenhum item encontrado com email de compartilhamento.'}\n\n` +
+        `Meu Email: ${userEmail}\n` +
+        `Filtro Regional Sul: financeiro.sul@viagroup.com.br\n` +
+        `Filtro Regional Norte: financeiro.norte@viagroup.com.br`
+      );
+    }
 
     console.log('=== DEBUG FINANCEIRO - Solicitações compartilhadas comigo:', sharedWithMe.length);
     console.table(sharedWithMe.map(r => ({
