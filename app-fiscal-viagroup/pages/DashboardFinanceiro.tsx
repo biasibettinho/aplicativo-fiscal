@@ -1,12 +1,32 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History, Copy
+  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History, Copy,
+  FileSearch, PlayCircle, ArrowDown
 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../App';
+
+// Mapeamento de Status para Ícones e Cores
+const STATUS_CONFIG: Record<string, { icon: any; color: string; bgColor: string }> = {
+  'Criado': { icon: PlayCircle, color: 'text-gray-600', bgColor: 'bg-gray-100' },
+  'Análise': { icon: FileSearch, color: 'text-yellow-600', bgColor: 'bg-yellow-100' },
+  'Análise - Fiscal': { icon: FileSearch, color: 'text-blue-600', bgColor: 'bg-blue-100' },
+  'Aprovado': { icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100' },
+  'Aprovado - Fiscal': { icon: CheckCircle, color: 'text-blue-600', bgColor: 'bg-blue-100' },
+  'Aprovado - Financeiro': { icon: CheckCircle, color: 'text-indigo-600', bgColor: 'bg-indigo-100' },
+  'Compartilhado': { icon: Share2, color: 'text-purple-600', bgColor: 'bg-purple-100' },
+  'Faturado': { icon: DollarSign, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
+  'Erro - Fiscal': { icon: XCircle, color: 'text-red-600', bgColor: 'bg-red-100' },
+  'Erro - Financeiro': { icon: AlertTriangle, color: 'text-orange-600', bgColor: 'bg-orange-100' },
+  'Rejeitado - Fiscal': { icon: XCircle, color: 'text-red-700', bgColor: 'bg-red-200' },
+};
+
+const getStatusConfig = (status: string) => {
+  return STATUS_CONFIG[status] || { icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-50' };
+};
 
 const CopyButton = ({ text }: { text: string }) => (
   <button 
@@ -135,9 +155,6 @@ const DashboardFinanceiro: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
-  /**
-   * TAREFA 2: Logs e Alertas no ponto de chamada do histórico
-   */
   const handleOpenHistory = async () => {
     if (!selectedRequest || !authState.token) return;
     
@@ -269,7 +286,6 @@ const DashboardFinanceiro: React.FC = () => {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
         sharedByName: authState.user?.name || 'Sistema'
-        // shareComment: comment // REMOVIDO TEMPORARIAMENTE: Campo COMENTARIO_COMPARTILHAMENTO não reconhecido
       });
 
       console.log("[DEBUG-SHARE] Resultado do update:", updateResult);
@@ -474,7 +490,6 @@ const DashboardFinanceiro: React.FC = () => {
                    </section>
 
                    <section className="space-y-6">
-                      {/* Anexos Separados Explicitamente */}
                       <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
                         <div>
                           <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3>
@@ -540,29 +555,115 @@ const DashboardFinanceiro: React.FC = () => {
       )}
 
       {isHistoryModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsHistoryModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            <div className="bg-gray-900 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><History size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Histórico de Ações</h3></div><button onClick={() => setIsHistoryModalOpen(false)}><X size={20}/></button></div>
-            <div className="p-8 space-y-4 overflow-y-auto custom-scrollbar">
-               {isFetchingHistory ? (
-                 <div className="flex justify-center p-10"><Loader2 className="animate-spin text-gray-400"/></div>
-               ) : historyLogs.length > 0 ? (
-                 historyLogs.map(log => (
-                   <div key={log.id} className="p-6 bg-gray-50 border border-gray-100 rounded-3xl">
-                      <div className="flex justify-between items-center mb-4">
-                        <Badge status={log.status} />
-                        <span className="text-[10px] font-black text-gray-400 uppercase flex items-center"><Clock size={12} className="mr-1"/> {new Date(log.createdAt).toLocaleString()}</span>
-                      </div>
-                      <p className="text-sm font-black text-slate-800 mb-2 uppercase">{log.obs}</p>
-                      {log.msg && <p className="text-xs font-medium text-slate-500 italic bg-white p-3 rounded-xl border border-gray-100">"{log.msg}"</p>}
-                      <div className="mt-4 pt-2 border-t border-gray-100 flex items-center">
-                        <div className="w-5 h-5 bg-indigo-100 rounded-full flex items-center justify-center text-[8px] font-black text-indigo-600 mr-2 uppercase">{log.user?.[0]}</div>
-                        <span className="text-[10px] font-black text-indigo-400 uppercase">{log.user}</span>
-                      </div>
-                   </div>
-                 ))
-               ) : <p className="text-center py-20 text-gray-300 font-black uppercase">Nenhum registro encontrado</p>}
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-6">
+          <div 
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setIsHistoryModalOpen(false)}
+          ></div>
+          
+          <div className="bg-white rounded-2.5rem w-full max-w-3xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white flex justify-between items-center shrink-0">
+              <div className="flex items-center space-x-3 text-white">
+                <History size={24} />
+                <h3 className="text-lg font-black uppercase italic tracking-tight">
+                  Histórico de Alterações
+                </h3>
+              </div>
+              <button onClick={() => setIsHistoryModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
+              {isFetchingHistory ? (
+                <div className="flex justify-center items-center py-20">
+                  <Loader2 className="animate-spin text-indigo-600" size={40} />
+                </div>
+              ) : historyLogs.length > 0 ? (
+                <div className="relative">
+                  {/* Linha vertical (timeline) */}
+                  <div className="absolute left-[20px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-indigo-300 via-purple-300 to-gray-200"></div>
+
+                  {/* Timeline items */}
+                  <div className="space-y-8 relative">
+                    {historyLogs.map((log: any, idx: number) => {
+                      const config = getStatusConfig(log.status);
+                      const IconComponent = config.icon;
+                      const isFirst = idx === 0;
+
+                      return (
+                        <div key={log.id} className="relative pl-16 animate-in fade-in slide-in-from-left duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
+                          {/* Ícone na timeline */}
+                          <div className={`absolute left-0 w-[40px] h-[40px] rounded-full ${config.bgColor} ${config.color} flex items-center justify-center shadow-md border-4 border-white z-10`}>
+                            <IconComponent size={18} strokeWidth={2.5} />
+                          </div>
+
+                          {/* Seta indicando direção (do mais recente para o mais antigo) */}
+                          {!isFirst && (
+                            <div className="absolute left-[17px] -top-4 text-indigo-300">
+                              <ArrowDown size={16} />
+                            </div>
+                          )}
+
+                          {/* Card do log */}
+                          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition-shadow">
+                            {/* Header do Card */}
+                            <div className="flex justify-between items-start mb-4">
+                              <div>
+                                <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide ${config.bgColor} ${config.color}`}>
+                                  {log.status}
+                                </span>
+                                {isFirst && (
+                                  <span className="ml-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                                    Mais Recente
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10px] font-black text-gray-400 uppercase flex items-center">
+                                <Clock size={12} className="mr-1" />
+                                {new Date(log.createdAt).toLocaleString('pt-BR')}
+                              </span>
+                            </div>
+
+                            {/* Observação */}
+                            {log.obs && (
+                              <p className="text-sm font-bold text-slate-800 mb-3 uppercase leading-relaxed">
+                                {log.obs}
+                              </p>
+                            )}
+
+                            {/* Mensagem */}
+                            {log.msg && (
+                              <p className="text-xs font-medium text-slate-600 italic bg-white p-3 rounded-xl border border-gray-100 mb-4">
+                                {log.msg}
+                              </p>
+                            )}
+
+                            {/* Usuário */}
+                            {log.user && (
+                              <div className="flex items-center pt-3 border-t border-gray-200">
+                                <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-[8px] font-black text-indigo-600 mr-2 uppercase">
+                                  {log.user?.[0]}
+                                </div>
+                                <span className="text-[10px] font-black text-indigo-600 uppercase">
+                                  {log.user}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-gray-300">
+                  <History size={64} className="mb-4 opacity-20" />
+                  <p className="font-black uppercase text-sm">Nenhum registro encontrado</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
