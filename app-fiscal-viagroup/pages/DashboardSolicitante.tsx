@@ -158,31 +158,34 @@ const DashboardSolicitante: React.FC = () => {
     setIsSubmitting(true);
     try {
       if (isEditing && selectedRequest) {
-        // FLUXO DE EDIÇÃO DIRETO (SEM POWER AUTOMATE PARA ANEXOS)
-        setSubmissionStep('Atualizando dados principais...');
+        // FLUXO DE EDIÇÃO DIRETO (GESTÃO MANUAL DE ANEXOS)
+        
+        // 1. Atualiza dados de texto na lista principal
+        setSubmissionStep('Atualizando dados da solicitação...');
         await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
           ...formData,
-          status: RequestStatus.PENDENTE, // Volta para pendente após correção
-          approverObservation: 'Solicitação corrigida pelo usuário.'
+          status: RequestStatus.PENDENTE, // Retorna para pendente após correção
+          approverObservation: 'Correção realizada pelo solicitante.'
         });
 
-        // Gerencia Nota Fiscal
+        // 2. Gerencia Nota Fiscal (Lista Principal - Anexo Direto)
         if (invoiceFile) {
           setSubmissionStep('Substituindo Nota Fiscal...');
-          // Deleta arquivos atuais da lista principal
-          for (const att of mainAttachments) {
+          // Deleta anexo(s) atual(is) da lista principal
+          const currentMainAtts = await sharepointService.getItemAttachments(authState.token, selectedRequest.id);
+          for (const att of currentMainAtts) {
             await sharepointService.deleteAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, att.fileName);
           }
-          // Sobe o novo
+          // Sobe a nova Nota Fiscal
           await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
         }
 
-        // Gerencia Boletos
+        // 3. Gerencia Boletos (Lista Secundária - Itens Separados)
         if (ticketFile) {
-          setSubmissionStep('Substituindo Boletos...');
-          // Limpa lista secundária vinculada
-          await sharepointService.clearSecondaryItems(selectedRequest.id);
-          // Cria novo item secundário
+          setSubmissionStep('Substituindo Boletos auxiliares...');
+          // Deleta todos os itens antigos vinculados a esta solicitação na lista secundária
+          await sharepointService.deleteSecondaryItemsByRequestId(selectedRequest.id);
+          // Cria o novo item com o anexo na lista secundária
           await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
         }
 
@@ -190,9 +193,10 @@ const DashboardSolicitante: React.FC = () => {
         await syncData(true);
         await fetchAllAttachments();
         handleCancelCreate();
+        alert("Solicitação corrigida com sucesso!");
       } else {
-        // FLUXO DE CRIAÇÃO (MANTIDO VIA POWER AUTOMATE PARA CONVENIÊNCIA DE TRIGGER)
-        setSubmissionStep('Criando Solicitação...');
+        // FLUXO DE CRIAÇÃO (MANTIDO VIA POWER AUTOMATE)
+        setSubmissionStep('Enviando para o SharePoint...');
         const submissionData: any = {
           ...formData,
           createdByUserId: authState.user.id,
@@ -207,12 +211,12 @@ const DashboardSolicitante: React.FC = () => {
           await syncData(true);
           handleCancelCreate();
         } else {
-          alert("O Power Automate não respondeu. Tente reenviar.");
+          alert("Erro na resposta do servidor de automação. Tente novamente.");
         }
       }
     } catch (e) {
       console.error("Erro ao processar solicitação:", e);
-      alert("Erro crítico na comunicação. Verifique sua conexão.");
+      alert("Erro crítico de comunicação. Os dados foram preservados, verifique sua conexão.");
     } finally {
       setIsSubmitting(false);
       setSubmissionStep('');
@@ -255,12 +259,14 @@ const DashboardSolicitante: React.FC = () => {
           <div className="bg-white/10 p-8 rounded-[3rem] border border-white/10 shadow-2xl flex flex-col items-center max-w-sm">
             <Loader2 className="animate-spin text-blue-400 mb-6" size={60} />
             <h2 className="text-2xl font-black uppercase italic mb-4">
-              {isEditing ? 'Atualizando...' : 'Criando Solicitação...'}
+              {isEditing ? 'Salvando Alterações' : 'Criando Solicitação...'}
             </h2>
-            <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest mb-2">
-              {submissionStep || 'Processando dados no SharePoint...'}
+            <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest mb-4">
+              {submissionStep || 'Gerenciando arquivos no SharePoint...'}
             </p>
-            <p className="text-[10px] text-white/40 uppercase font-black">Por favor, aguarde.</p>
+            <div className="w-full bg-white/5 rounded-full h-1 overflow-hidden">
+                <div className="bg-blue-400 h-full animate-[shimmer_2s_infinite] w-1/2"></div>
+            </div>
           </div>
         </div>
       )}

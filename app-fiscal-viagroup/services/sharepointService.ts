@@ -8,7 +8,7 @@ const SITE_URL = 'https://vialacteoscombr.sharepoint.com/sites/Powerapps';
 const BASE_URL = 'https://vialacteoscombr.sharepoint.com';
 const GRAPH_SITE_ID = 'vialacteoscombr.sharepoint.com,f1ebbc10-56fd-418d-b5a9-d2ea9e83eaa1,c5526737-ed2d-40eb-8bda-be31cdb73819';
 const MAIN_LIST_ID = '51e89570-51be-41d0-98c9-d57a5686e13b';
-const SECONDARY_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938';
+const SECONDARY_LIST_ID = '53b6fecb-56e9-4917-ad5b-d46f10b47938'; // APP_Fiscal_AUX_ANEXOS
 const USER_LIST_ID = 'aab3f85b-2541-4974-ab1a-e0a0ee688b4e';
 const HISTORY_LIST_ID = '4b5c196a-26bf-419a-8bab-c59f8f64e612';
 const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
@@ -320,18 +320,25 @@ export const sharepointService = {
     }
   },
 
-  clearSecondaryItems: async (mainItemId: string): Promise<void> => {
+  /**
+   * Remove todos os itens da lista auxiliar vinculados a uma solicitação (E seus anexos).
+   */
+  deleteSecondaryItemsByRequestId: async (requestId: string): Promise<void> => {
     try {
-      const filter = `ID_SOL eq '${mainItemId}'`;
+      const filter = `ID_SOL eq '${requestId}'`;
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
       const res = await spRestFetch(url);
       if (res.ok) {
         const data = await res.json();
         const items = data.d?.results || [];
         for (const item of items) {
+          // Deleta o item (Isso remove os anexos dele automaticamente)
           await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
             method: 'POST',
-            headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' }
+            headers: { 
+              'X-HTTP-Method': 'DELETE', 
+              'IF-MATCH': '*' 
+            }
           });
         }
       }
@@ -340,13 +347,16 @@ export const sharepointService = {
     }
   },
 
-  createSecondaryItemWithAttachment: async (mainItemId: string, file: File): Promise<boolean> => {
+  /**
+   * Cria um novo registro na lista auxiliar e sobe o arquivo.
+   */
+  createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
     try {
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
       const body = JSON.stringify({
         '__metadata': { 'type': 'SP.Data.Lista_x005f_Auxiliar_x005f_AnexosListItem' },
-        'ID_SOL': mainItemId,
-        'Title': `Anexo de ${mainItemId}`
+        'ID_SOL': requestId,
+        'Title': `Anexo de ${requestId}`
       });
       const res = await spRestFetch(url, {
         method: 'POST',
