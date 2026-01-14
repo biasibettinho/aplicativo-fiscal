@@ -166,8 +166,8 @@ const DashboardSolicitante: React.FC = () => {
         console.log("[DEBUG-UI] Modo: EDIÇÃO");
         console.log("[DEBUG-UI] Request ID:", selectedRequest.id);
         console.log("[DEBUG-UI] Graph ID:", selectedRequest.graphId);
-        console.log("[DEBUG-UI] Novo arquivo NF:", !!invoiceFile);
-        console.log("[DEBUG-UI] Novo arquivo Boleto:", !!ticketFile);
+        
+        alert(`[DEBUG-UI] Iniciando handleUpdate para ID: ${selectedRequest.id}`);
 
         // 1. Atualiza dados de texto na lista principal
         setSubmissionStep('Atualizando dados da solicitação...');
@@ -181,6 +181,8 @@ const DashboardSolicitante: React.FC = () => {
 
         // 2. Gerencia Nota Fiscal (Lista Principal - Anexo Direto)
         if (invoiceFile) {
+          console.log("[DEBUG-UI] Tem nova NF. Trocando...");
+          alert("[TESTE] Detectada nova NF. Substituindo anexo na lista principal...");
           setSubmissionStep('Substituindo Nota Fiscal...');
           console.log("[DEBUG-UI] Buscando anexos atuais para substituição...");
           const currentMainAtts = await sharepointService.getItemAttachments(authState.token, selectedRequest.id);
@@ -194,25 +196,32 @@ const DashboardSolicitante: React.FC = () => {
           console.log(`[DEBUG-UI] Subindo nova Nota Fiscal: ${invoiceFile.name}`);
           const upRes = await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
           console.log("[DEBUG-UI] Resultado upload NF:", upRes);
+          alert(`[TESTE] Upload NF: ${upRes ? 'SUCESSO' : 'FALHOU'}`);
         }
 
         // 3. Gerencia Boletos (Lista Secundária - Itens Separados)
         if (ticketFile) {
+          alert("[TESTE] Detectado novo boleto. Iniciando troca na lista secundária...");
           setSubmissionStep('Substituindo Boletos auxiliares...');
           console.log(`[DEBUG-UI] Limpando registros antigos na lista secundária para ID_SOL: ${selectedRequest.id}`);
+          
           await sharepointService.deleteSecondaryItemsByRequestId(selectedRequest.id);
+          alert("[TESTE] Itens antigos deletados. Criando novo registro...");
           
           console.log(`[DEBUG-UI] Criando novo registro secundário para: ${ticketFile.name}`);
           const auxRes = await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
           console.log("[DEBUG-UI] Resultado gestão boleto auxiliar:", auxRes);
+          alert("[TESTE] Processo de boleto secundário finalizado!");
+        } else {
+          console.log("[DEBUG-UI] Nenhum boleto novo detectado.");
+          alert("[TESTE] NENHUM boleto novo detectado.");
         }
 
         setSubmissionStep('Finalizando...');
         console.log("[DEBUG-UI] Edição concluída. Sincronizando UI...");
         await syncData(true);
-        // await fetchAllAttachments(); // Comentado para evitar race condition com cache do SP
         handleCancelCreate();
-        alert("Solicitação corrigida com sucesso!");
+        alert("Solicitação atualizada com sucesso!");
       } else {
         // FLUXO DE CRIAÇÃO (MANTIDO VIA POWER AUTOMATE)
         console.log("[DEBUG-UI] Modo: CRIAÇÃO (via Power Automate)");
@@ -235,9 +244,9 @@ const DashboardSolicitante: React.FC = () => {
           alert("Erro na resposta do servidor de automação. Tente novamente.");
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[DEBUG-UI] ERRO CRÍTICO NO SUBMIT:", e);
-      alert("Erro crítico de comunicação. Verifique os logs no console.");
+      alert(`[ERRO CRÍTICO] ${e.message}`);
     } finally {
       setIsSubmitting(false);
       setSubmissionStep('');

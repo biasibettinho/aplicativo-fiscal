@@ -356,28 +356,45 @@ export const sharepointService = {
   createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
     try {
       console.log(`[DEBUG-SP] Criando item secundário para ID_SOL: ${requestId} com arquivo: ${file.name}`);
+      alert(`[TESTE] Criando item secundário para ID_SOL: ${requestId}`); 
+      
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
       const body = JSON.stringify({
-        '__metadata': { 'type': 'SP.Data.Lista_x005f_Auxiliar_x005f_AnexosListItem' },
         'ID_SOL': requestId,
-        'Title': `Anexo de ${requestId}`
+        'Title': `Boleto - Sol ${requestId}`
       });
+
       const res = await spRestFetch(url, {
         method: 'POST',
-        body: body
+        body: body,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
       });
+
+      console.log(`[DEBUG-SP] Status criação item secundário: ${res.status}`);
+
       if (res.ok) {
         const data = await res.json();
-        const newItemId = data.d.Id;
-        console.log(`[DEBUG-SP] Item secundário criado. ID: ${newItemId}. Iniciando upload do anexo...`);
+        const newItemId = data.Id || data.d?.Id;
+        console.log(`[DEBUG-SP] Item secundário criado. ID: ${newItemId}`);
+        alert(`[TESTE] Item criado! ID: ${newItemId}. Subindo arquivo...`);
+
         const uploadSuccess = await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
-        console.log(`[DEBUG-SP] Upload no item secundário finalizado. Sucesso: ${uploadSuccess}`);
+        console.log(`[DEBUG-SP] Upload finalizado. Sucesso: ${uploadSuccess}`);
+        alert(`[TESTE] Upload boleto: ${uploadSuccess ? 'SUCESSO' : 'FALHOU'}`);
+        
         return uploadSuccess;
+      } else {
+        const errorText = await res.text();
+        console.error(`[DEBUG-SP] Erro ao criar item: ${res.status} - ${errorText}`);
+        alert(`[ERRO] Falha criar item: ${res.status}. Ver console.`);
+        return false;
       }
-      console.error(`[DEBUG-SP] Falha ao criar registro na lista secundária: ${res.status}`);
-      return false;
-    } catch (e) {
-      console.error("[DEBUG-SP] Erro ao criar item secundário:", e);
+    } catch (e: any) {
+      console.error("[DEBUG-SP] Exceção ao criar item secundário:", e);
+      alert(`[ERRO CRÍTICO] ${e.message}`);
       return false;
     }
   },
