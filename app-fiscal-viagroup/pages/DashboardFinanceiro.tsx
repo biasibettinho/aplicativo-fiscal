@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
@@ -68,6 +69,29 @@ const DashboardFinanceiro: React.FC = () => {
     if (!authState.user || !authState.token) return;
     const data = await requestService.getRequestsFiltered(authState.user, authState.token);
     
+    // 🔍 DEBUG: Filtro de compartilhamento
+    console.log('=== DEBUG FINANCEIRO - Total de solicitações recebidas:', data.length);
+
+    const userEmail = authState.user?.email.toLowerCase() || '';
+    console.log('=== DEBUG FINANCEIRO - Email do usuário logado:', userEmail);
+
+    const sharedWithMe = data.filter(r => {
+      const sharedEmail = (r.sharedWithEmail || '').toLowerCase().trim();
+      return sharedEmail !== '' && (
+        sharedEmail === userEmail ||
+        sharedEmail === 'financeiro.sul@viagroup.com.br' ||
+        sharedEmail === 'financeiro.norte@viagroup.com.br'
+      );
+    });
+
+    console.log('=== DEBUG FINANCEIRO - Solicitações compartilhadas comigo:', sharedWithMe.length);
+    console.table(sharedWithMe.map(r => ({
+      id: r.id,
+      titulo: r.title,
+      compartilhadoCom: r.sharedWithEmail,
+      compartilhadoPor: r.sharedByName
+    })));
+
     // Filtro base para a tela Financeira
     let filtered = data.filter(r => [
       RequestStatus.APROVADO, 

@@ -138,6 +138,31 @@ export const sharepointService = {
         allItems = [...allItems, ...(data.value || [])];
         nextLink = data['@odata.nextLink'] || null;
       }
+
+      // 🔍 DEBUG: Log de compartilhamentos
+      console.log('=== DEBUG SHAREPOINT - Total de itens carregados:', allItems.length);
+      const itemsWithSharing = allItems
+        .map((item: any) => {
+          const f = item.fields || {};
+          return {
+            id: f.id || f.ID || item.id,
+            sharedWith: f[FIELD_MAP.sharedWithEmail] || null,
+            sharedBy: f[FIELD_MAP.sharedByName] || null,
+            title: f.Title || ''
+          };
+        })
+        .filter(i => i.sharedWith); // Somente itens que TÊM compartilhamento
+
+      console.log('=== DEBUG SHAREPOINT - Itens compartilhados:', itemsWithSharing.length);
+      console.table(itemsWithSharing);
+
+      // Log de todos os campos do primeiro item (para verificar nomes de campo)
+      // Fix: allItems is an array, corrected to allItems[0]
+      if (allItems.length > 0) {
+        console.log('=== DEBUG SHAREPOINT - Campos disponíveis no primeiro item:', 
+          Object.keys(allItems[0].fields || {})
+        );
+      }
       
       return allItems.map((item: any) => {
         const f = item.fields || {};
