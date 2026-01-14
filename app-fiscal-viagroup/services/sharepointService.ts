@@ -34,6 +34,7 @@ const FIELD_MAP = {
   accountType: 'TIPO_CONTA',
   sharedWithEmail: 'PESSOA_COMPARTILHADA',
   sharedByName: 'PESSOA_COMPARTILHOU',
+  // Fix: Uncommented shareComment to resolve compilation error where it is used in getRequests.
   shareComment: 'COMENTARIO_COMPARTILHAMENTO',
   errorObservation: 'OBS_ERRO' 
 };
@@ -47,7 +48,6 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
 
   const res = await fetch(url, { ...options, headers });
 
-  // NÃO LEIA O BODY AQUI! Apenas logue o status.
   if (!res.ok) {
     console.error(`[MS GRAPH ERROR] URL: ${url}`, { 
       status: res.status, 
@@ -55,7 +55,7 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
     });
   }
 
-  return res; // Retorna a response intacta
+  return res;
 }
 
 async function spRestFetch(url: string, options: RequestInit = {}) {
@@ -210,7 +210,6 @@ export const sharepointService = {
         body: JSON.stringify(fields)
       });
       
-      // LÊ O BODY APENAS UMA VEZ
       if (!response.ok) {
         let errorDetail = `Status ${response.status}`;
         try {
@@ -457,51 +456,50 @@ export const sharepointService = {
 
   getHistoryLogs: async (accessToken: string, requestId: string): Promise<any[]> => {
     try {
-      const idAsNumber = parseInt(requestId, 10);
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?expand=fields&$filter=fields/ID_SOL eq ${idAsNumber}&$orderby=createdDateTime desc`;
+      // BUSCA TODOS (até 500) e filtra localmente para evitar erro 400 em queries complexas/customizadas no Graph API
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?$expand=fields&$orderby=createdDateTime desc&$top=500`;
       
-      console.log("[DEBUG-HISTORY] Buscando ID:", idAsNumber);
-      console.log("[DEBUG-HISTORY] Endpoint:", endpoint);
+      console.log(`[DEBUG-HISTORY] Carregando logs e filtrando localmente para ID: ${requestId}`);
+      alert(`[TESTE HISTÓRICO] Carregando logs e filtrando localmente para ID: ${requestId}`);
 
       const response = await graphFetch(endpoint, accessToken);
 
-      // LÊ APENAS UMA VEZ
       if (!response.ok) {
-        let errorDetail = `Status ${response.status}`;
+        let errorDetail = "Erro desconhecido";
         try {
           const responseClone = response.clone();
-          try {
-            const errorJson = await responseClone.json();
-            errorDetail = JSON.stringify(errorJson);
-          } catch {
-            errorDetail = await response.text();
-          }
-        } catch {
-          errorDetail = "Erro desconhecido.";
-        }
+          const errorJson = await responseClone.json();
+          errorDetail = JSON.stringify(errorJson);
+        } catch {}
 
-        console.error("[DEBUG-HISTORY] Erro:", errorDetail);
-        alert(`[ERRO HISTÓRICO] ${response.status}`);
+        console.error("[DEBUG-HISTORY] Erro na requisição:", response.status, errorDetail);
+        alert(`[ERRO HISTÓRICO] ${response.status}: ${errorDetail}`);
         return [];
       }
 
       const data = await response.json();
-      console.log("[DEBUG-HISTORY] Logs encontrados:", data.value?.length || 0);
+      const allLogs = data.value || [];
+      
+      // Filtra no cliente para garantir compatibilidade com tipos (string vs number)
+      const filtered = allLogs.filter((item: any) => 
+        item.fields?.ID_SOL?.toString() === requestId.toString()
+      );
 
-      if (!data.value || data.value.length === 0) {
+      console.log(`[DEBUG-HISTORY] Total carregado: ${allLogs.length}, Filtrados para solicitação: ${filtered.length}`);
+
+      if (filtered.length === 0) {
         alert("[INFO] Nenhum histórico encontrado para este ID.");
-        return [];
+      } else {
+        alert(`[SUCESSO] ${filtered.length} registros de histórico carregados!`);
       }
 
-      alert(`[SUCESSO] ${data.value.length} registros de histórico!`);
-
-      return (data.value || []).map((item: any) => ({
+      return filtered.map((item: any) => ({
         id: item.id,
         createdAt: item.createdDateTime,
-        status: item.fields.ATUALIZACAO,
-        obs: item.fields.OBSERVACAO,
-        msg: item.fields.MSG_OBSERVACAO,
-        user: item.fields.usuario_logado
+        status: item.fields?.ATUALIZACAO || '',
+        obs: item.fields?.OBSERVACAO || '',
+        msg: item.fields?.MSG_OBSERVACAO || '',
+        user: item.fields?.usuario_logado || ''
       }));
     } catch (e: any) {
       console.error("Erro getHistoryLogs:", e);

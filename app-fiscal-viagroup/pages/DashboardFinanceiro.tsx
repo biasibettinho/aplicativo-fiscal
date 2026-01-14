@@ -239,15 +239,13 @@ const DashboardFinanceiro: React.FC = () => {
     const comment = shareCommentText.trim();
 
     console.log(`[DEBUG-SHARE] ID: ${selectedRequest.id}, GraphID: ${selectedRequest.graphId}`);
-    console.log(`[DEBUG-SHARE] Email compartilhado: ${shareEmail}`);
-    console.log(`[DEBUG-SHARE] Comentário: ${comment}`);
+    console.log(`[DEBUG-SHARE] Regional Destino: ${shareEmail}`);
     alert(`[TESTE] Compartilhando ${selectedRequest.id} com ${shareEmail}`);
     
     // Atualização Otimista Local
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
         ...r, 
         sharedWithEmail: shareEmail,
-        shareComment: comment,
         sharedByName: authState.user?.name,
         statusManual: 'Compartilhado'
     } : r));
@@ -255,12 +253,12 @@ const DashboardFinanceiro: React.FC = () => {
     setIsProcessingAction(true);
 
     try {
-      // Persistência Crítica: Envia dados mapeados corretamente para o service
+      // Persistência: Envia apenas campos estáveis para o SharePoint via Graph
       const updateResult = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
-        sharedByName: authState.user.name,
-        shareComment: comment
+        sharedByName: authState.user?.name || 'Sistema'
+        // shareComment: comment // REMOVIDO TEMPORARIAMENTE: Campo COMENTARIO_COMPARTILHAMENTO não reconhecido
       });
 
       console.log("[DEBUG-SHARE] Resultado do update:", updateResult);
