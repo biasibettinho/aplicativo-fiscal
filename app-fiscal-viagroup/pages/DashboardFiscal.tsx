@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
@@ -6,7 +5,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3
+  Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3, Banknote, Smartphone, Info
 } from 'lucide-react';
 
 const DashboardFiscal: React.FC = () => {
@@ -17,6 +16,7 @@ const DashboardFiscal: React.FC = () => {
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [isReworking, setIsReworking] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -34,8 +34,15 @@ const DashboardFiscal: React.FC = () => {
 
   const loadData = async () => {
     if (!authState.user || !authState.token) return;
-    const data = await requestService.getRequestsFiltered(authState.user, authState.token);
-    setRequests(data);
+    setIsLoading(true);
+    try {
+      const data = await requestService.getRequestsFiltered(authState.user, authState.token);
+      setRequests(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => { loadData(); }, [authState.user, authState.token]);
@@ -89,7 +96,6 @@ const DashboardFiscal: React.FC = () => {
       const targetStatus = isMaster ? RequestStatus.APROVADO : RequestStatus.ANALISE;
       const comment = isMaster ? 'Aprovação Final realizada pelo Fiscal Master.' : 'Conferência inicial realizada pelo Fiscal Comum. Aguardando Master.';
       
-      // Salva comentário exclusivamente em OBSERVACAO_APROVADORES
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         approverObservation: comment,
@@ -110,14 +116,11 @@ const DashboardFiscal: React.FC = () => {
     setIsProcessingAction(true);
     try {
       const targetStatus = isMaster ? RequestStatus.ERRO_FISCAL : RequestStatus.ANALISE;
-      
-      // Salva comentário exclusivamente em OBSERVACAO_APROVADORES e motivo em OBS_ERRO
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         errorObservation: rejectReason,
         approverObservation: rejectComment 
       });
-      
       await loadData();
       setIsRejectModalOpen(false);
       setRejectComment('');
@@ -144,6 +147,15 @@ const DashboardFiscal: React.FC = () => {
       return matchesSearch && matchesBranch && matchesStatus && matchesDate;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, dateFilter, branchFilter, statusFilter]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
+        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+        <span className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Carregando solicitações...</span>
+      </div>
+    );
+  }
 
   const isFinalized = selectedRequest && [RequestStatus.APROVADO, RequestStatus.ERRO_FISCAL, RequestStatus.FATURADO].includes(selectedRequest.status);
 
@@ -249,7 +261,32 @@ const DashboardFiscal: React.FC = () => {
                     <div className="space-y-6">
                       <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Nota Fiscal</span><p className="text-4xl font-black text-slate-900 leading-none">{stripHtml(selectedRequest.invoiceNumber) || '---'}</p></div>
                       {selectedRequest.payee && selectedRequest.payee.trim() !== '' && (
-                        <div className="pt-4 border-t border-blue-100/50"><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido</span><p className="text-lg font-bold text-slate-700 uppercase">{selectedRequest.payee}</p></div>
+                        <div className="pt-4 border-t border-blue-100/50">
+                           <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Beneficiário</span>
+                           <p className="text-lg font-bold text-slate-700 uppercase">{selectedRequest.payee}</p>
+                        </div>
+                      )}
+                      
+                      {/* Espelhamento de Pagamento */}
+                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-blue-100/50">
+                        <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                        <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
+                      </div>
+
+                      {selectedRequest.paymentMethod === 'PIX' && selectedRequest.pixKey && (
+                        <div className="pt-2 flex items-center text-blue-600"><Smartphone size={14} className="mr-2"/><p className="text-[10px] font-black uppercase">PIX: {selectedRequest.pixKey}</p></div>
+                      )}
+                      
+                      {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
+                        <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-3 rounded-xl border border-blue-100/50">
+                          <p>BANCO: {selectedRequest.bank}</p>
+                          <p>AGÊNCIA: {selectedRequest.agency}</p>
+                          <p>CONTA: {selectedRequest.account} ({selectedRequest.accountType})</p>
+                        </div>
+                      )}
+
+                      {selectedRequest.orderNumbers && (
+                        <div className="pt-2 flex items-center text-slate-400"><Info size={14} className="mr-2"/><p className="text-[10px] font-black uppercase">Pedido / OC: {selectedRequest.orderNumbers}</p></div>
                       )}
                     </div>
                   </section>

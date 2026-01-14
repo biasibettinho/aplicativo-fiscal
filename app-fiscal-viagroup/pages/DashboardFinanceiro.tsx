@@ -5,7 +5,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip
+  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info
 } from 'lucide-react';
 
 const DashboardFinanceiro: React.FC = () => {
@@ -16,10 +16,10 @@ const DashboardFinanceiro: React.FC = () => {
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [isReworking, setIsReworking] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -31,6 +31,7 @@ const DashboardFinanceiro: React.FC = () => {
   const [shareEmail, setShareEmail] = useState('financeiro.norte@viagroup.com.br');
   const [shareCommentText, setShareCommentText] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
+  const [sharedStatusFilter, setSharedStatusFilter] = useState('PENDENTE');
 
   // Função auxiliar local para limpeza de HTML
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
@@ -39,100 +40,41 @@ const DashboardFinanceiro: React.FC = () => {
     return authState.user?.role === UserRole.FINANCEIRO_MASTER || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
 
-  // Função centralizada para resolver o status visual conforme hierarquia solicitada
   const resolveDisplayStatus = (r: PaymentRequest): string => {
-    // Prioridade 1: Erro - Financeiro
     if (r.status === RequestStatus.ERRO_FINANCEIRO) return RequestStatus.ERRO_FINANCEIRO;
-
-    // Prioridade Especial: Para usuário comum, APROVADO (vindo do fiscal) aparece como PENDENTE
     if (!isMaster && r.status === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
-
-    // Prioridade 2: Status Final preenchido
     if (r.statusFinal && r.statusFinal.trim() !== '') return r.statusFinal;
-
-    // Prioridade 3: Se o usuário for sofia.ferneda, exibe Status Manual
     if (authState.user?.email.toLowerCase() === 'sofia.ferneda@viagroup.com.br') {
       if (r.statusManual && r.statusManual.trim() !== '') return r.statusManual;
     }
-
-    // Prioridade 4: Se Status Manual for 'Compartilhado'
     if (r.statusManual === 'Compartilhado') return 'Compartilhado';
-
-    // Prioridade 5: Fallback para Status Espelho ou Status Original
     let fallback = r.statusEspelho && r.statusEspelho.trim() !== '' ? r.statusEspelho : r.status;
-    
-    // Tratamento adicional de nome para visualização
     if (fallback === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
-    
     return fallback;
   };
 
   const loadData = async () => {
     if (!authState.user || !authState.token) return;
-    const data = await requestService.getRequestsFiltered(authState.user, authState.token);
-    
-    // 🔍 DEBUG: Filtro de compartilhamento
-    console.log('=== DEBUG FINANCEIRO - Total de solicitações recebidas:', data.length);
+    setIsLoading(true);
+    try {
+      const data = await requestService.getRequestsFiltered(authState.user, authState.token);
+      let filtered = data.filter(r => [
+        RequestStatus.APROVADO, 
+        RequestStatus.ANALISE, 
+        RequestStatus.FATURADO, 
+        RequestStatus.ERRO_FINANCEIRO, 
+        RequestStatus.COMPARTILHADO
+      ].includes(r.status) || (r.sharedWithEmail && stripHtml(r.sharedWithEmail).trim() !== ''));
 
-    const userEmail = authState.user?.email.toLowerCase() || '';
-    console.log('=== DEBUG FINANCEIRO - Email do usuário logado:', userEmail);
-
-    const sharedWithMe = data.filter(r => {
-      // Limpa HTML, remove espaços e normaliza para minúsculo
-      const sharedEmail = stripHtml(r.sharedWithEmail || '').toLowerCase();
-      const myEmail = userEmail.toLowerCase().trim();
-      
-      // Log detalhado para cada item que tem algo no campo shared
-      if (sharedEmail.length > 0) {
-         console.log(`[DEBUG CLEAN] Item ${r.id}: "${sharedEmail}" vs Meu: "${myEmail}"`);
+      if (authState.user.role === UserRole.FINANCEIRO) {
+        filtered = filtered.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === authState.user?.email.toLowerCase());
       }
-
-      // Lógica de comparação robusta
-      const isDirectShare = sharedEmail === myEmail;
-      const isRegionalSul = sharedEmail === 'financeiro.sul@viagroup.com.br';
-      const isRegionalNorte = sharedEmail === 'financeiro.norte@viagroup.com.br';
-
-      return sharedEmail !== '' && (isDirectShare || isRegionalSul || isRegionalNorte);
-    });
-
-    // 🚨 DEBUG VISUAL TEMPORÁRIO 🚨
-    if (data.length > 0) {
-      const debugInfo = data
-        .filter(r => r.sharedWithEmail && r.sharedWithEmail.length > 0)
-        .map(r => `ID: ${r.id} | Email: "${stripHtml(r.sharedWithEmail || '')}"`)
-        .join('\n');
-
-      alert(`DIAGNÓSTICO COMPARTILHAMENTO:\n\n` +
-        `Total de Itens: ${data.length}\n` +
-        `Itens com Campo Compartilhado Preenchido: ${data.filter(r => r.sharedWithEmail).length}\n\n` +
-        `Lista de Itens Compartilhados:\n${debugInfo || 'Nenhum item encontrado com email de compartilhamento.'}\n\n` +
-        `Meu Email: ${userEmail}\n` +
-        `Filtro Regional Sul: financeiro.sul@viagroup.com.br\n` +
-        `Filtro Regional Norte: financeiro.norte@viagroup.com.br`
-      );
+      setRequests(filtered);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
     }
-
-    console.log('=== DEBUG FINANCEIRO - Solicitações compartilhadas comigo:', sharedWithMe.length);
-    console.table(sharedWithMe.map(r => ({
-      id: r.id,
-      titulo: r.title,
-      compartilhadoCom: stripHtml(r.sharedWithEmail || ''),
-      compartilhadoPor: r.sharedByName
-    })));
-
-    // Filtro base para a tela Financeira
-    let filtered = data.filter(r => [
-      RequestStatus.APROVADO, 
-      RequestStatus.ANALISE, 
-      RequestStatus.FATURADO, 
-      RequestStatus.ERRO_FINANCEIRO, 
-      RequestStatus.COMPARTILHADO
-    ].includes(r.status) || (r.sharedWithEmail && stripHtml(r.sharedWithEmail).trim() !== ''));
-
-    if (authState.user.role === UserRole.FINANCEIRO) {
-      filtered = filtered.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === authState.user?.email.toLowerCase());
-    }
-    setRequests(filtered);
   };
 
   useEffect(() => { loadData(); }, [authState.user, authState.token]);
@@ -166,21 +108,18 @@ const DashboardFinanceiro: React.FC = () => {
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-  /**
-   * FILTRO REGIONAL: Sem restrição de status para exibir histórico completo.
-   * Adicionado stripHtml() para limpar dados do SharePoint.
-   */
+  const applySharedFilter = (reqs: PaymentRequest[]) => {
+    if (sharedStatusFilter === 'TODOS') return reqs;
+    return reqs.filter(r => [RequestStatus.APROVADO, RequestStatus.ANALISE, RequestStatus.PENDENTE].includes(r.status as RequestStatus) || resolveDisplayStatus(r) === 'Pendente');
+  };
+
   const northShared = useMemo(() => 
-    requests.filter(r => 
-      stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.norte@viagroup.com.br'
-    ), 
-  [requests]);
+    applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.norte@viagroup.com.br')), 
+  [requests, sharedStatusFilter]);
   
   const southShared = useMemo(() => 
-    requests.filter(r => 
-      stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br'
-    ), 
-  [requests]);
+    applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br')), 
+  [requests, sharedStatusFilter]);
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
@@ -188,7 +127,6 @@ const DashboardFinanceiro: React.FC = () => {
     try {
       let targetStatus: RequestStatus;
       let comment: string;
-
       if (isMaster) {
         targetStatus = RequestStatus.FATURADO;
         comment = 'Faturamento concluído pelo Master.';
@@ -196,7 +134,6 @@ const DashboardFinanceiro: React.FC = () => {
         targetStatus = RequestStatus.ANALISE;
         comment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
       }
-      
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         status: targetStatus,
         approverObservation: comment,
@@ -231,7 +168,15 @@ const DashboardFinanceiro: React.FC = () => {
         sharedByName: authState.user.name,
         shareComment: shareCommentText.trim()
       });
-      await loadData(); 
+      
+      // Update Otimista
+      setRequests(prev => prev.map(r => 
+        r.id === selectedRequest.id 
+          ? { ...r, sharedWithEmail: shareEmail, shareComment: shareCommentText.trim(), sharedByName: authState.user?.name, statusManual: 'Compartilhado' } 
+          : r
+      ));
+
+      alert("Solicitação compartilhada com sucesso!");
       setIsShareModalOpen(false);
       setShareCommentText('');
     } catch (e) { 
@@ -246,7 +191,6 @@ const DashboardFinanceiro: React.FC = () => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.id.toString().includes(searchTerm);
       const matchesBranch = branchFilter === '' || r.branch === branchFilter;
-      
       let matchesStatus = true;
       if (statusFilter !== '') {
         const currentDisplay = resolveDisplayStatus(r);
@@ -259,6 +203,15 @@ const DashboardFinanceiro: React.FC = () => {
       return matchesSearch && matchesBranch && matchesStatus;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, branchFilter, statusFilter, isMaster]);
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
+        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+        <span className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">Carregando solicitações...</span>
+      </div>
+    );
+  }
 
   const isFinalized = selectedRequest && [RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(selectedRequest.status);
 
@@ -279,7 +232,6 @@ const DashboardFinanceiro: React.FC = () => {
                 {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
            </div>
-
            <div className="flex flex-col">
              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Filter size={10} className="mr-1"/> Status</label>
              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
@@ -295,7 +247,6 @@ const DashboardFinanceiro: React.FC = () => {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden">
-        {/* Sidebar */}
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
@@ -311,7 +262,6 @@ const DashboardFinanceiro: React.FC = () => {
           </div>
         </div>
 
-        {/* Detalhes */}
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
@@ -321,7 +271,7 @@ const DashboardFinanceiro: React.FC = () => {
                    <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate">{selectedRequest.title}</h2>
                 </div>
                 <div className="flex space-x-3">
-                  {isMaster && <button onClick={() => setIsShareModalOpen(true)} className="px-6 py-3.5 bg-indigo-100 text-indigo-600 rounded-2xl font-black text-[10px] uppercase italic flex items-center hover:bg-indigo-200 transition-all shadow-sm"><Share2 size={18} className="mr-2" /> Compartilhar</button>}
+                  {isMaster && <button onClick={() => setIsShareModalOpen(true)} className="px-6 py-3.5 bg-indigo-100 text-indigo-600 rounded-2xl font-black text-[10px] uppercase italic flex items-center hover:bg-indigo-200 transition-all shadow-sm"><Share2 size={18} className="mr-2" /> Divisão Regional</button>}
                   {isFinalized && !isReworking ? (
                     <button onClick={() => setIsReworking(true)} className="px-6 py-3.5 bg-amber-100 text-amber-700 font-black text-[10px] uppercase rounded-2xl flex items-center shadow-sm hover:bg-amber-200 transition-all"><Edit3 size={18} className="mr-2" /> Editar Ações</button>
                   ) : (
@@ -342,7 +292,24 @@ const DashboardFinanceiro: React.FC = () => {
                       <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center"><Landmark size={14} className="mr-2"/> Pagamento</h3>
                       <div className="space-y-6">
                         {selectedRequest.payee && selectedRequest.payee.trim() !== '' && (<div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido</span><p className="text-2xl font-black text-slate-900 break-words leading-tight">{selectedRequest.payee}</p></div>)}
-                        <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método / Vencimento</span><p className="text-xl font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod} • {new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span><p className="text-sm font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p></div>
+                           <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-black text-indigo-700 uppercase italic">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                        </div>
+                        
+                        {/* Espelhamento de Dados Bancários/PIX */}
+                        {selectedRequest.paymentMethod === 'PIX' && selectedRequest.pixKey && (
+                          <div className="pt-4 border-t border-indigo-100/50 flex items-center"><Smartphone size={16} className="text-indigo-400 mr-2"/><p className="text-xs font-bold text-slate-800">Chave PIX: {selectedRequest.pixKey}</p></div>
+                        )}
+                        {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
+                          <div className="pt-4 border-t border-indigo-100/50 space-y-2">
+                             <div className="flex justify-between"><span className="text-[9px] font-black text-indigo-300 uppercase">Banco/Ag/Conta</span><p className="text-[10px] font-bold text-slate-800">{selectedRequest.bank} / {selectedRequest.agency} / {selectedRequest.account}</p></div>
+                             <div className="flex justify-between"><span className="text-[9px] font-black text-indigo-300 uppercase">Tipo</span><p className="text-[10px] font-bold text-slate-800">{selectedRequest.accountType}</p></div>
+                          </div>
+                        )}
+                        {selectedRequest.orderNumbers && (
+                          <div className="pt-4 border-t border-indigo-100/50 flex items-center"><Info size={16} className="text-indigo-400 mr-2"/><p className="text-xs font-bold text-slate-800 uppercase tracking-tighter">Pedido (OC): {selectedRequest.orderNumbers}</p></div>
+                        )}
                       </div>
                    </section>
                    <section className="space-y-4">
@@ -417,6 +384,14 @@ const DashboardFinanceiro: React.FC = () => {
                     {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <Globe size={16} className="mr-2" />} Confirmar Compartilhamento
                   </button>
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between border-b pb-4">
+                 <h4 className="text-sm font-black text-slate-800 uppercase italic">Histórico de Regionais</h4>
+                 <div className="flex bg-gray-100 p-1 rounded-xl">
+                    <button onClick={() => setSharedStatusFilter('PENDENTE')} className={`px-4 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${sharedStatusFilter === 'PENDENTE' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>Pendentes</button>
+                    <button onClick={() => setSharedStatusFilter('TODOS')} className={`px-4 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${sharedStatusFilter === 'TODOS' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>Ver Todos</button>
+                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-8">
