@@ -1,3 +1,4 @@
+
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { authService } from './authService';
 
@@ -39,14 +40,13 @@ const FIELD_MAP = {
 };
 
 /**
- * TAREFA 1: Função auxiliar para detectar a chave real do campo ID_SOL no fields do Graph
+ * Função auxiliar para detectar a chave real do campo ID_SOL no fields do Graph
  */
 const detectIdSolFieldKey = (fieldsObj: any): string | null => {
   if (!fieldsObj) return null;
   if (fieldsObj.ID_SOL !== undefined) return "ID_SOL";
 
   const keys = Object.keys(fieldsObj);
-  // Procura por qualquer chave que contenha ID e SOL (ex: ID_x005f_SOL, id_sol, IdSol)
   const found = keys.find(k => k.toLowerCase().includes("id") && k.toLowerCase().includes("sol"));
   return found || null;
 };
@@ -120,9 +120,13 @@ export const sharepointService = {
 
   getAllSharePointUsers: async (): Promise<any[]> => {
     try {
-      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Status,Id`;
+      // CORREÇÃO: Removido campo 'Status' inexistente e adicionado 'Title' (Título)
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Title,Id`;
       const response = await spRestFetch(endpoint);
-      if (!response.ok) return [];
+      if (!response.ok) {
+        console.error("Erro na resposta da lista de usuários:", response.status);
+        return [];
+      }
       const data = await response.json();
       return data.d?.results || [];
     } catch (e) {
@@ -212,9 +216,6 @@ export const sharepointService = {
         if ((data as any)[key] !== undefined) fields[spField] = (data as any)[key];
       });
 
-      console.log("[DEBUG-UPDATE] Payload:", fields);
-      console.log("[DEBUG-UPDATE] GraphID:", graphId);
-
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
@@ -223,32 +224,13 @@ export const sharepointService = {
       });
       
       if (!response.ok) {
-        let errorDetail = `Status ${response.status}`;
-        try {
-          const responseClone = response.clone();
-          try {
-            const errorJson = await responseClone.json();
-            errorDetail = JSON.stringify(errorJson);
-          } catch {
-            errorDetail = await response.text();
-          }
-        } catch {
-          errorDetail = "Não foi possível ler o erro.";
-        }
-        
-        console.error("[DEBUG-UPDATE] Erro no update:", response.status, errorDetail);
-        alert(`[ERRO UPDATE] ${response.status}: ${errorDetail.substring(0, 100)}`);
         return null;
       }
       
       const result = await response.json();
-      console.log("[DEBUG-UPDATE] Sucesso:", result);
-      alert("[SUCESSO UPDATE] Dados salvos!");
-      
       return result;
     } catch (e: any) {
       console.error("Erro crítico updateRequest:", e);
-      alert(`[ERRO CRÍTICO] ${e.message}`);
       return null;
     }
   },
@@ -328,7 +310,6 @@ export const sharepointService = {
 
   deleteAttachment: async (listGuid: string, itemId: string, fileName: string): Promise<boolean> => {
     try {
-      console.log(`[DEBUG-SP] Tentando deletar anexo: ${fileName} do item ${itemId} na lista ${listGuid}`);
       const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/getByFileName('${fileName}')`;
       const response = await spRestFetch(url, {
         method: 'POST',
@@ -336,7 +317,6 @@ export const sharepointService = {
           'X-HTTP-Method': 'DELETE'
         }
       });
-      console.log(`[DEBUG-SP] Resultado deleção: ${response.status} ${response.statusText}`);
       return response.ok;
     } catch (e) {
       console.error("[DEBUG-SP] Erro ao deletar anexo:", e);
@@ -346,7 +326,6 @@ export const sharepointService = {
 
   uploadAttachment: async (listGuid: string, itemId: string, file: File): Promise<boolean> => {
     try {
-      console.log(`[DEBUG-SP] Subindo arquivo: ${file.name} para item ${itemId}`);
       const spToken = await authService.getSharePointToken();
       const arrayBuffer = await file.arrayBuffer();
       const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/add(FileName='${file.name}')`;
@@ -360,7 +339,6 @@ export const sharepointService = {
         },
         body: arrayBuffer
       });
-      console.log(`[DEBUG-SP] Resultado upload: ${response.status} ${response.statusText}`);
       return response.ok;
     } catch (e) {
       console.error("[DEBUG-SP] Erro ao subir anexo:", e);
@@ -370,27 +348,21 @@ export const sharepointService = {
 
   deleteSecondaryItemsByRequestId: async (requestId: string): Promise<void> => {
     try {
-      console.log(`[DEBUG-SP] Buscando itens secundários para ID_SOL: ${requestId}`);
       const filter = `ID_SOL eq '${requestId}'`;
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
       const res = await spRestFetch(url);
       if (res.ok) {
         const data = await res.json();
         const items = data.d?.results || [];
-        console.log(`[DEBUG-SP] Encontrados ${items.length} itens secundários para remover.`);
         for (const item of items) {
-          console.log(`[DEBUG-SP] Deletando item secundário ID: ${item.Id}...`);
-          const delRes = await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
+          await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
             method: 'POST',
             headers: { 
               'X-HTTP-Method': 'DELETE', 
               'IF-MATCH': '*' 
             }
           });
-          console.log(`[DEBUG-SP] Deleção item ${item.Id} status: ${delRes.status}`);
         }
-      } else {
-        console.error(`[DEBUG-SP] Falha ao buscar itens secundários: ${res.status}`);
       }
     } catch (e) {
       console.error("[DEBUG-SP] Erro ao limpar lista secundária:", e);
@@ -399,9 +371,6 @@ export const sharepointService = {
 
   createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
     try {
-      console.log(`[DEBUG-SP] Criando item secundário para ID_SOL: ${requestId} com arquivo: ${file.name}`);
-      alert(`[TESTE] Criando item secundário para ID_SOL: ${requestId}`); 
-      
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
       const body = JSON.stringify({
         'ID_SOL': requestId,
@@ -417,28 +386,16 @@ export const sharepointService = {
         }
       });
 
-      console.log(`[DEBUG-SP] Status criação item secundário: ${res.status}`);
-
       if (res.ok) {
         const data = await res.json();
         const newItemId = data.Id || data.d?.Id;
-        console.log(`[DEBUG-SP] Item secundário criado. ID: ${newItemId}`);
-        alert(`[TESTE] Item criado! ID: ${newItemId}. Subindo arquivo...`);
-
         const uploadSuccess = await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
-        console.log(`[DEBUG-SP] Upload finalizado. Sucesso: ${uploadSuccess}`);
-        alert(`[TESTE] Upload boleto: ${uploadSuccess ? 'SUCESSO' : 'FALHOU'}`);
-        
         return uploadSuccess;
       } else {
-        const errorText = await res.text();
-        console.error(`[DEBUG-SP] Erro ao criar item: ${res.status} - ${errorText}`);
-        alert(`[ERRO] Falha criar item: ${res.status}. Ver console.`);
         return false;
       }
     } catch (e: any) {
       console.error("[DEBUG-SP] Exceção ao criar item secundário:", e);
-      alert(`[ERRO CRÍTICO] ${e.message}`);
       return false;
     }
   },
@@ -471,86 +428,43 @@ export const sharepointService = {
     let pageCount = 0;
     let allMatches: any[] = [];
     let idKey: string | null = null;
-    const MAX_PAGES = 30; // Segurana para não travar o app em listas gigantescas
+    const MAX_PAGES = 30; 
 
     try {
-      console.log("[DEBUG-HISTORY] 🔍 Iniciando busca paginada completa...");
-      console.log("[DEBUG-HISTORY] 🎯 RequestId alvo:", requestId);
-
       while (nextLink && pageCount < MAX_PAGES) {
         pageCount++;
-        console.log("[DEBUG-HISTORY] 📄 Lendo página", pageCount, "...");
-
         const response = await graphFetch(nextLink, accessToken);
-        if (!response.ok) {
-          console.error("[DEBUG-HISTORY] ❌ Falha na página", pageCount, ":", response.status);
-          break;
-        }
+        if (!response.ok) break;
 
         const data = await response.json();
         const pageItems = data.value || [];
         nextLink = data['@odata.nextLink'] || null;
 
-        if (pageItems.length === 0) {
-          console.log("[DEBUG-HISTORY] 📭 Página vazia. Encerrando.");
-          break;
-        }
+        if (pageItems.length === 0) break;
 
-        // Detecta a chave ID_SOL apenas na primeira página com dados
         if (!idKey) {
           for (const item of pageItems) {
             idKey = detectIdSolFieldKey(item.fields);
-            if (idKey) {
-              console.log("[DEBUG-HISTORY] 🔑 Campo ID_SOL detectado como:", idKey);
-              break;
-            }
+            if (idKey) break;
           }
         }
 
         if (idKey) {
-          // Filtro robusto para a página atual
           const matches = pageItems.filter((item: any) => {
             const fieldValue = item.fields?.[idKey!];
             if (fieldValue === undefined || fieldValue === null) return false;
-
             const fValueStr = fieldValue.toString().trim();
             const targetStr = requestId.toString().trim();
-
-            // Comparação direta string
             if (fValueStr === targetStr) return true;
-
-            // Comparação numérica de segurança
             const nTarget = parseInt(targetStr, 10);
             const nValue = typeof fieldValue === 'number' ? fieldValue : parseInt(fValueStr, 10);
             if (!isNaN(nTarget) && !isNaN(nValue) && nTarget === nValue) return true;
-
             return false;
           });
-
-          if (matches.length > 0) {
-            console.log("[DEBUG-HISTORY] ✅ Encontrados", matches.length, "registros na página", pageCount, "!");
-            allMatches = [...allMatches, ...matches];
-            // ⚠️ NÃO FAZER BREAK AQUI - continuar buscando nas próximas páginas
-          }
-
-          // Log de diagnóstico: mostra o que foi lido nesta página
-          if (pageItems.length > 0) {
-            const sampleIds = pageItems.slice(0, 5).map((x: any) => x.fields?.[idKey!]);
-            console.log("[DEBUG-HISTORY] 📋 Amostra IDs (Página", pageCount, "):", sampleIds);
-          }
+          if (matches.length > 0) allMatches = [...allMatches, ...matches];
         }
       }
 
-      console.log("[DEBUG-HISTORY] 📊 Total acumulado:", allMatches.length, "registros em", pageCount, "páginas.");
-
-      if (allMatches.length === 0) {
-        console.warn("[DEBUG-HISTORY] ⚠️ Nenhum registro encontrado após busca completa.");
-        alert(`[INFO] Histórico não localizado para ID ${requestId}. Buscado em ${pageCount} páginas.`);
-      } else {
-        alert(`[SUCESSO] ✅ ${allMatches.length} registros de histórico encontrados!`);
-      }
-
-      // Remove duplicatas (por segurança) e ordena por data desc
       const uniqueMatches = Array.from(new Map(allMatches.map(item => [item.id, item])).values());
       uniqueMatches.sort((a: any, b: any) => new Date(b.createdDateTime).getTime() - new Date(a.createdDateTime).getTime());
 
@@ -564,8 +478,7 @@ export const sharepointService = {
       }));
 
     } catch (e: any) {
-      console.error("[DEBUG-HISTORY] 💥 Erro crítico no loop de paginação:", e);
-      alert(`[ERRO CRÍTICO HISTÓRICO] ${e.message}`);
+      console.error("[DEBUG-HISTORY] Erro crítico:", e);
       return [];
     }
   }

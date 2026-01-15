@@ -33,36 +33,37 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
            // Em telas pequenas fecha ao clicar, em desktop mantém estado
            if (window.innerWidth < 1024) setIsSidebarOpen(false);
         }}
-        className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${
-          isActive ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-600 hover:bg-gray-100'
+        className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+          isActive 
+            ? 'bg-blue-600 text-white shadow-lg scale-[1.02]' 
+            : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600'
         }`}
       >
-        <Icon size={20} />
-        <span className="font-semibold text-sm">{label}</span>
+        <Icon size={20} className={isActive ? 'animate-pulse' : ''} />
+        <span className="font-bold text-sm uppercase tracking-tight">{label}</span>
       </Link>
     );
   };
 
-  const handleSwitchAccount = () => {
+  const handleSwitchAccount = (e: React.MouseEvent) => {
+    e.preventDefault();
     logout();
-    // O reload/redirecionamento já acontece pelo logout no App.tsx
-    // Com a configuração prompt: "select_account" no authService, o usuário poderá escolher outra conta.
   };
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden relative">
-      {/* Overlay Mobile (visível apenas em telas menores que lg quando sidebar aberta) */}
+      {/* Overlay Mobile */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40 lg:hidden transition-opacity duration-300"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 flex flex-col shadow-xl transform transition-all duration-300 ease-in-out
-        lg:relative lg:shadow-sm
+        fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 flex flex-col shadow-2xl transform transition-all duration-300 ease-in-out
+        lg:relative lg:translate-x-0 lg:shadow-sm
         ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:hidden'}
       `}>
         <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
@@ -97,7 +98,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <UserCircle size={24} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-gray-900 truncate">{user?.name}</p>
+              <p className="text-sm font-bold text-gray-900 truncate uppercase italic">{user?.name}</p>
               <p className="text-[10px] text-gray-400 font-black uppercase tracking-tighter truncate">{user?.role}</p>
             </div>
           </div>
@@ -111,7 +112,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <span>Trocar Conta</span>
             </button>
             <button 
-              onClick={logout}
+              onClick={(e) => { e.preventDefault(); logout(); }}
               className="flex items-center space-x-3 w-full px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors font-black text-xs uppercase tracking-widest"
             >
               <LogOut size={18} />
@@ -142,7 +143,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </h2>
           </div>
           <div className="flex items-center shrink-0">
-            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100">V1.3.2</span>
+            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100 shadow-sm">V1.3.3</span>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-4 lg:p-10 bg-gray-50/50 custom-scrollbar">
