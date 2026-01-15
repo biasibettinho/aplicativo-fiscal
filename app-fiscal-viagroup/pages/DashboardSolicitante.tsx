@@ -285,9 +285,10 @@ const DashboardSolicitante: React.FC = () => {
       {!isSidebarOpen && (
         <button 
           onClick={() => setIsSidebarOpen(true)}
-          className="absolute left-4 top-4 z-20 p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-lg hover:bg-gray-50 transition-all"
+          className="absolute left-6 top-6 z-20 p-3 bg-white border border-gray-200 text-blue-600 rounded-2xl shadow-xl hover:bg-gray-50 transition-all active:scale-95"
+          title="Abrir Lista"
         >
-          <PanelLeft size={20} />
+          <PanelLeft size={22} />
         </button>
       )}
 
@@ -312,6 +313,7 @@ const DashboardSolicitante: React.FC = () => {
               <button 
                 onClick={() => setIsSidebarOpen(false)}
                 className="p-2 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Esconder Lista"
               >
                 <PanelLeftClose size={20} />
               </button>
@@ -377,7 +379,7 @@ const DashboardSolicitante: React.FC = () => {
         
         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar min-w-[300px]">
           {isLoading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={32} /></div>}
-          {!isLoading && filteredRequests.length === 0 && <div className="text-center py-10 text-gray-400 font-bold text-xs uppercase italic">Nenhuma nota encontrada.</div>}
+          {!isLoading && filteredRequests.length === 0 && <div className="text-center py-10 text-gray-300 font-bold text-xs uppercase italic">Nenhuma nota encontrada.</div>}
           {!isLoading && filteredRequests.map(req => (
             <button 
               key={req.id} 

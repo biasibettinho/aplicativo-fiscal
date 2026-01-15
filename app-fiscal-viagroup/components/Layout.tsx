@@ -18,7 +18,7 @@ import {
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { authState, logout } = useAuth();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const location = useLocation();
   const user = authState.user;
 
@@ -29,7 +29,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return (
       <Link 
         to={to} 
-        onClick={() => setIsSidebarOpen(false)}
+        onClick={() => {
+           // Em telas pequenas fecha ao clicar, em desktop mantém estado
+           if (window.innerWidth < 1024) setIsSidebarOpen(false);
+        }}
         className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${
           isActive ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-600 hover:bg-gray-100'
         }`}
@@ -42,7 +45,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden relative">
-      {/* Overlay Mobile */}
+      {/* Overlay Mobile (visível apenas em telas menores que lg quando sidebar aberta) */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300"
@@ -52,9 +55,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-gray-200 flex flex-col shadow-xl transform transition-transform duration-300 ease-in-out
-        lg:relative lg:translate-x-0 lg:shadow-sm
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 flex flex-col shadow-xl transform transition-all duration-300 ease-in-out
+        lg:relative lg:shadow-sm
+        ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:hidden'}
       `}>
         <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
           <img 
@@ -62,7 +65,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             alt="Via Group" 
             className="h-8 object-contain"
           />
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden p-1 text-gray-400">
+          <button onClick={() => setIsSidebarOpen(false)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -116,12 +119,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <main className="flex-1 flex flex-col overflow-hidden w-full">
         <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-6 lg:px-10 shrink-0">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-2 text-gray-600 lg:hidden hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              <Menu size={24} />
-            </button>
+            {!isSidebarOpen && (
+              <button 
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+                <Menu size={24} />
+              </button>
+            )}
             <h2 className="text-lg lg:text-xl font-black text-gray-800 tracking-tight uppercase italic truncate">
               {location.pathname === '/solicitante' && 'Fluxo de Notas'}
               {location.pathname === '/fiscal' && 'Análise Fiscal'}
@@ -131,7 +136,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </h2>
           </div>
           <div className="flex items-center shrink-0">
-            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100">V1.3.0</span>
+            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100">V1.3.1</span>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-4 lg:p-10 bg-gray-50/50 custom-scrollbar">
