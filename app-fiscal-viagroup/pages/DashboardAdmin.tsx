@@ -24,18 +24,27 @@ const DashboardAdmin: React.FC = () => {
       // Busca da lista App_Gestao_Usuarios oficial via GUID fixo no service
       const users = await sharepointService.getAllSharePointUsers();
       
-      // LOG DE DIAGNÓSTICO PARA DESENVOLVIMENTO (TAREFA 2)
+      // LOG DE DIAGNÓSTICO
       console.log("DashboardAdmin: Tentando carregar usuários do SharePoint...");
       console.log("Resposta bruta da API (SharePoint Users):", users);
       
       if (users && users.length > 0) {
-        setSpUsers(users);
+        // Normalização garantida dos campos
+        const mappedUsers = users.map((u: any) => ({
+          Id: u.Id || u.ID,
+          EmailUsuario: u.EmailUsuario || 'Sem e-mail',
+          Setor: u.Setor || 'N/A',
+          Nivel: u.Nivel || 'N/A',
+          Status: u.Status || 'Inativo'
+        }));
+        setSpUsers(mappedUsers);
       } else {
         console.warn("DashboardAdmin: O array de usuários retornou vazio.");
+        setSpUsers([]);
       }
     } catch (e) {
-      // LOG DE ERRO DETALHADO (TAREFA 2)
       console.error("DashboardAdmin: Erro crítico ao carregar App_Gestao_Usuarios:", e);
+      setSpUsers([]);
     } finally {
       setIsLoadingSp(false);
     }
@@ -108,12 +117,12 @@ const DashboardAdmin: React.FC = () => {
                     </td>
                     <td className="px-8 py-4">
                       <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter bg-blue-50 text-blue-600 border border-blue-100">
-                        {user.Setor || 'N/A'}
+                        {user.Setor}
                       </span>
                     </td>
                     <td className="px-8 py-4">
                       <span className="px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter bg-indigo-50 text-indigo-600 border border-indigo-100">
-                        {user.Nivel || 'N/A'}
+                        {user.Nivel}
                       </span>
                     </td>
                     <td className="px-8 py-4">

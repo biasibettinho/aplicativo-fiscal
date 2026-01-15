@@ -18,14 +18,18 @@ export const authService = {
 
   loginWithMicrosoft: async (): Promise<AuthState> => {
     try {
-      const loginResponse = await msalInstance.loginPopup(loginRequest);
+      // Força o prompt de seleção de conta para permitir trocar de usuário
+      const loginResponse = await msalInstance.loginPopup({
+        ...loginRequest,
+        prompt: "select_account"
+      });
       const account = loginResponse.account;
       
       if (!account) throw new Error("Falha ao obter conta Microsoft.");
 
       const email = account.username.toLowerCase();
       
-      // CRÍTICO: Consulta obrigatória à lista SharePoint App_Gestao_Usuarios para capturar a Role correta
+      // Consulta obrigatória à lista SharePoint App_Gestao_Usuarios para capturar a Role correta
       const role = await sharepointService.getUserRoleFromSharePoint(email);
 
       const users = db.getUsers();
@@ -36,7 +40,7 @@ export const authService = {
           id: account.localAccountId,
           email: email,
           name: account.name || email.split('@')[0],
-          role: role, // Role vinda do SharePoint
+          role: role, 
           isActive: true,
           department: (account.idTokenClaims as any)?.department || '',
           createdAt: new Date().toISOString(),

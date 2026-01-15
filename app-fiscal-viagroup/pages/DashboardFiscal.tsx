@@ -46,6 +46,7 @@ const DashboardFiscal: React.FC = () => {
 
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
+  // Função de carga com suporte a modo silencioso
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
     if (!silent) setIsLoading(true);
@@ -55,11 +56,18 @@ const DashboardFiscal: React.FC = () => {
     } catch (e) {
       console.error(e);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
-  useEffect(() => { loadData(); }, [authState.user, authState.token]);
+  useEffect(() => { loadData(false); }, [authState.user, authState.token]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadData(true);
+    }, 30000); // 30 segundos
+    return () => clearInterval(interval);
+  }, [authState.user, authState.token]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
 
@@ -351,7 +359,7 @@ const DashboardFiscal: React.FC = () => {
                           {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
                             <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
                               <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                              <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-indigo-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
+                              <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
                             </div>
                           )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>}
                         </div>

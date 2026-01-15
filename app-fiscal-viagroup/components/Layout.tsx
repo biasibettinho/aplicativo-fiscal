@@ -43,6 +43,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     );
   };
 
+  const handleSwitchAccount = () => {
+    logout();
+    // O reload/redirecionamento já acontece pelo logout no App.tsx
+    // Com a configuração prompt: "select_account" no authService, o usuário poderá escolher outra conta.
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden relative">
       {/* Overlay Mobile (visível apenas em telas menores que lg quando sidebar aberta) */}
@@ -98,7 +104,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           
           <div className="space-y-2">
             <button 
-              onClick={logout}
+              onClick={handleSwitchAccount}
               className="flex items-center space-x-3 w-full px-4 py-3 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-colors font-black text-xs uppercase tracking-widest"
             >
               <RefreshCw size={18} />
@@ -136,7 +142,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </h2>
           </div>
           <div className="flex items-center shrink-0">
-            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100">V1.3.1</span>
+            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100">V1.3.2</span>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-4 lg:p-10 bg-gray-50/50 custom-scrollbar">

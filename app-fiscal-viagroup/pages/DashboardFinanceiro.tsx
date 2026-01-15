@@ -1,3 +1,4 @@
+
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
@@ -151,10 +152,10 @@ const DashboardFinanceiro: React.FC = () => {
     }
   };
 
-  useEffect(() => { loadData(); }, [authState.user, authState.token]);
+  useEffect(() => { loadData(false); }, [authState.user, authState.token]);
 
   useEffect(() => {
-    const interval = setInterval(() => { loadData(true); }, 60000);
+    const interval = setInterval(() => { loadData(true); }, 30000); // Polling 30s
     return () => clearInterval(interval);
   }, [authState.user, authState.token]);
 
