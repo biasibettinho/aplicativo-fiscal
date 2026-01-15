@@ -235,11 +235,18 @@ const DashboardFinanceiro: React.FC = () => {
     setIsProcessingAction(true);
 
     try {
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+      // Injeção cirúrgica de campo de SLA no payload de finalização
+      const payload: any = {
         status: targetStatus,
         approverObservation: comment,
         errorObservation: ''
-      });
+      };
+
+      if (isMaster) {
+        payload.Datafinaliza_x00e7__x00e3_o = new Date().toISOString();
+      }
+
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
         ATUALIZACAO: targetStatus,
         OBSERVACAO: comment,
@@ -527,7 +534,7 @@ const DashboardFinanceiro: React.FC = () => {
                              {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
                                <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
                                  <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                                 <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-indigo-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
+                                 <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
                                </div>
                              )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>}
                           </div>

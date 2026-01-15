@@ -64,6 +64,7 @@ const DashboardSolicitante: React.FC = () => {
     if (!silent) setIsLoading(true);
     try {
       const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
+      // Filtra apenas solicitações criadas pelo próprio usuário logado
       setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id || r.createdByName === authState.user?.name));
     } catch (e) { 
       console.error(e); 

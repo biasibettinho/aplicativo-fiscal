@@ -123,11 +123,16 @@ const DashboardFiscal: React.FC = () => {
     setIsProcessingAction(true);
 
     try {
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+      // Injeção cirúrgica de campos de SLA no payload
+      const payload: any = {
         status: targetStatus,
         approverObservation: comment,
-        errorObservation: ''
-      });
+        errorObservation: '',
+        Dataenvio_fiscal: new Date().toISOString(),
+        Dataenvio_financeiro: new Date().toISOString()
+      };
+
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
         ATUALIZACAO: targetStatus,
         OBSERVACAO: comment,
@@ -182,7 +187,21 @@ const DashboardFiscal: React.FC = () => {
                            r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            r.id.toString().includes(searchTerm);
       const matchesBranch = branchFilter === '' || r.branch === branchFilter;
-      const matchesStatus = statusFilter === '' || r.status === statusFilter;
+      
+      // Ajuste na lógica de filtro de status para suportar as novas labels amigáveis
+      let matchesStatus = true;
+      if (statusFilter === 'Pendente') {
+        matchesStatus = r.status === RequestStatus.PENDENTE;
+      } else if (statusFilter === 'Em Análise') {
+        matchesStatus = r.status === RequestStatus.ANALISE;
+      } else if (statusFilter === 'Erro - Fiscal') {
+        matchesStatus = r.status === RequestStatus.ERRO_FISCAL;
+      } else if (statusFilter === 'Aprovado') {
+        matchesStatus = r.status === RequestStatus.APROVADO;
+      } else if (statusFilter !== '') {
+        matchesStatus = r.status === statusFilter;
+      }
+
       let matchesDate = true;
       if (dateFilter) {
         matchesDate = new Date(r.createdAt).toISOString().split('T')[0] === dateFilter;
@@ -219,6 +238,17 @@ const DashboardFiscal: React.FC = () => {
               <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
                 <option value="">Todas</option>
                 {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            {/* Filtro de Status Atualizado */}
+            <div className="flex flex-col">
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Filter size={10} className="mr-1"/> Status</label>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
+                <option value="">Todas</option>
+                <option value="Pendente">Pendente</option>
+                <option value="Em Análise">Em Análise</option>
+                <option value="Erro - Fiscal">Erro - Fiscal</option>
+                <option value="Aprovado">Aprovado</option>
               </select>
             </div>
           </div>
