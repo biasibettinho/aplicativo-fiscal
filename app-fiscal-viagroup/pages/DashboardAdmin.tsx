@@ -33,6 +33,7 @@ const DashboardAdmin: React.FC = () => {
   const loadSpUsers = async () => {
     setIsLoadingSp(true);
     try {
+      // Busca da lista App_Gestao_Usuarios oficial via GUID fixo
       const users = await sharepointService.getAllSharePointUsers();
       setSpUsers(users);
     } catch (e) {
@@ -62,15 +63,14 @@ const DashboardAdmin: React.FC = () => {
 
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
-    // Nota: Por restrição, não alteramos lógica de gravação, apenas exibição.
-    // Em um sistema real, aqui você dispararia um update para a lista App_Gestao_Usuarios
     setIsModalOpen(false);
     setEditingUser(null);
   };
 
   const filteredSpUsers = spUsers.filter(u => 
     (u.EmailUsuario || '').toLowerCase().includes(search.toLowerCase()) ||
-    (u.Setor || '').toLowerCase().includes(search.toLowerCase())
+    (u.Setor || '').toLowerCase().includes(search.toLowerCase()) ||
+    (u.Nivel || '').toLowerCase().includes(search.toLowerCase())
   );
 
   const filteredTenantUsers = tenantUsers.filter(u => 
@@ -80,33 +80,33 @@ const DashboardAdmin: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-        <div className="relative max-w-sm w-full">
+      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-4">
+        <div className="relative w-full md:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input 
             type="text" 
             placeholder="Buscar na lista SharePoint..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full pl-10 pr-4 py-2 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
           />
         </div>
-        <div className="flex space-x-3">
+        <div className="flex space-x-2 w-full md:w-auto">
           <button 
             onClick={loadSpUsers}
             disabled={isLoadingSp}
-            className="flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-xl font-bold hover:bg-blue-100 transition-all border border-blue-100"
+            className="flex-1 md:flex-none flex items-center justify-center px-4 py-2 bg-blue-50 text-blue-700 rounded-xl font-black text-[10px] uppercase hover:bg-blue-100 transition-all border border-blue-100 shadow-sm"
           >
-            {isLoadingSp ? <Loader2 size={18} className="animate-spin mr-2" /> : <RefreshCw size={18} className="mr-2" />}
-            Atualizar SharePoint
+            {isLoadingSp ? <Loader2 size={16} className="animate-spin mr-2" /> : <RefreshCw size={16} className="mr-2" />}
+            Sync SharePoint
           </button>
           <button 
             onClick={loadTenantUsers}
             disabled={isLoadingTenant}
-            className="flex items-center px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
+            className="flex-1 md:flex-none flex items-center justify-center px-4 py-2 bg-indigo-50 text-indigo-700 rounded-xl font-black text-[10px] uppercase hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
           >
-            {isLoadingTenant ? <RefreshCw size={18} className="animate-spin mr-2" /> : <Globe size={18} className="mr-2" />}
-            Sincronizar Tenant
+            {isLoadingTenant ? <RefreshCw size={16} className="animate-spin mr-2" /> : <Globe size={16} className="mr-2" />}
+            Sync Tenant
           </button>
         </div>
       </div>
@@ -115,47 +115,47 @@ const DashboardAdmin: React.FC = () => {
         <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="p-4 border-b bg-gray-50 flex items-center">
              <UserCheck size={18} className="text-blue-600 mr-2" />
-             <h3 className="text-sm font-black uppercase text-gray-700 tracking-tight">Usuários do Sistema (SharePoint)</h3>
+             <h3 className="text-xs font-black uppercase text-gray-700 tracking-tight italic">Usuários (App_Gestao_Usuarios)</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Usuário</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Papel (Setor + Nível)</th>
-                  <th className="px-6 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-widest">Status</th>
-                  <th className="px-6 py-4 text-right text-[10px] font-bold text-gray-400 uppercase tracking-widest">Ações</th>
+                  <th className="px-6 py-4 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest">E-mail</th>
+                  <th className="px-6 py-4 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest">Perfil</th>
+                  <th className="px-6 py-4 text-left text-[9px] font-black text-gray-400 uppercase tracking-widest">Status</th>
+                  <th className="px-6 py-4 text-right text-[9px] font-black text-gray-400 uppercase tracking-widest">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {isLoadingSp ? (
-                  <tr><td colSpan={4} className="p-10 text-center text-gray-400 italic">Carregando lista SharePoint...</td></tr>
+                  <tr><td colSpan={4} className="p-10 text-center"><Loader2 className="animate-spin text-blue-600 mx-auto" size={24} /></td></tr>
+                ) : filteredSpUsers.length === 0 ? (
+                  <tr><td colSpan={4} className="p-10 text-center text-gray-300 font-bold uppercase italic text-xs">Vazio</td></tr>
                 ) : filteredSpUsers.map((user, idx) => (
                   <tr key={user.Id || idx} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4">
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-gray-900 truncate max-w-[200px]">{user.EmailUsuario || 'Sem e-mail'}</span>
+                      <span className="text-xs font-bold text-gray-900 truncate block max-w-[250px]">{user.EmailUsuario}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1">
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-blue-50 text-blue-600 border border-blue-100">
+                          {user.Setor}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-tighter bg-indigo-50 text-indigo-600 border border-indigo-100">
+                          {user.Nivel}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter bg-gray-100 text-gray-600`}>
-                        {user.Setor} {user.Nivel}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-[10px] font-black uppercase ${user.Status === 'Ativo' ? 'text-green-600' : 'text-red-400'}`}>
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${user.Status === 'Ativo' ? 'text-green-600' : 'text-red-400'}`}>
                         {user.Status || 'N/A'}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end space-x-2">
-                        <button 
-                          className="p-2 text-gray-400 hover:text-blue-600 rounded-lg transition-colors"
-                          title="Editar (Visualização)"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                      </div>
+                      <button className="p-2 text-gray-400 hover:text-blue-600 rounded-lg transition-colors">
+                        <Edit3 size={16} />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -165,41 +165,45 @@ const DashboardAdmin: React.FC = () => {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[600px]">
-          <div className="p-4 border-b bg-indigo-900 text-white flex flex-col space-y-3">
+          <div className="p-4 border-b bg-slate-900 text-white flex flex-col space-y-3">
              <div className="flex items-center justify-between">
                 <div className="flex items-center">
-                   <Globe size={18} className="mr-2 text-indigo-300" />
-                   <h3 className="text-sm font-black uppercase tracking-tight">Usuários do Tenant</h3>
+                   <Globe size={18} className="mr-2 text-blue-400" />
+                   <h3 className="text-xs font-black uppercase tracking-widest italic">Tenant Microsoft</h3>
                 </div>
-                <span className="bg-indigo-800 text-[10px] px-2 py-0.5 rounded-full font-bold">{filteredTenantUsers.length}</span>
+                <span className="bg-slate-800 text-[10px] px-2 py-0.5 rounded-full font-bold">{filteredTenantUsers.length}</span>
              </div>
              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-indigo-300" size={14} />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
                 <input 
                   type="text" 
-                  placeholder="Pesquisar no Tenant..."
+                  placeholder="Pesquisar..."
                   value={tenantSearch}
                   onChange={e => setTenantSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-indigo-800/50 border-0 rounded-lg text-xs text-white placeholder:text-indigo-300 outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="w-full pl-8 pr-3 py-2 bg-slate-800 border-0 rounded-xl text-xs text-white placeholder:text-gray-500 outline-none focus:ring-1 focus:ring-blue-500"
                 />
              </div>
           </div>
-          <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+          <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {isLoadingTenant ? (
-              <div className="p-10 text-center"><Loader2 className="animate-spin text-indigo-300 inline" /></div>
+              <div className="p-10 text-center"><Loader2 className="animate-spin text-blue-500 inline" /></div>
+            ) : filteredTenantUsers.length === 0 ? (
+              <div className="p-10 text-center text-gray-300 font-bold uppercase italic text-[10px]">Nenhum usuário</div>
             ) : filteredTenantUsers.map(tu => {
                const isAlreadyRegistered = spUsers.some(u => (u.EmailUsuario || '').toLowerCase() === tu.email?.toLowerCase());
                return (
-                <div key={tu.id} className="p-4 flex items-center justify-between hover:bg-gray-50 group">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-gray-900 truncate">{tu.name}</p>
-                    <p className="text-[10px] text-gray-500 font-mono truncate">{tu.email}</p>
+                <div key={tu.id} className="p-4 flex items-center justify-between hover:bg-gray-50 group transition-colors">
+                  <div className="flex-1 min-w-0 pr-4">
+                    <p className="text-[11px] font-black text-gray-900 uppercase italic truncate">{tu.name}</p>
+                    <p className="text-[9px] text-gray-400 font-bold truncate tracking-tighter">{tu.email}</p>
                   </div>
                   {isAlreadyRegistered ? (
-                    <UserCheck size={14} className="text-green-500 ml-3" />
+                    <div className="bg-green-100 p-1.5 rounded-lg text-green-600">
+                      <UserCheck size={14} />
+                    </div>
                   ) : (
                     <button 
-                      className="ml-3 p-1.5 bg-indigo-50 text-indigo-600 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-indigo-100"
+                      className="p-1.5 bg-blue-50 text-blue-600 rounded-lg lg:opacity-0 lg:group-hover:opacity-100 transition-all hover:bg-blue-100"
                     >
                       <UserPlus size={14} />
                     </button>
@@ -210,27 +214,6 @@ const DashboardAdmin: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-gray-900 p-6 flex justify-between items-center text-white">
-              <h3 className="text-xl font-bold">Gerenciar Usuário</h3>
-              <button onClick={() => setIsModalOpen(false)}><X /></button>
-            </div>
-            <form onSubmit={handleSaveUser} className="p-8 space-y-6">
-              <div>
-                <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">E-mail Corporativo</label>
-                <input type="email" disabled value={editingUser?.email || ''} className="w-full p-3 bg-gray-50 border-0 rounded-xl outline-none font-mono opacity-50" />
-              </div>
-              <p className="text-[10px] text-gray-400 italic">As alterações de papel devem ser feitas diretamente na lista App_Gestao_Usuarios no SharePoint para refletir no sistema.</p>
-              <div className="flex pt-4 space-x-3">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 text-gray-600 font-bold hover:bg-gray-100 rounded-xl">Fechar</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

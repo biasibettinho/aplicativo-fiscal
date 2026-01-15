@@ -65,7 +65,7 @@ const DashboardSolicitante: React.FC = () => {
       const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
       setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id || r.createdByName === authState.user?.name));
     } catch (e) { 
-      console.error("Erro ao sincronizar dados:", e); 
+      console.error(e); 
     } finally { 
       if (!silent) setIsLoading(false); 
     }
@@ -91,7 +91,7 @@ const DashboardSolicitante: React.FC = () => {
         setMainAttachments(main || []);
         setSecondaryAttachments(secondary || []);
       } catch (e) {
-        console.error("Erro crítico ao carregar anexos:", e);
+        console.error(e);
       } finally {
         setIsFetchingAttachments(false);
       }
@@ -163,17 +163,30 @@ const DashboardSolicitante: React.FC = () => {
       if (isEditing && selectedRequest) {
         // Regra de transição de status pós-correção
         let targetStatus = RequestStatus.PENDENTE;
+        let shouldResetShare = false;
+
         if (selectedRequest.status === RequestStatus.ERRO_FISCAL) {
           targetStatus = RequestStatus.PENDENTE;
+          shouldResetShare = true;
         } else if (selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) {
           targetStatus = RequestStatus.APROVADO;
+          shouldResetShare = true;
         }
 
-        const updatePayload = {
+        const updatePayload: any = {
           ...formData,
           status: targetStatus,
           approverObservation: 'Correção realizada pelo solicitante.'
         };
+
+        // Resetar campos de compartilhamento se necessário
+        if (shouldResetShare) {
+          updatePayload.sharedWithEmail = '';
+          updatePayload.sharedByName = '';
+          updatePayload.statusManual = '';
+          updatePayload.shareComment = '';
+          updatePayload.sharedWithUserId = '';
+        }
 
         setSubmissionStep('Atualizando dados da solicitação...');
         await sharepointService.updateRequest(authState.token, selectedRequest.graphId, updatePayload);
@@ -217,7 +230,6 @@ const DashboardSolicitante: React.FC = () => {
         });
 
         if (success) {
-          // Adiciona localmente como processando para feedback instantâneo
           const tempRequest: PaymentRequest = {
             ...submissionData,
             id: 'PROCESSANDO-' + Date.now(),
@@ -228,11 +240,11 @@ const DashboardSolicitante: React.FC = () => {
           setRequests(prev => [tempRequest, ...prev]);
           handleCancelCreate();
         } else {
-          alert("Erro na resposta do servidor de automação. Tente novamente.");
+          alert("Não foi possível processar a criação. Tente novamente em instantes.");
         }
       }
     } catch (e: any) {
-      console.error("ERRO NO SUBMIT:", e);
+      console.error(e);
       alert(`Erro no processamento: ${e.message}`);
     } finally {
       setIsSubmitting(false);
@@ -270,7 +282,6 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 relative">
-      {/* Botão de Abrir Sidebar (quando fechada) */}
       {!isSidebarOpen && (
         <button 
           onClick={() => setIsSidebarOpen(true)}
@@ -280,7 +291,6 @@ const DashboardSolicitante: React.FC = () => {
         </button>
       )}
 
-      {/* Overlay de Submissão */}
       {isSubmitting && (
         <div className="absolute inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center text-white">
           <div className="bg-white/10 p-8 rounded-[3rem] border border-white/10 shadow-2xl flex flex-col items-center max-w-sm">
@@ -295,9 +305,8 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       )}
 
-      {/* Sidebar de Listagem */}
-      <div className={`bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'w-[500px]' : 'w-0'}`}>
-        <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4 min-w-[500px]">
+      <div className={`bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'w-full lg:w-[450px]' : 'w-0'}`}>
+        <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4 min-w-[300px]">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <button 
@@ -366,7 +375,7 @@ const DashboardSolicitante: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar min-w-[500px]">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar min-w-[300px]">
           {isLoading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={32} /></div>}
           {!isLoading && filteredRequests.length === 0 && <div className="text-center py-10 text-gray-400 font-bold text-xs uppercase italic">Nenhuma nota encontrada.</div>}
           {!isLoading && filteredRequests.map(req => (
@@ -382,10 +391,9 @@ const DashboardSolicitante: React.FC = () => {
                     <div 
                       onClick={(e) => {
                         e.stopPropagation();
-                        alert(`⚠️ MOTIVO DA REPROVAÇÃO:\n\nMotivo: ${req.errorObservation || 'Não especificado'}\n\nComentário: ${req.approverObservation || 'Sem comentário adicional'}`);
+                        alert(`REPROVADA\n\nMotivo: ${req.errorObservation || 'N/A'}\nComentário: ${req.approverObservation || 'N/A'}`);
                       }}
                       className="p-1.5 text-red-600 bg-red-100 rounded-full animate-pulse cursor-help"
-                      title="Ver detalhes do erro"
                     >
                       <AlertTriangle size={14} />
                     </div>
@@ -403,22 +411,21 @@ const DashboardSolicitante: React.FC = () => {
         </div>
       </div>
 
-      {/* Área Principal */}
       <div className="flex-1 flex flex-col bg-gray-50 relative overflow-hidden">
         {isCreating ? (
           <div className="flex-1 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300 bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-            <header className="p-8 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm">
+            <header className="p-8 border-b border-white/5 flex justify-between items-center bg-white/5 backdrop-blur-sm shrink-0">
               <div className="flex items-center space-x-6">
                 <button onClick={handleCancelCreate} className="p-2.5 bg-white/10 text-white border border-white/10 rounded-xl hover:bg-white/20 transition-colors">
                   <ChevronLeft size={18} />
                 </button>
-                <h2 className="text-2xl font-black text-white uppercase italic leading-none tracking-tighter">
+                <h2 className="text-xl lg:text-2xl font-black text-white uppercase italic leading-none tracking-tighter">
                   {isEditing ? 'Corrigir Solicitação' : 'Nova Solicitação'}
                 </h2>
               </div>
             </header>
 
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 lg:p-10 custom-scrollbar">
               <div className="max-w-4xl mx-auto space-y-10 pb-20">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="col-span-2">
@@ -455,14 +462,14 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
 
                   {formData.paymentMethod === 'PIX' && (
-                    <div className="col-span-2 animate-in fade-in slide-in-from-top-4">
+                    <div className="col-span-2">
                       <label className="text-xs font-black text-blue-400 uppercase mb-2 block tracking-widest flex items-center"><Smartphone size={14} className="mr-2"/> Chave PIX</label>
                       <input required type="text" className="w-full p-4 bg-white/10 border border-blue-400/30 rounded-xl text-white font-bold" value={formData.pixKey} onChange={e => setFormData({...formData, pixKey: e.target.value})} />
                     </div>
                   )}
 
                   {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'TED' || formData.paymentMethod === 'DEPOSITO') && (
-                    <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4">
+                    <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="col-span-2 md:col-span-1">
                         <label className="text-xs font-black text-white/50 uppercase mb-2 block tracking-widest">Banco</label>
                         <input required type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.bank} onChange={e => setFormData({...formData, bank: e.target.value})} />
@@ -525,8 +532,8 @@ const DashboardSolicitante: React.FC = () => {
           </div>
         ) : selectedRequest ? (
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
-            <header className="p-8 bg-white border-b flex justify-between items-end shadow-sm">
-              <div className="flex items-center space-x-6">
+            <header className="p-6 lg:p-8 bg-white border-b flex flex-col lg:flex-row lg:justify-between lg:items-end shadow-sm gap-4 shrink-0">
+              <div className="flex items-center space-x-4">
                 {!isSidebarOpen && (
                   <button 
                     onClick={() => setIsSidebarOpen(true)}
@@ -535,116 +542,115 @@ const DashboardSolicitante: React.FC = () => {
                     <PanelLeft size={20} />
                   </button>
                 )}
-                <div>
-                  <div className="flex items-center space-x-6 mb-3">
-                    <span className="text-xs font-black text-gray-400 bg-gray-50 px-3 py-1 rounded-lg border">ID: {selectedRequest.id.includes('PROCESSANDO') ? '...' : selectedRequest.id}</span>
-                    <Badge status={selectedRequest.status} className="scale-100 ml-1" />
+                <div className="min-w-0">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <span className="text-[10px] font-black text-gray-400 bg-gray-50 px-2 py-0.5 rounded-lg border">ID: {selectedRequest.id.includes('PROCESSANDO') ? '...' : selectedRequest.id}</span>
+                    <Badge status={selectedRequest.status} className="scale-90" />
                   </div>
-                  <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[600px]">{selectedRequest.title}</h2>
+                  <h2 className="text-xl lg:text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-tight truncate max-w-full">{selectedRequest.title}</h2>
                 </div>
               </div>
               {canEdit && (
                 <button 
                   onClick={handleStartEdit}
-                  className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase italic flex items-center shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
+                  className="w-full lg:w-auto px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-xs uppercase italic flex items-center justify-center shadow-lg hover:bg-indigo-700 transition-all active:scale-95"
                 >
                   <Edit3 size={16} className="mr-2" /> Corrigir Solicitação
                 </button>
               )}
             </header>
             
-            <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
-              {/* Alerta de Erro Proeminente */}
+            <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-8 custom-scrollbar">
               {(selectedRequest.status === RequestStatus.ERRO_FISCAL || selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) && (
-                <div className="bg-red-50 border-2 border-red-100 p-8 rounded-[2.5rem] flex items-start space-x-6 shadow-sm">
-                  <div className="bg-red-600 p-4 rounded-2xl text-white shadow-lg">
+                <div className="bg-red-50 border-2 border-red-100 p-6 lg:p-8 rounded-[2rem] lg:rounded-[2.5rem] flex flex-col lg:flex-row items-start gap-6 shadow-sm">
+                  <div className="bg-red-600 p-4 rounded-2xl text-white shadow-lg shrink-0">
                     <AlertTriangle size={32} />
                   </div>
-                  <div className="flex-1">
-                    <h4 className="text-lg font-black text-red-700 uppercase italic mb-2 tracking-tight">Solicitação Reprovada</h4>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-lg font-black text-red-700 uppercase italic mb-2 tracking-tight">Reprovada para Ajustes</h4>
                     <p className="text-sm font-bold text-red-600 uppercase mb-4 opacity-80">Motivo: {selectedRequest.errorObservation || 'Não informado'}</p>
                     <div className="bg-white/60 p-5 rounded-2xl border border-red-100">
-                      <span className="text-[10px] font-black text-red-400 uppercase block mb-2 italic">Comentário do Aprovador:</span>
-                      <p className="text-sm font-medium text-slate-700 italic">"{selectedRequest.approverObservation || 'Sem comentários adicionais.'}"</p>
+                      <span className="text-[10px] font-black text-red-400 uppercase block mb-2 italic">Análise do Aprovador:</span>
+                      <p className="text-sm font-medium text-slate-700 italic">"{selectedRequest.approverObservation || 'Sem detalhes.'}"</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-lg">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+                <div className="bg-white p-6 lg:p-8 rounded-[2rem] border border-gray-100 shadow-lg">
                   <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><Banknote size={16} className="mr-3"/> Dados Fiscais</p>
                   <div className="space-y-6">
-                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">NF</span><p className="text-2xl font-black text-slate-900 leading-none">{selectedRequest.invoiceNumber || '---'}</p></div>
+                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">NF</span><p className="text-xl lg:text-2xl font-black text-slate-900 leading-none truncate">{selectedRequest.invoiceNumber || '---'}</p></div>
                     <div className="grid grid-cols-2 gap-4">
-                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-lg font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
-                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Filial</span><p className="text-lg font-black text-slate-900 uppercase">{selectedRequest.branch}</p></div>
+                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-sm lg:text-base font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                      <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Filial</span><p className="text-sm lg:text-base font-black text-slate-900 uppercase truncate">{selectedRequest.branch}</p></div>
                     </div>
                   </div>
                 </div>
-                <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-lg">
+                <div className="bg-white p-6 lg:p-8 rounded-[2rem] border border-gray-100 shadow-lg">
                   <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><CreditCard size={16} className="mr-3"/> Pagamento</p>
                   <div className="space-y-6">
-                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Favorecido</span><p className="text-lg font-bold text-slate-800 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p></div>
-                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Método</span><p className="text-sm font-black text-blue-600 uppercase">{selectedRequest.paymentMethod}</p></div>
+                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Favorecido</span><p className="text-sm lg:text-base font-bold text-slate-800 leading-tight uppercase truncate">{selectedRequest.payee || '---'}</p></div>
+                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Método</span><p className="text-xs lg:text-sm font-black text-blue-600 uppercase italic">{selectedRequest.paymentMethod}</p></div>
                   </div>
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl relative">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+                <div className="bg-white p-6 lg:p-8 rounded-[2rem] border-2 border-blue-100 shadow-xl relative">
                   <div className="flex items-center justify-between mb-6 border-b border-blue-50 pb-3">
-                    <h3 className="text-lg font-black text-blue-600 uppercase italic flex items-center"><FileText size={20} className="mr-3"/> Nota Fiscal</h3>
+                    <h3 className="text-base lg:text-lg font-black text-blue-600 uppercase italic flex items-center"><FileText size={20} className="mr-3"/> Nota Fiscal</h3>
                     {isFetchingAttachments && <Loader2 className="animate-spin text-blue-600" size={16} />}
                   </div>
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {mainAttachments.length > 0 ? mainAttachments.map(att => (
-                      <div key={att.id} className="p-4 bg-blue-50/40 border border-blue-100 rounded-2xl flex items-center justify-between transition-all hover:bg-blue-100/50">
-                        <div className="flex items-center space-x-3 overflow-hidden">
-                          <FileText size={18} className="text-blue-500 shrink-0" />
-                          <span className="text-xs font-black text-slate-800 truncate">{att.fileName}</span>
+                      <div key={att.id} className="p-3 bg-blue-50/40 border border-blue-100 rounded-2xl flex items-center justify-between transition-all hover:bg-blue-100/50 min-w-0">
+                        <div className="flex items-center space-x-3 overflow-hidden flex-1">
+                          <FileText size={16} className="text-blue-500 shrink-0" />
+                          <span className="text-[11px] font-black text-slate-800 truncate">{att.fileName}</span>
                         </div>
-                        <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-bold flex items-center shadow-md"><ExternalLink size={12} className="mr-1.5" /> Abrir</button>
+                        <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-[9px] uppercase font-bold flex items-center shadow-md ml-2 shrink-0"><ExternalLink size={10} className="mr-1" /> Abrir</button>
                       </div>
                     )) : (
-                      <div className="py-10 text-center text-gray-300 font-bold italic border-2 border-dashed border-gray-100 rounded-3xl">Nenhuma NF anexada</div>
+                      <div className="py-8 text-center text-gray-300 font-bold italic border-2 border-dashed border-gray-100 rounded-3xl text-[11px] uppercase">Nenhuma NF</div>
                     )}
                   </div>
                 </div>
 
-                <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl relative">
+                <div className="bg-white p-6 lg:p-8 rounded-[2rem] border-2 border-indigo-100 shadow-xl relative">
                   <div className="flex items-center justify-between mb-6 border-b border-indigo-50 pb-3">
-                    <h3 className="text-lg font-black text-indigo-600 uppercase italic flex items-center"><Paperclip size={20} className="mr-3"/> Boletos / Auxiliares</h3>
+                    <h3 className="text-base lg:text-lg font-black text-indigo-600 uppercase italic flex items-center"><Paperclip size={20} className="mr-3"/> Boletos / Auxiliares</h3>
                   </div>
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
-                      <div key={att.id} className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between transition-all hover:bg-indigo-100/50">
-                        <div className="flex items-center space-x-3 overflow-hidden">
-                          <Paperclip size={18} className="text-indigo-500 shrink-0" />
-                          <span className="text-xs font-black text-slate-800 truncate">{att.fileName}</span>
+                      <div key={att.id} className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between transition-all hover:bg-indigo-100/50 min-w-0">
+                        <div className="flex items-center space-x-3 overflow-hidden flex-1">
+                          <Paperclip size={16} className="text-indigo-500 shrink-0" />
+                          <span className="text-[11px] font-black text-slate-800 truncate">{att.fileName}</span>
                         </div>
-                        <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-[10px] uppercase font-bold flex items-center shadow-md"><ExternalLink size={12} className="mr-1.5" /> Abrir</button>
+                        <button onClick={() => window.open(att.storageUrl, '_blank')} className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-[9px] uppercase font-bold flex items-center shadow-md ml-2 shrink-0"><ExternalLink size={10} className="mr-1" /> Abrir</button>
                       </div>
                     )) : (
-                      <div className="py-10 text-center text-gray-300 font-bold italic border-2 border-dashed border-gray-100 rounded-3xl">Nenhum boleto anexado</div>
+                      <div className="py-8 text-center text-gray-300 font-bold italic border-2 border-dashed border-gray-100 rounded-3xl text-[11px] uppercase">Nenhum Boleto</div>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-8 rounded-[2.5rem] border border-gray-100 shadow-inner">
+              <div className="bg-gray-50 p-6 lg:p-8 rounded-[2rem] border border-gray-100 shadow-inner">
                 <span className="text-[10px] font-black text-gray-400 uppercase block mb-3 italic flex items-center"><MessageSquare size={14} className="mr-2"/> Observações do Solicitante</span>
-                <p className="text-base font-medium text-slate-600 leading-relaxed bg-white p-6 rounded-2xl border border-gray-100">
-                  {selectedRequest.generalObservation ? `"${selectedRequest.generalObservation}"` : 'Sem observações cadastradas.'}
+                <p className="text-sm lg:text-base font-medium text-slate-600 leading-relaxed bg-white p-6 rounded-2xl border border-gray-100">
+                  {selectedRequest.generalObservation ? `"${selectedRequest.generalObservation}"` : 'Sem observações.'}
                 </p>
               </div>
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-20 opacity-40">
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-10 lg:p-20 opacity-40">
             <Banknote size={48} className="text-blue-600 mb-6" />
-            <h3 className="text-xl font-black uppercase italic tracking-widest text-slate-800 mb-3">Painel de Notas</h3>
-            <button onClick={() => { handleCancelCreate(); setIsCreating(true); }} className="px-8 py-3.5 bg-blue-600 text-white rounded-xl font-black uppercase italic tracking-widest flex items-center shadow-lg"><Plus size={18} className="mr-2" /> Abrir Chamado</button>
+            <h3 className="text-xl font-black uppercase italic tracking-widest text-slate-800 mb-3">Fluxo de Notas</h3>
+            <button onClick={() => { handleCancelCreate(); setIsCreating(true); }} className="px-8 py-3.5 bg-blue-600 text-white rounded-xl font-black uppercase italic tracking-widest flex items-center shadow-lg active:scale-95 transition-transform"><Plus size={18} className="mr-2" /> Novo Chamado</button>
           </div>
         )}
       </div>
