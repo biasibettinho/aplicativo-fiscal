@@ -120,7 +120,6 @@ export const sharepointService = {
 
   getAllSharePointUsers: async (): Promise<any[]> => {
     try {
-      // CORREÇÃO: Removido campo 'Status' inexistente e adicionado 'Title' (Título)
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Title,Id`;
       const response = await spRestFetch(endpoint);
       if (!response.ok) {
@@ -132,6 +131,63 @@ export const sharepointService = {
     } catch (e) {
       console.error("Erro crítico ao buscar todos os usuários do SharePoint:", e);
       return [];
+    }
+  },
+
+  addSharePointUser: async (userData: { EmailUsuario: string, Setor: string, Nivel: string, Title: string }): Promise<boolean> => {
+    try {
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items`;
+      const payload = {
+        '__metadata': { 'type': 'SP.Data.App_Gestao_UsuariosListItem' },
+        ...userData
+      };
+      const response = await spRestFetch(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro ao adicionar usuário no SharePoint:", e);
+      return false;
+    }
+  },
+
+  updateSharePointUser: async (id: number, userData: { EmailUsuario: string, Setor: string, Nivel: string, Title: string }): Promise<boolean> => {
+    try {
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items(${id})`;
+      const payload = {
+        '__metadata': { 'type': 'SP.Data.App_Gestao_UsuariosListItem' },
+        ...userData
+      };
+      const response = await spRestFetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-HTTP-Method': 'MERGE',
+          'IF-MATCH': '*'
+        },
+        body: JSON.stringify(payload)
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro ao atualizar usuário no SharePoint:", e);
+      return false;
+    }
+  },
+
+  deleteSharePointUser: async (id: number): Promise<boolean> => {
+    try {
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items(${id})`;
+      const response = await spRestFetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'X-HTTP-Method': 'DELETE',
+          'IF-MATCH': '*'
+        }
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro ao deletar usuário no SharePoint:", e);
+      return false;
     }
   },
 

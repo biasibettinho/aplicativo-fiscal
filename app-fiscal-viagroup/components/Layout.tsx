@@ -86,7 +86,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             UserRole.FINANCEIRO, 
             UserRole.FINANCEIRO_MASTER
           ]} />
-          <NavItem to="/fiscal" icon={ShieldCheck} label="Fiscal / Admin" roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]} />
+          <NavItem to="/fiscal" icon={ShieldCheck} label="Fiscal" roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]} />
           <NavItem to="/financeiro" icon={BadgeDollarSign} label="Financeiro" roles={[UserRole.FINANCEIRO, UserRole.FINANCEIRO_MASTER, UserRole.ADMIN_MASTER]} />
           <NavItem to="/stats" icon={PieChart} label="Estatísticas" roles={[UserRole.ADMIN_MASTER, UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.FINANCEIRO_MASTER]} />
           <NavItem to="/admin" icon={Settings} label="Configurações" roles={[UserRole.ADMIN_MASTER]} />
@@ -143,7 +143,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </h2>
           </div>
           <div className="flex items-center shrink-0">
-            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100 shadow-sm">V1.3.3</span>
+            <span className="text-[9px] lg:text-[10px] font-black bg-blue-50 text-blue-600 px-3 lg:px-4 py-1.5 rounded-full tracking-widest uppercase border border-blue-100 shadow-sm">V1.3.4</span>
           </div>
         </header>
         <section className="flex-1 overflow-y-auto p-4 lg:p-10 bg-gray-50/50 custom-scrollbar">
