@@ -48,7 +48,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
 
         <nav className="flex-1 p-6 space-y-2 mt-4">
-          <NavItem to="/solicitante" icon={LayoutDashboard} label="Solicitante" roles={[UserRole.SOLICITANTE, UserRole.ADMIN_MASTER]} />
+          <NavItem to="/solicitante" icon={LayoutDashboard} label="Solicitante" roles={[
+            UserRole.SOLICITANTE, 
+            UserRole.ADMIN_MASTER, 
+            UserRole.FISCAL_COMUM, 
+            UserRole.FISCAL_ADMIN, 
+            UserRole.FINANCEIRO, 
+            UserRole.FINANCEIRO_MASTER
+          ]} />
           <NavItem to="/fiscal" icon={ShieldCheck} label="Fiscal / Admin" roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]} />
           <NavItem to="/financeiro" icon={BadgeDollarSign} label="Financeiro" roles={[UserRole.FINANCEIRO, UserRole.FINANCEIRO_MASTER, UserRole.ADMIN_MASTER]} />
           <NavItem to="/stats" icon={PieChart} label="Estatísticas" roles={[UserRole.ADMIN_MASTER, UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.FINANCEIRO_MASTER]} />

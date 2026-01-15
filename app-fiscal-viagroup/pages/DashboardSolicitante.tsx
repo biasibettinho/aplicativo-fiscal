@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
@@ -5,7 +6,7 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
-  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter, Trash2, Edit3, MessageSquare
+  Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter, Trash2, Edit3, MessageSquare, PanelLeftClose, PanelLeft, AlertTriangle
 } from 'lucide-react';
 import Badge from '../components/Badge';
 
@@ -15,6 +16,7 @@ const DashboardSolicitante: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,8 +54,8 @@ const DashboardSolicitante: React.FC = () => {
 
   const canEdit = useMemo(() => {
     if (!selectedRequest) return false;
-    const status = selectedRequest.status.toLowerCase();
-    return status.includes('erro') || status.includes('recusada');
+    const status = selectedRequest.status;
+    return status === RequestStatus.ERRO_FISCAL || status === RequestStatus.ERRO_FINANCEIRO;
   }, [selectedRequest]);
 
   const syncData = async (silent = false) => {
@@ -61,7 +63,7 @@ const DashboardSolicitante: React.FC = () => {
     if (!silent) setIsLoading(true);
     try {
       const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
-      setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id));
+      setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id || r.createdByName === authState.user?.name));
     } catch (e) { 
       console.error("Erro ao sincronizar dados:", e); 
     } finally { 
@@ -148,10 +150,7 @@ const DashboardSolicitante: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!authState.token || !authState.user) {
-      console.error("[DEBUG-UI] Erro: Token ou AuthState ausente.");
-      return;
-    }
+    if (!authState.token || !authState.user) return;
     
     if (!invoiceFile && !isEditing) {
       alert("A Nota Fiscal é obrigatória para prosseguir.");
@@ -159,98 +158,85 @@ const DashboardSolicitante: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    console.log("[DEBUG-UI] Iniciando processo de submissão...");
 
     try {
       if (isEditing && selectedRequest) {
-        console.log("[DEBUG-UI] Modo: EDIÇÃO");
-        console.log("[DEBUG-UI] Request ID:", selectedRequest.id);
-        console.log("[DEBUG-UI] Graph ID:", selectedRequest.graphId);
-        
-        alert(`[DEBUG-UI] Iniciando handleUpdate para ID: ${selectedRequest.id}`);
+        // Regra de transição de status pós-correção
+        let targetStatus = RequestStatus.PENDENTE;
+        if (selectedRequest.status === RequestStatus.ERRO_FISCAL) {
+          targetStatus = RequestStatus.PENDENTE;
+        } else if (selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) {
+          targetStatus = RequestStatus.APROVADO;
+        }
 
-        // 1. Atualiza dados de texto na lista principal
-        setSubmissionStep('Atualizando dados da solicitação...');
-        console.log("[DEBUG-UI] Atualizando metadados via Graph...");
-        const textUpdateRes = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
+        const updatePayload = {
           ...formData,
-          status: RequestStatus.PENDENTE,
+          status: targetStatus,
           approverObservation: 'Correção realizada pelo solicitante.'
-        });
-        console.log("[DEBUG-UI] Resultado update texto:", textUpdateRes ? 'Sucesso' : 'Falha');
+        };
 
-        // 2. Gerencia Nota Fiscal (Lista Principal - Anexo Direto)
+        setSubmissionStep('Atualizando dados da solicitação...');
+        await sharepointService.updateRequest(authState.token, selectedRequest.graphId, updatePayload);
+
         if (invoiceFile) {
-          console.log("[DEBUG-UI] Tem nova NF. Trocando...");
-          alert("[TESTE] Detectada nova NF. Substituindo anexo na lista principal...");
           setSubmissionStep('Substituindo Nota Fiscal...');
-          console.log("[DEBUG-UI] Buscando anexos atuais para substituição...");
           const currentMainAtts = await sharepointService.getItemAttachments(authState.token, selectedRequest.id);
-          console.log(`[DEBUG-UI] Encontrados ${currentMainAtts.length} anexos na Main.`);
-          
           for (const att of currentMainAtts) {
-            console.log(`[DEBUG-UI] Removendo anexo antigo: ${att.fileName}`);
             await sharepointService.deleteAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, att.fileName);
           }
-          
-          console.log(`[DEBUG-UI] Subindo nova Nota Fiscal: ${invoiceFile.name}`);
-          const upRes = await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
-          console.log("[DEBUG-UI] Resultado upload NF:", upRes);
-          alert(`[TESTE] Upload NF: ${upRes ? 'SUCESSO' : 'FALHOU'}`);
+          await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
         }
 
-        // 3. Gerencia Boletos (Lista Secundária - Itens Separados)
         if (ticketFile) {
-          alert("[TESTE] Detectado novo boleto. Iniciando troca na lista secundária...");
           setSubmissionStep('Substituindo Boletos auxiliares...');
-          console.log(`[DEBUG-UI] Limpando registros antigos na lista secundária para ID_SOL: ${selectedRequest.id}`);
-          
           await sharepointService.deleteSecondaryItemsByRequestId(selectedRequest.id);
-          alert("[TESTE] Itens antigos deletados. Criando novo registro...");
-          
-          console.log(`[DEBUG-UI] Criando novo registro secundário para: ${ticketFile.name}`);
-          const auxRes = await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
-          console.log("[DEBUG-UI] Resultado gestão boleto auxiliar:", auxRes);
-          alert("[TESTE] Processo de boleto secundário finalizado!");
-        } else {
-          console.log("[DEBUG-UI] Nenhum boleto novo detectado.");
-          alert("[TESTE] NENHUM boleto novo detectado.");
+          await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
         }
+
+        // Atualização Otimista Local
+        const updatedRequest = { ...selectedRequest, ...updatePayload };
+        setRequests(prev => prev.map(r => r.id === selectedRequest.id ? updatedRequest : r));
 
         setSubmissionStep('Finalizando...');
-        console.log("[DEBUG-UI] Edição concluída. Sincronizando UI...");
-        await syncData(true);
         handleCancelCreate();
-        alert("Solicitação atualizada com sucesso!");
+        alert("Solicitação corrigida com sucesso!");
       } else {
-        // FLUXO DE CRIAÇÃO (MANTIDO VIA POWER AUTOMATE)
-        console.log("[DEBUG-UI] Modo: CRIAÇÃO (via Power Automate)");
+        // FLUXO DE CRIAÇÃO
         setSubmissionStep('Enviando para o SharePoint...');
         const submissionData: any = {
           ...formData,
           createdByUserId: authState.user.id,
           createdByName: authState.user.name,
           status: RequestStatus.PROCESSANDO,
+          createdAt: new Date().toISOString()
         };
+
         const success = await requestService.createRequest(authState.token, submissionData, { 
           invoice: invoiceFile, 
           ticket: ticketFile 
         });
+
         if (success) {
-          console.log("[DEBUG-UI] Criação solicitada com sucesso.");
-          await syncData(true);
+          // Adiciona localmente como processando para feedback instantâneo
+          const tempRequest: PaymentRequest = {
+            ...submissionData,
+            id: 'PROCESSANDO-' + Date.now(),
+            graphId: '',
+            mirrorId: 0,
+            updatedAt: new Date().toISOString(),
+          };
+          setRequests(prev => [tempRequest, ...prev]);
           handleCancelCreate();
         } else {
           alert("Erro na resposta do servidor de automação. Tente novamente.");
         }
       }
     } catch (e: any) {
-      console.error("[DEBUG-UI] ERRO CRÍTICO NO SUBMIT:", e);
-      alert(`[ERRO CRÍTICO] ${e.message}`);
+      console.error("ERRO NO SUBMIT:", e);
+      alert(`Erro no processamento: ${e.message}`);
     } finally {
       setIsSubmitting(false);
       setSubmissionStep('');
-      console.log("[DEBUG-UI] Processo finalizado.");
     }
   };
 
@@ -284,6 +270,16 @@ const DashboardSolicitante: React.FC = () => {
 
   return (
     <div className="flex h-full bg-gray-50 overflow-hidden rounded-2xl border border-gray-200 relative">
+      {/* Botão de Abrir Sidebar (quando fechada) */}
+      {!isSidebarOpen && (
+        <button 
+          onClick={() => setIsSidebarOpen(true)}
+          className="absolute left-4 top-4 z-20 p-2.5 bg-white border border-gray-200 text-blue-600 rounded-xl shadow-lg hover:bg-gray-50 transition-all"
+        >
+          <PanelLeft size={20} />
+        </button>
+      )}
+
       {/* Overlay de Submissão */}
       {isSubmitting && (
         <div className="absolute inset-0 z-[100] bg-slate-900/90 backdrop-blur-md flex flex-col items-center justify-center p-10 text-center text-white">
@@ -295,18 +291,23 @@ const DashboardSolicitante: React.FC = () => {
             <p className="text-blue-300 font-bold text-sm uppercase leading-relaxed tracking-widest mb-4">
               {submissionStep || 'Gerenciando arquivos no SharePoint...'}
             </p>
-            <div className="w-full bg-white/5 rounded-full h-1 overflow-hidden">
-                <div className="bg-blue-400 h-full animate-[shimmer_2s_infinite] w-1/2"></div>
-            </div>
           </div>
         </div>
       )}
 
       {/* Sidebar de Listagem */}
-      <div className="w-[500px] bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300">
-        <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4">
+      <div className={`bg-white border-r border-gray-200 flex flex-col shadow-sm transition-all duration-300 overflow-hidden ${isSidebarOpen ? 'w-[500px]' : 'w-0'}`}>
+        <div className="p-6 border-b border-gray-100 bg-white z-10 space-y-4 min-w-[500px]">
           <div className="flex items-center justify-between">
-            <h1 className="text-lg font-black text-gray-800 uppercase italic">Minhas Notas</h1>
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-2 text-gray-400 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <PanelLeftClose size={20} />
+              </button>
+              <h1 className="text-lg font-black text-gray-800 uppercase italic">Minhas Notas</h1>
+            </div>
             <button 
               onClick={() => { handleCancelCreate(); setIsCreating(true); }} 
               className="p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 shadow-xl transition-all active:scale-95"
@@ -365,18 +366,32 @@ const DashboardSolicitante: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar min-w-[500px]">
           {isLoading && <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-600" size={32} /></div>}
           {!isLoading && filteredRequests.length === 0 && <div className="text-center py-10 text-gray-400 font-bold text-xs uppercase italic">Nenhuma nota encontrada.</div>}
           {!isLoading && filteredRequests.map(req => (
             <button 
               key={req.id} 
               onClick={() => { setSelectedId(req.id); setIsCreating(false); setIsEditing(false); }} 
-              className={`w-full p-5 rounded-[2rem] transition-all text-left border-2 ${selectedId === req.id ? 'bg-blue-50 border-blue-600 shadow-lg scale-[1.02]' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}
+              className={`w-full p-5 rounded-[2rem] transition-all text-left border-2 group relative ${selectedId === req.id ? 'bg-blue-50 border-blue-600 shadow-lg scale-[1.02]' : 'bg-white border-transparent hover:bg-gray-50 shadow-sm'}`}
             >
               <div className="flex justify-between items-start mb-3">
-                <span className="text-xs font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-lg">#{req.id}</span>
-                <Badge status={req.status} />
+                <span className="text-xs font-black text-blue-600 uppercase tracking-widest bg-blue-100 px-3 py-1 rounded-lg">#{req.id.includes('PROCESSANDO') ? '...' : req.id}</span>
+                <div className="flex items-center space-x-2">
+                  {(req.status === RequestStatus.ERRO_FISCAL || req.status === RequestStatus.ERRO_FINANCEIRO) && (
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        alert(`⚠️ MOTIVO DA REPROVAÇÃO:\n\nMotivo: ${req.errorObservation || 'Não especificado'}\n\nComentário: ${req.approverObservation || 'Sem comentário adicional'}`);
+                      }}
+                      className="p-1.5 text-red-600 bg-red-100 rounded-full animate-pulse cursor-help"
+                      title="Ver detalhes do erro"
+                    >
+                      <AlertTriangle size={14} />
+                    </div>
+                  )}
+                  <Badge status={req.status} />
+                </div>
               </div>
               <h3 className="font-black text-gray-900 text-sm mb-2 leading-tight uppercase truncate">{req.title}</h3>
               <div className="flex items-center text-[9px] font-black text-gray-400 uppercase tracking-widest space-x-4">
@@ -439,7 +454,6 @@ const DashboardSolicitante: React.FC = () => {
                     <input required type="date" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.paymentDate} onChange={e => setFormData({...formData, paymentDate: e.target.value})} />
                   </div>
 
-                  {/* Campo Condicional PIX */}
                   {formData.paymentMethod === 'PIX' && (
                     <div className="col-span-2 animate-in fade-in slide-in-from-top-4">
                       <label className="text-xs font-black text-blue-400 uppercase mb-2 block tracking-widest flex items-center"><Smartphone size={14} className="mr-2"/> Chave PIX</label>
@@ -447,7 +461,6 @@ const DashboardSolicitante: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Campos Condicionais TED/DEPOSITO */}
                   {(formData.paymentMethod === 'TED/DEPOSITO' || formData.paymentMethod === 'TED' || formData.paymentMethod === 'DEPOSITO') && (
                     <div className="col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4">
                       <div className="col-span-2 md:col-span-1">
@@ -513,12 +526,22 @@ const DashboardSolicitante: React.FC = () => {
         ) : selectedRequest ? (
           <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-500">
             <header className="p-8 bg-white border-b flex justify-between items-end shadow-sm">
-              <div>
-                <div className="flex items-center space-x-6 mb-3">
-                  <span className="text-xs font-black text-gray-400 bg-gray-50 px-3 py-1 rounded-lg border">ID: {selectedRequest.id}</span>
-                  <Badge status={selectedRequest.status} className="scale-100 ml-1" />
+              <div className="flex items-center space-x-6">
+                {!isSidebarOpen && (
+                  <button 
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="p-2.5 bg-gray-50 border border-gray-200 text-gray-400 hover:text-blue-600 rounded-xl transition-all"
+                  >
+                    <PanelLeft size={20} />
+                  </button>
+                )}
+                <div>
+                  <div className="flex items-center space-x-6 mb-3">
+                    <span className="text-xs font-black text-gray-400 bg-gray-50 px-3 py-1 rounded-lg border">ID: {selectedRequest.id.includes('PROCESSANDO') ? '...' : selectedRequest.id}</span>
+                    <Badge status={selectedRequest.status} className="scale-100 ml-1" />
+                  </div>
+                  <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[600px]">{selectedRequest.title}</h2>
                 </div>
-                <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none truncate max-w-[600px]">{selectedRequest.title}</h2>
               </div>
               {canEdit && (
                 <button 
@@ -531,6 +554,23 @@ const DashboardSolicitante: React.FC = () => {
             </header>
             
             <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+              {/* Alerta de Erro Proeminente */}
+              {(selectedRequest.status === RequestStatus.ERRO_FISCAL || selectedRequest.status === RequestStatus.ERRO_FINANCEIRO) && (
+                <div className="bg-red-50 border-2 border-red-100 p-8 rounded-[2.5rem] flex items-start space-x-6 shadow-sm">
+                  <div className="bg-red-600 p-4 rounded-2xl text-white shadow-lg">
+                    <AlertTriangle size={32} />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-lg font-black text-red-700 uppercase italic mb-2 tracking-tight">Solicitação Reprovada</h4>
+                    <p className="text-sm font-bold text-red-600 uppercase mb-4 opacity-80">Motivo: {selectedRequest.errorObservation || 'Não informado'}</p>
+                    <div className="bg-white/60 p-5 rounded-2xl border border-red-100">
+                      <span className="text-[10px] font-black text-red-400 uppercase block mb-2 italic">Comentário do Aprovador:</span>
+                      <p className="text-sm font-medium text-slate-700 italic">"{selectedRequest.approverObservation || 'Sem comentários adicionais.'}"</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-lg">
                   <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><Banknote size={16} className="mr-3"/> Dados Fiscais</p>
@@ -552,7 +592,6 @@ const DashboardSolicitante: React.FC = () => {
               </div>
               
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Seção Nota Fiscal (Lista Principal) */}
                 <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-100 shadow-xl relative">
                   <div className="flex items-center justify-between mb-6 border-b border-blue-50 pb-3">
                     <h3 className="text-lg font-black text-blue-600 uppercase italic flex items-center"><FileText size={20} className="mr-3"/> Nota Fiscal</h3>
@@ -573,7 +612,6 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Seção Boleto / Auxiliar (Lista Secundária ID_SOL) */}
                 <div className="bg-white p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-xl relative">
                   <div className="flex items-center justify-between mb-6 border-b border-indigo-50 pb-3">
                     <h3 className="text-lg font-black text-indigo-600 uppercase italic flex items-center"><Paperclip size={20} className="mr-3"/> Boletos / Auxiliares</h3>
@@ -594,7 +632,6 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
               </div>
 
-              {/* Observações */}
               <div className="bg-gray-50 p-8 rounded-[2.5rem] border border-gray-100 shadow-inner">
                 <span className="text-[10px] font-black text-gray-400 uppercase block mb-3 italic flex items-center"><MessageSquare size={14} className="mr-2"/> Observações do Solicitante</span>
                 <p className="text-base font-medium text-slate-600 leading-relaxed bg-white p-6 rounded-2xl border border-gray-100">
