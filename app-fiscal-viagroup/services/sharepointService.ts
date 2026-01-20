@@ -14,6 +14,8 @@ const USER_LIST_ID = 'aab3f85b-2541-4974-ab1a-e0a0ee688b4e';
 const HISTORY_LIST_ID = '4b5c196a-26bf-419a-8bab-c59f8f64e612';
 const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
 
+console.log("[DEBUG INIT] Usando Lista Principal (ID):", MAIN_LIST_ID);
+
 const FIELD_MAP = {
   title: 'Title',
   invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
@@ -226,11 +228,6 @@ export const sharepointService = {
         let pDate = f[FIELD_MAP.paymentDate] || '';
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
-        // TAREFA: Log e Lógica de Mapeamento robusta para o comentário
-        if (f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment']) {
-            console.log(`[DEBUG MAP] Item ${numericId} - COMENTARIO_COMPARTILHAMENTO:`, f['COMENTARIO_COMPARTILHAMENTO']);
-        }
-
         const rawComment = f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'];
         const commentText = typeof rawComment === 'object' && rawComment !== null 
             ? (rawComment as any).toString() 
@@ -282,6 +279,9 @@ export const sharepointService = {
         if ((data as any)[key] !== undefined) fields[spField] = (data as any)[key];
       });
 
+      console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados:", JSON.stringify(fields));
+      console.log("[DEBUG UPDATE] Executando comando MS Graph PATCH...");
+
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
@@ -290,24 +290,28 @@ export const sharepointService = {
       });
       
       if (!response.ok) {
+        const errorData = await response.json();
+        console.error("[DEBUG UPDATE] FALHA NA RESPOSTA:", errorData);
         return null;
       }
       
+      console.log("[DEBUG UPDATE] Sucesso MS Graph PATCH!");
       const result = await response.json();
       return result;
     } catch (e: any) {
-      console.error("Erro crítico updateRequest:", e);
+      console.error("[DEBUG UPDATE] FALHA CRÍTICA:", e);
       return null;
     }
   },
 
   /**
    * TAREFA: Método para atualizar campos específicos diretamente no SharePoint via Graph.
-   * Adicionados logs para investigação de persistência.
+   * Adicionados logs agressivos para investigação de persistência.
    */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
-      console.log("[DEBUG SERVICE] updateRequestFields. GraphID:", graphId, "Payload:", JSON.stringify(fields));
+      console.log("[DEBUG UPDATE_FIELDS] Chamando updateRequestFields. GraphID:", graphId, "Payload:", JSON.stringify(fields));
+      console.log("[DEBUG UPDATE_FIELDS] Executando comando MS Graph PATCH...");
       
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
       const response = await graphFetch(endpoint, accessToken, {
@@ -317,15 +321,15 @@ export const sharepointService = {
       });
       
       if (response.ok) {
-        console.log("[DEBUG SERVICE] Sucesso ao atualizar GraphID:", graphId);
+        console.log("[DEBUG UPDATE_FIELDS] Sucesso MS Graph PATCH! GraphID:", graphId);
         return true;
       } else {
         const errorData = await response.json();
-        console.error("[DEBUG SERVICE] Erro na resposta do Graph:", errorData);
+        console.error("[DEBUG UPDATE_FIELDS] Erro na resposta do Graph:", errorData);
         return false;
       }
     } catch (e) {
-      console.error("[DEBUG SERVICE] Erro crítico ao atualizar GraphID:", graphId, e);
+      console.error("[DEBUG UPDATE_FIELDS] FALHA CRÍTICA ao atualizar GraphID:", graphId, e);
       return false;
     }
   },

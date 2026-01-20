@@ -54,7 +54,6 @@ const DashboardFinanceiro: React.FC = () => {
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  // TAREFA: Estado para modal de comentários agora guarda objeto para edição
   const [viewingCommentData, setViewingCommentData] = useState<{ id: string, graphId: string, comment: string } | null>(null);
   const [editedComment, setEditedComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
@@ -75,7 +74,6 @@ const DashboardFinanceiro: React.FC = () => {
   const [sharedStatusFilter, setSharedStatusFilter] = useState('PENDENTE');
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
-  // Função auxiliar local para limpeza de HTML
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
   const isMaster = useMemo(() => {
@@ -225,7 +223,7 @@ const DashboardFinanceiro: React.FC = () => {
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
     const comment = shareCommentText.trim();
     
-    console.log("[DEBUG UI] handleShare - Email:", shareEmail, "Comment:", comment);
+    console.log("[DEBUG UI] Click Compartilhar. ID:", selectedRequest.id, "Divisão:", shareEmail, "Comentário:", comment);
 
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
@@ -237,6 +235,8 @@ const DashboardFinanceiro: React.FC = () => {
         sharedByName: authState.user?.name || 'Sistema', 
         shareComment: comment 
       });
+
+      console.log("[DEBUG UI] Retorno do Service handleShare (Aparentemente sucesso)");
 
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
         ATUALIZACAO: 'Compartilhado', 
@@ -258,15 +258,14 @@ const DashboardFinanceiro: React.FC = () => {
     setIsSavingComment(true);
     const newComment = editedComment.trim();
     
-    console.log("[DEBUG UI] Iniciando salvamento. ID:", viewingCommentData.id, "Texto:", newComment);
+    console.log("[DEBUG UI] Click Salvar Comentário. ID:", viewingCommentData.id, "Texto:", newComment);
 
     try {
-      // TAREFA: Garantir que a chave do payload é a correta para persistência (COMENTARIO_COMPARTILHAMENTO)
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: newComment
       });
       if (success) {
-        console.log("[DEBUG UI] Salvamento realizado com sucesso para ID:", viewingCommentData.id);
+        console.log("[DEBUG UI] Retorno do Service handleSaveComment (Aparentemente sucesso)");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
         setViewingCommentData(null);
       } else { 
