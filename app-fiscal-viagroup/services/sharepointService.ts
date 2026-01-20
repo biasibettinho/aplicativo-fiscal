@@ -226,6 +226,16 @@ export const sharepointService = {
         let pDate = f[FIELD_MAP.paymentDate] || '';
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
+        // TAREFA: Log e Lógica de Mapeamento robusta para o comentário
+        if (f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment']) {
+            console.log(`[DEBUG MAP] Item ${numericId} - COMENTARIO_COMPARTILHAMENTO:`, f['COMENTARIO_COMPARTILHAMENTO']);
+        }
+
+        const rawComment = f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'];
+        const commentText = typeof rawComment === 'object' && rawComment !== null 
+            ? (rawComment as any).toString() 
+            : (rawComment || '');
+
         return {
           id: numericId.toString(),
           graphId: item.id, 
@@ -250,7 +260,7 @@ export const sharepointService = {
           statusEspelho: f[FIELD_MAP.statusEspelho] || '',
           sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada']).toLowerCase(),
           sharedByName: f[FIELD_MAP.sharedByName] || '',
-          shareComment: stripHtml(f[FIELD_MAP.shareComment] || ''),
+          shareComment: commentText,
           errorObservation: f[FIELD_MAP.errorObservation] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
@@ -293,18 +303,29 @@ export const sharepointService = {
 
   /**
    * TAREFA: Método para atualizar campos específicos diretamente no SharePoint via Graph.
+   * Adicionados logs para investigação de persistência.
    */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
+      console.log("[DEBUG SERVICE] updateRequestFields. GraphID:", graphId, "Payload:", JSON.stringify(fields));
+      
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fields)
       });
-      return response.ok;
+      
+      if (response.ok) {
+        console.log("[DEBUG SERVICE] Sucesso ao atualizar GraphID:", graphId);
+        return true;
+      } else {
+        const errorData = await response.json();
+        console.error("[DEBUG SERVICE] Erro na resposta do Graph:", errorData);
+        return false;
+      }
     } catch (e) {
-      console.error("Erro updateRequestFields:", e);
+      console.error("[DEBUG SERVICE] Erro crítico ao atualizar GraphID:", graphId, e);
       return false;
     }
   },

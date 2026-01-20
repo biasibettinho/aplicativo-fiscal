@@ -225,47 +225,81 @@ const DashboardFinanceiro: React.FC = () => {
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
     const comment = shareCommentText.trim();
     
+    console.log("[DEBUG UI] handleShare - Email:", shareEmail, "Comment:", comment);
+
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
     try {
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { sharedWithEmail: shareEmail, statusManual: 'Compartilhado', sharedByName: authState.user?.name || 'Sistema', shareComment: comment });
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: 'Compartilhado', OBSERVACAO: `Compartilhado com ${shareEmail}`, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { 
+        sharedWithEmail: shareEmail, 
+        statusManual: 'Compartilhado', 
+        sharedByName: authState.user?.name || 'Sistema', 
+        shareComment: comment 
+      });
+
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
+        ATUALIZACAO: 'Compartilhado', 
+        OBSERVACAO: `Compartilhado com ${shareEmail}`, 
+        MSG_OBSERVACAO: comment, 
+        usuario_logado: authState.user.name 
+      });
       setShareCommentText('');
       loadData(true);
-    } catch (e: any) { alert(`Erro ao compartilhar: ${e.message}`); loadData(true); } finally { setIsProcessingAction(false); }
+    } catch (e: any) { 
+        console.error("[DEBUG UI] Erro no compartilhamento:", e);
+        alert(`Erro ao compartilhar: ${e.message}`); 
+        loadData(true); 
+    } finally { setIsProcessingAction(false); }
   };
 
   const handleSaveComment = async () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
     setIsSavingComment(true);
     const newComment = editedComment.trim();
+    
+    console.log("[DEBUG UI] Iniciando salvamento. ID:", viewingCommentData.id, "Texto:", newComment);
+
     try {
       // TAREFA: Garantir que a chave do payload é a correta para persistência (COMENTARIO_COMPARTILHAMENTO)
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: newComment
       });
       if (success) {
+        console.log("[DEBUG UI] Salvamento realizado com sucesso para ID:", viewingCommentData.id);
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
         setViewingCommentData(null);
-      } else { alert("Falha ao salvar comentário no servidor."); }
-    } catch (e) { alert("Erro crítico ao salvar comentário."); } finally { setIsSavingComment(false); }
+      } else { 
+        console.error("[DEBUG UI] O serviço retornou falha no salvamento.");
+        alert("Falha ao salvar comentário no servidor."); 
+      }
+    } catch (e) { 
+      console.error("[DEBUG UI] Erro crítico no handleSaveComment:", e);
+      alert("Erro crítico ao salvar comentário."); 
+    } finally { setIsSavingComment(false); }
   };
 
   const handleClearComment = async () => {
     if (!viewingCommentData || !authState.token) return;
     if (!window.confirm("Deseja realmente apagar esta observação?")) return;
     setIsSavingComment(true);
+    
+    console.log("[DEBUG UI] Iniciando limpeza de comentário para ID:", viewingCommentData.id);
+
     try {
-      // TAREFA: Garantir que a chave do payload é a correta para persistência
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: ''
       });
       if (success) {
+        console.log("[DEBUG UI] Comentário limpo com sucesso.");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: '' } : r));
         setViewingCommentData(null);
+      } else {
+        console.error("[DEBUG UI] Falha ao limpar comentário no servidor.");
       }
-    } catch (e) { console.error(e); } finally { setIsSavingComment(false); }
+    } catch (e) { 
+        console.error("[DEBUG UI] Erro crítico no handleClearComment:", e);
+    } finally { setIsSavingComment(false); }
   };
 
   const filteredRequests = useMemo(() => {
@@ -347,7 +381,6 @@ const DashboardFinanceiro: React.FC = () => {
                   const dStatus = resolveDisplayStatus(r);
                   const urgent = isUrgent(r);
                   const hasComment = r.shareComment && r.shareComment.trim() !== '';
-                  // TAREFA: Lógica de exibição do ícone de chat (APENAS se compartilhado)
                   const isSharedRequest = dStatus === 'Compartilhado' || r.status === RequestStatus.COMPARTILHADO || r.statusManual === 'Compartilhado' || (r.sharedWithEmail && stripHtml(r.sharedWithEmail).trim() !== '');
 
                   return (
@@ -357,7 +390,6 @@ const DashboardFinanceiro: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
                           
-                          {/* TAREFA: Botão de chat renderizado APENAS para compartilhados */}
                           {isSharedRequest && (
                             <button
                               onClick={(e) => { 
