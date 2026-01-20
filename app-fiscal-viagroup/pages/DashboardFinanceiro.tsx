@@ -62,8 +62,6 @@ const DashboardFinanceiro: React.FC = () => {
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
-  
-  // TAREFA: Alterado valor inicial de 'Pendente' para '' (Todas) conforme solicitação
   const [statusFilter, setStatusFilter] = useState('');
 
   // Modais
@@ -96,42 +94,13 @@ const DashboardFinanceiro: React.FC = () => {
   };
 
   const resolveDisplayStatus = (r: PaymentRequest): string => {
-    // 1) Erro tem prioridade máxima
-    if (r.status === RequestStatus.ERRO_FINANCEIRO) {
-      return RequestStatus.ERRO_FINANCEIRO;
-    }
-
-    // 2) FATURADO deve sempre prevalecer (ignora statusManual/statusFinal antigos)
-    if (r.status === RequestStatus.FATURADO) {
-      return RequestStatus.FATURADO;
-    }
-
-    // 3) Financeiro Comum vê "Aprovado" como "Pendente"
-    if (!isMaster && r.status === RequestStatus.APROVADO) {
-      return RequestStatus.PENDENTE;
-    }
-
-    // 4) Prioriza statusFinal (campo manual do SharePoint)
-    if (r.statusFinal && r.statusFinal.trim() !== "") {
-      return r.statusFinal;
-    }
-
-    // 5) statusManual (Compartilhado etc.) só vale se NÃO estiver finalizado
-    if (
-      r.statusManual &&
-      r.statusManual.trim() !== "" &&
-      ![RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(r.status as RequestStatus)
-    ) {
-      return r.statusManual;
-    }
-
-    // 6) Fallback para statusEspelho ou status padrão
+    if (r.status === RequestStatus.ERRO_FINANCEIRO) return RequestStatus.ERRO_FINANCEIRO;
+    if (r.status === RequestStatus.FATURADO) return RequestStatus.FATURADO;
+    if (!isMaster && r.status === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
+    if (r.statusFinal && r.statusFinal.trim() !== "") return r.statusFinal;
+    if (r.statusManual && r.statusManual.trim() !== "" && ![RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(r.status as RequestStatus)) return r.statusManual;
     let fallback = r.statusEspelho && r.statusEspelho.trim() !== "" ? r.statusEspelho : r.status;
-
-    if (fallback === RequestStatus.APROVADO) {
-      return RequestStatus.PENDENTE;
-    }
-
+    if (fallback === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
     return fallback;
   };
 
@@ -162,7 +131,7 @@ const DashboardFinanceiro: React.FC = () => {
   useEffect(() => { loadData(false); }, [authState.user, authState.token]);
 
   useEffect(() => {
-    const interval = setInterval(() => { loadData(true); }, 30000); // Polling 30s
+    const interval = setInterval(() => { loadData(true); }, 30000);
     return () => clearInterval(interval);
   }, [authState.user, authState.token]);
 
@@ -192,17 +161,12 @@ const DashboardFinanceiro: React.FC = () => {
 
   const handleOpenHistory = async () => {
     if (!selectedRequest || !authState.token) return;
-    
     setIsHistoryModalOpen(true);
     setIsFetchingHistory(true);
     try {
       const logs = await sharepointService.getHistoryLogs(authState.token, selectedRequest.id);
       setHistoryLogs(logs);
-    } catch (e) { 
-      console.error(e); 
-    } finally { 
-      setIsFetchingHistory(false); 
-    }
+    } catch (e) { console.error(e); } finally { setIsFetchingHistory(false); }
   };
 
   const availableBranches = useMemo(() => {
@@ -225,169 +189,83 @@ const DashboardFinanceiro: React.FC = () => {
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
+    let targetStatus = isMaster ? RequestStatus.FATURADO : RequestStatus.ANALISE;
+    let comment = isMaster ? 'Faturamento concluído pelo Master.' : 'Validado pelo financeiro regional. Aguardando conferência Master.';
     
-    let targetStatus: RequestStatus;
-    let comment: string;
-    if (isMaster) {
-      targetStatus = RequestStatus.FATURADO;
-      comment = 'Faturamento concluído pelo Master.';
-    } else {
-      targetStatus = RequestStatus.ANALISE;
-      comment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
-    }
-    
-    // TAREFA: Feedback Visual Imediato
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment } : r));
     setSelectedId(null);
     setIsProcessingAction(true);
-
     try {
-      const payload: any = {
-        status: targetStatus,
-        approverObservation: comment,
-        errorObservation: ''
-      };
-
-      if (isMaster) {
-        payload.sentToFinanceAt = new Date().toISOString(); // Injetando campo de SLA se master
-      }
-
+      const payload: any = { status: targetStatus, approverObservation: comment, errorObservation: '' };
+      if (isMaster) payload.sentToFinanceAt = new Date().toISOString();
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
-        ATUALIZACAO: targetStatus,
-        OBSERVACAO: comment,
-        MSG_OBSERVACAO: comment,
-        usuario_logado: authState.user.name
-      });
-      // Atualização final pós-confirmacao do servidor (segurança extra)
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: targetStatus, OBSERVACAO: comment, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
       loadData(true);
-    } catch (e) { 
-      alert("Erro ao aprovar no servidor. Recarregando..."); 
-      loadData(true);
-    } finally { setIsProcessingAction(false); }
+    } catch (e) { alert("Erro ao aprovar no servidor. Recarregando..."); loadData(true); } finally { setIsProcessingAction(false); }
   };
 
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
-    
     const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
     const logObs = `Reprovado: ${rejectReason}`;
     
-    // TAREFA: Feedback Visual Imediato
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } : r));
     setIsRejectModalOpen(false);
     setSelectedId(null);
     setIsProcessingAction(true);
-
     try {
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
-        status: targetStatus,
-        errorObservation: rejectReason, 
-        approverObservation: rejectComment
-      });
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
-        ATUALIZACAO: targetStatus,
-        OBSERVACAO: logObs,
-        MSG_OBSERVACAO: rejectComment,
-        usuario_logado: authState.user.name
-      });
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment });
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: targetStatus, OBSERVACAO: logObs, MSG_OBSERVACAO: rejectComment, usuario_logado: authState.user.name });
       loadData(true);
-    } catch (e) { 
-      alert("Erro ao reprovar no servidor. Recarregando..."); 
-      loadData(true);
-    } finally { setIsProcessingAction(false); }
+    } catch (e) { alert("Erro ao reprovar no servidor. Recarregando..."); loadData(true); } finally { setIsProcessingAction(false); }
   };
 
   const handleShare = async () => {
-    if (!selectedRequest || !authState.token || !authState.user) {
-        alert("Erro: Dados insuficientes para compartilhamento.");
-        return;
-    }
+    if (!selectedRequest || !authState.token || !authState.user) return;
     if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
-    
     const comment = shareCommentText.trim();
     
-    // TAREFA: Feedback Visual Imediato
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
-        ...r, 
-        sharedWithEmail: shareEmail,
-        sharedByName: authState.user?.name,
-        statusManual: 'Compartilhado',
-        shareComment: comment // Atualizando localmente para exibição imediata
-    } : r));
+    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
-
     try {
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
-        sharedWithEmail: shareEmail,
-        statusManual: 'Compartilhado',
-        sharedByName: authState.user?.name || 'Sistema',
-        shareComment: comment
-      });
-
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
-        ATUALIZACAO: 'Compartilhado',
-        OBSERVACAO: `Compartilhado com ${shareEmail}`,
-        MSG_OBSERVACAO: comment,
-        usuario_logado: authState.user.name
-      });
+      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { sharedWithEmail: shareEmail, statusManual: 'Compartilhado', sharedByName: authState.user?.name || 'Sistema', shareComment: comment });
+      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: 'Compartilhado', OBSERVACAO: `Compartilhado com ${shareEmail}`, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
       setShareCommentText('');
       loadData(true);
-    } catch (e: any) { 
-      console.error(e);
-      alert(`Erro ao compartilhar: ${e.message}`);
-      loadData(true);
-    } finally { 
-      setIsProcessingAction(false); 
-    }
+    } catch (e: any) { alert(`Erro ao compartilhar: ${e.message}`); loadData(true); } finally { setIsProcessingAction(false); }
   };
 
   const handleSaveComment = async () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
-    
     setIsSavingComment(true);
     const newComment = editedComment.trim();
-
     try {
+      // TAREFA: Garantir que a chave do payload é a correta para persistência (COMENTARIO_COMPARTILHAMENTO)
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: newComment
       });
-
       if (success) {
-        // Feedback Visual Imediato: Atualiza estado local
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
         setViewingCommentData(null);
-      } else {
-        alert("Falha ao salvar comentário no servidor.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Erro crítico ao salvar comentário.");
-    } finally {
-      setIsSavingComment(false);
-    }
+      } else { alert("Falha ao salvar comentário no servidor."); }
+    } catch (e) { alert("Erro crítico ao salvar comentário."); } finally { setIsSavingComment(false); }
   };
 
   const handleClearComment = async () => {
     if (!viewingCommentData || !authState.token) return;
     if (!window.confirm("Deseja realmente apagar esta observação?")) return;
-
     setIsSavingComment(true);
     try {
+      // TAREFA: Garantir que a chave do payload é a correta para persistência
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: ''
       });
-
       if (success) {
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: '' } : r));
         setViewingCommentData(null);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsSavingComment(false);
-    }
+    } catch (e) { console.error(e); } finally { setIsSavingComment(false); }
   };
 
   const filteredRequests = useMemo(() => {
@@ -397,18 +275,12 @@ const DashboardFinanceiro: React.FC = () => {
       let matchesStatus = true;
       if (statusFilter !== '') {
         const currentDisplay = resolveDisplayStatus(r);
-        if (statusFilter === 'Pendente') {
-          matchesStatus = r.status === RequestStatus.APROVADO || currentDisplay === 'Pendente';
-        } else {
-          matchesStatus = currentDisplay === statusFilter;
-        }
+        matchesStatus = statusFilter === 'Pendente' ? (r.status === RequestStatus.APROVADO || currentDisplay === 'Pendente') : (currentDisplay === statusFilter);
       }
       return matchesSearch && matchesBranch && matchesStatus;
     }).sort((a, b) => {
-      const urgentA = isUrgent(a);
-      const urgentB = isUrgent(b);
-      if (urgentA && !urgentB) return -1;
-      if (!urgentA && urgentB) return 1;
+      const urgentA = isUrgent(a); const urgentB = isUrgent(b);
+      if (urgentA && !urgentB) return -1; if (!urgentA && urgentB) return 1;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }, [requests, searchTerm, branchFilter, statusFilter, isMaster]);
@@ -417,14 +289,12 @@ const DashboardFinanceiro: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
-      {/* Toolbar Superior */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-64 min-w-[200px]">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
-          
           <div className="flex items-center gap-5">
              <div className="flex flex-col">
                <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Filial</label>
@@ -446,7 +316,6 @@ const DashboardFinanceiro: React.FC = () => {
              </div>
           </div>
         </div>
-
         {selectedRequest && (
           <div className="flex items-center space-x-2 animate-in slide-in-from-right duration-300">
             <button onClick={handleOpenHistory} className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200" title="Histórico"><History size={18}/></button>
@@ -455,12 +324,8 @@ const DashboardFinanceiro: React.FC = () => {
               <button onClick={() => setIsReworking(true)} className="px-4 py-2 bg-amber-50 text-amber-700 font-black text-[10px] uppercase rounded-xl flex items-center border border-amber-100 shadow-sm hover:bg-amber-100 transition-all"><Edit3 size={16} className="mr-2" /> Editar Ações</button>
             ) : (
               <>
-                <button onClick={() => setIsRejectModalOpen(true)} className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center">
-                  <XCircle size={16} className="mr-2" /> Reprovar
-                </button>
-                <button onClick={handleApprove} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95">
-                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}
-                </button>
+                <button onClick={() => setIsRejectModalOpen(true)} className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center"><XCircle size={16} className="mr-2" /> Reprovar</button>
+                <button onClick={handleApprove} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95">{isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}</button>
                 {isReworking && <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600"><X size={18}/></button>}
               </>
             )}
@@ -482,6 +347,8 @@ const DashboardFinanceiro: React.FC = () => {
                   const dStatus = resolveDisplayStatus(r);
                   const urgent = isUrgent(r);
                   const hasComment = r.shareComment && r.shareComment.trim() !== '';
+                  // TAREFA: Lógica de exibição do ícone de chat (APENAS se compartilhado)
+                  const isSharedRequest = dStatus === 'Compartilhado' || r.status === RequestStatus.COMPARTILHADO || r.statusManual === 'Compartilhado' || (r.sharedWithEmail && stripHtml(r.sharedWithEmail).trim() !== '');
 
                   return (
                     <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}>
@@ -490,30 +357,29 @@ const DashboardFinanceiro: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
                           
-                          {/* TAREFA: Botão de chat persistente (Exclusivo Financeiro Master/Comum) */}
-                          <button
-                            onClick={(e) => { 
-                              e.stopPropagation(); 
-                              setViewingCommentData({ id: r.id, graphId: r.graphId, comment: r.shareComment || '' }); 
-                              setEditedComment(r.shareComment || '');
-                            }}
-                            className={`p-1.5 rounded-lg transition-all hover:scale-110 flex items-center ${hasComment ? 'text-purple-600 bg-purple-50 shadow-sm' : 'text-gray-300 hover:text-indigo-400'}`}
-                            title={hasComment ? "Ler observação" : "Adicionar observação"}
-                          >
-                            <MessageSquare size={14} strokeWidth={hasComment ? 2.5 : 2} />
-                          </button>
+                          {/* TAREFA: Botão de chat renderizado APENAS para compartilhados */}
+                          {isSharedRequest && (
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setViewingCommentData({ id: r.id, graphId: r.graphId, comment: r.shareComment || '' }); 
+                                setEditedComment(r.shareComment || '');
+                              }}
+                              className={`p-1.5 rounded-lg transition-all hover:scale-110 flex items-center ${hasComment ? 'text-purple-600 bg-purple-50 shadow-sm' : 'text-gray-300 hover:text-indigo-400'}`}
+                              title={hasComment ? "Ler observação" : "Adicionar observação"}
+                            >
+                              <MessageSquare size={14} strokeWidth={hasComment ? 2.5 : 2} />
+                            </button>
+                          )}
 
                           <Badge status={dStatus} className="scale-90 origin-right" />
                         </div>
                       </div>
                       <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
-                      
                       {r.sharedWithEmail && (
                           <div className="flex items-center gap-1 mt-2">
                               <Share2 size={10} className="text-purple-600" />
-                              <span className="text-[9px] font-black text-purple-600 uppercase truncate max-w-[150px] tracking-tighter italic">
-                                  Divisão: {r.sharedWithEmail}
-                              </span>
+                              <span className="text-[9px] font-black text-purple-600 uppercase truncate max-w-[150px] tracking-tighter italic">Divisão: {r.sharedWithEmail}</span>
                           </div>
                       )}
                     </div>
@@ -543,7 +409,6 @@ const DashboardFinanceiro: React.FC = () => {
                    </div>
                 </div>
               </div>
-
               <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                    <section className="bg-indigo-50/30 p-10 rounded-[3rem] border border-indigo-50 shadow-inner">
@@ -561,33 +426,15 @@ const DashboardFinanceiro: React.FC = () => {
                               <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-black text-indigo-700 uppercase italic">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
                               <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span><p className="text-sm font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p></div>
                            </div>
-                           
                            {selectedRequest.paymentMethod === 'PIX' && (
-                             <div className="pt-2">
-                              <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span>
-                              <div className="flex items-center">
-                                <p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400"/> {selectedRequest.pixKey}</p>
-                                {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
-                              </div>
-                             </div>
+                             <div className="pt-2"><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span><div className="flex items-center"><p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400"/> {selectedRequest.pixKey}</p>{selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}</div></div>
                            )}
-                           
                            {selectedRequest.paymentMethod === 'TED/DEPOSITO' && (
-                             <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-indigo-100/50">
-                                <div className="flex items-center mb-1">
-                                  <p>BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p>
-                                  {selectedRequest.bank && <CopyButton text={selectedRequest.bank} />}
-                                </div>
-                                <div className="flex items-center">
-                                  <p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>
-                                  {selectedRequest.account && <CopyButton text={`${selectedRequest.agency} / ${selectedRequest.account}`} />}
-                                </div>
-                             </div>
+                             <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-indigo-100/50"><div className="flex items-center mb-1"><p>BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p>{selectedRequest.bank && <CopyButton text={selectedRequest.bank} />}</div><div className="flex items-center"><p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>{selectedRequest.account && <CopyButton text={`${selectedRequest.agency} / ${selectedRequest.account}`} />}</div></div>
                            )}
                         </div>
                       </div>
                    </section>
-
                    <section className="space-y-6">
                       <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
                         <div>
@@ -605,7 +452,7 @@ const DashboardFinanceiro: React.FC = () => {
                           <h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2"><Paperclip size={14} className="mr-2"/> Boletos / Outros</h3>
                           <div className="space-y-2">
                              {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
-                               <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                               <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between transition-all hover:bg-indigo-100/50 min-w-0">
                                  <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
                                  <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
                                </div>
@@ -613,7 +460,6 @@ const DashboardFinanceiro: React.FC = () => {
                           </div>
                         </div>
                       </div>
-
                       <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner"><span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação Solicitante</span><p className="text-sm font-medium text-slate-600 italic">"{selectedRequest.generalObservation || 'Sem obs.'}"</p></div>
                    </section>
                 </div>
@@ -645,9 +491,7 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-gray-400 font-bold hover:bg-gray-100 rounded-xl">Cancelar</button>
-                <button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700">
-                   Confirmar Reprovação
-                </button>
+                <button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700">Confirmar Reprovação</button>
               </div>
             </div>
           </div>
@@ -656,114 +500,29 @@ const DashboardFinanceiro: React.FC = () => {
 
       {isHistoryModalOpen && (
         <div className="fixed inset-0 z-100 flex items-center justify-center p-6">
-          <div 
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
-            onClick={() => setIsHistoryModalOpen(false)}
-          ></div>
-          
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsHistoryModalOpen(false)}></div>
           <div className="bg-white rounded-2.5rem w-full max-w-3xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center space-x-3 text-white">
-                <History size={24} />
-                <h3 className="text-lg font-black uppercase italic tracking-tight">
-                  Histórico de Alterações
-                </h3>
-              </div>
-              <button onClick={() => setIsHistoryModalOpen(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Body */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><History size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Histórico de Alterações</h3></div><button onClick={() => setIsHistoryModalOpen(false)}><X size={20} /></button></div>
             <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
-              {isFetchingHistory ? (
-                <div className="flex justify-center items-center py-20">
-                  <Loader2 className="animate-spin text-indigo-600" size={40} />
-                </div>
-              ) : historyLogs.length > 0 ? (
-                <div className="relative">
-                  {/* Linha vertical (timeline) */}
-                  <div className="absolute left-[20px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-indigo-300 via-purple-300 to-gray-200"></div>
-
-                  {/* Timeline items */}
-                  <div className="space-y-8 relative">
+              {isFetchingHistory ? <div className="flex justify-center items-center py-20"><Loader2 className="animate-spin text-indigo-600" size={40} /></div> : historyLogs.length > 0 ? (
+                <div className="relative"><div className="absolute left-[20px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-indigo-300 via-purple-300 to-gray-200"></div><div className="space-y-8 relative">
                     {historyLogs.map((log: any, idx: number) => {
-                      const config = getStatusConfig(log.status);
-                      const IconComponent = config.icon;
-                      const isFirst = idx === 0;
-
+                      const config = getStatusConfig(log.status); const IconComponent = config.icon; const isFirst = idx === 0;
                       return (
                         <div key={log.id} className="relative pl-16 animate-in fade-in slide-in-from-left duration-300" style={{ animationDelay: `${idx * 50}ms` }}>
-                          {/* Ícone na timeline */}
-                          <div className={`absolute left-0 w-[40px] h-[40px] rounded-full ${config.bgColor} ${config.color} flex items-center justify-center shadow-md border-4 border-white z-10`}>
-                            <IconComponent size={18} strokeWidth={2.5} />
-                          </div>
-
-                          {/* Seta indicando direção (do mais recente para o mais antigo) */}
-                          {!isFirst && (
-                            <div className="absolute left-[17px] -top-4 text-indigo-300">
-                              <ArrowDown size={16} />
-                            </div>
-                          )}
-
-                          {/* Card do log */}
+                          <div className={`absolute left-0 w-[40px] h-[40px] rounded-full ${config.bgColor} ${config.color} flex items-center justify-center shadow-md border-4 border-white z-10`}><IconComponent size={18} strokeWidth={2.5} /></div>
+                          {!isFirst && <div className="absolute left-[17px] -top-4 text-indigo-300"><ArrowDown size={16} /></div>}
                           <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition-shadow">
-                            {/* Header do Card */}
-                            <div className="flex justify-between items-start mb-4">
-                              <div>
-                                <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide ${config.bgColor} ${config.color}`}>
-                                  {log.status}
-                                </span>
-                                {isFirst && (
-                                  <span className="ml-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                                    Mais Recente
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-[10px] font-black text-gray-400 uppercase flex items-center">
-                                <Clock size={12} className="mr-1" />
-                                {new Date(log.createdAt).toLocaleString('pt-BR')}
-                              </span>
-                            </div>
-
-                            {/* Observação */}
-                            {log.obs && (
-                              <p className="text-sm font-bold text-slate-800 mb-3 uppercase leading-relaxed">
-                                {log.obs}
-                              </p>
-                            )}
-
-                            {/* Mensagem */}
-                            {log.msg && (
-                              <p className="text-xs font-medium text-slate-600 italic bg-white p-3 rounded-xl border border-gray-100 mb-4">
-                                {log.msg}
-                              </p>
-                            )}
-
-                            {/* Usuário */}
-                            {log.user && (
-                              <div className="flex items-center pt-3 border-t border-gray-200">
-                                <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-[8px] font-black text-indigo-600 mr-2 uppercase">
-                                  {log.user?.[0]}
-                                </div>
-                                <span className="text-[10px] font-black text-indigo-600 uppercase">
-                                  {log.user}
-                                </span>
-                              </div>
-                            )}
+                            <div className="flex justify-between items-start mb-4"><div><span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide ${config.bgColor} ${config.color}`}>{log.status}</span>{isFirst && <span className="ml-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">Mais Recente</span>}</div><span className="text-[10px] font-black text-gray-400 uppercase flex items-center"><Clock size={12} className="mr-1" />{new Date(log.createdAt).toLocaleString('pt-BR')}</span></div>
+                            {log.obs && <p className="text-sm font-bold text-slate-800 mb-3 uppercase leading-relaxed">{log.obs}</p>}
+                            {log.msg && <p className="text-xs font-medium text-slate-600 italic bg-white p-3 rounded-xl border border-gray-100 mb-4">{log.msg}</p>}
+                            {log.user && <div className="flex items-center pt-3 border-t border-gray-200"><div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-[8px] font-black text-indigo-600 mr-2 uppercase">{log.user?.[0]}</div><span className="text-[10px] font-black text-indigo-600 uppercase">{log.user}</span></div>}
                           </div>
                         </div>
                       );
                     })}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-20 text-gray-300">
-                  <History size={64} className="mb-4 opacity-20" />
-                  <p className="font-black uppercase text-sm">Nenhum registro encontrado</p>
-                </div>
-              )}
+                  </div></div>
+              ) : <div className="flex flex-col items-center justify-center py-20 text-gray-300"><History size={64} className="mb-4 opacity-20" /><p className="font-black uppercase text-sm">Nenhum registro encontrado</p></div>}
             </div>
           </div>
         </div>
@@ -790,30 +549,15 @@ const DashboardFinanceiro: React.FC = () => {
                     <textarea value={shareCommentText} onChange={e => setShareCommentText(e.target.value)} placeholder="Ex: Instruções para processamento regional..." className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 h-[52px] resize-none" />
                   </div>
                 </div>
-                <div className="flex justify-center pt-2">
-                  <button onClick={handleShare} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center transition-all active:scale-95">
-                    <Globe size={16} className="mr-2" /> Confirmar Compartilhamento
-                  </button>
-                </div>
+                <div className="flex justify-center pt-2"><button onClick={handleShare} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center transition-all active:scale-95"><Globe size={16} className="mr-2" /> Confirmar Compartilhamento</button></div>
               </div>
-
-              <div className="flex items-center justify-between border-b pb-4">
-                 <h4 className="text-sm font-black text-slate-800 uppercase italic">Histórico de Regionais</h4>
-                 <div className="flex bg-gray-100 p-1 rounded-xl">
-                    <button onClick={() => setSharedStatusFilter('PENDENTE')} className={`px-4 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${sharedStatusFilter === 'PENDENTE' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>Pendentes</button>
-                    <button onClick={() => setSharedStatusFilter('TODOS')} className={`px-4 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${sharedStatusFilter === 'TODOS' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>Ver Todos</button>
-                 </div>
-              </div>
-
+              <div className="flex items-center justify-between border-b pb-4"><h4 className="text-sm font-black text-slate-800 uppercase italic">Histórico de Regionais</h4><div className="flex bg-gray-100 p-1 rounded-xl"><button onClick={() => setSharedStatusFilter('PENDENTE')} className={`px-4 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${sharedStatusFilter === 'PENDENTE' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>Pendentes</button><button onClick={() => setSharedStatusFilter('TODOS')} className={`px-4 py-1.5 text-[9px] font-black uppercase rounded-lg transition-all ${sharedStatusFilter === 'TODOS' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>Ver Todos</button></div></div>
               <div className="grid grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b pb-2 italic flex items-center"><Globe size={14} className="mr-2" /> Regional Norte</h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                     {northShared.length > 0 ? northShared.map(h => (
-                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
-                        <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
-                      </div>
+                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate"><div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div><Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" /></div>
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                   </div>
                 </div>
@@ -821,10 +565,7 @@ const DashboardFinanceiro: React.FC = () => {
                   <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest border-b pb-2 italic flex items-center"><Globe size={14} className="mr-2" /> Regional Sul</h4>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
                     {southShared.length > 0 ? southShared.map(h => (
-                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
-                        <div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div>
-                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
-                      </div>
+                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate"><div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div><Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" /></div>
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                   </div>
                 </div>
@@ -834,7 +575,6 @@ const DashboardFinanceiro: React.FC = () => {
         </div>
       )}
 
-      {/* TAREFA: Modal de Visualização/Edição de Comentário de Compartilhamento */}
       {viewingCommentData && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
@@ -847,48 +587,12 @@ const DashboardFinanceiro: React.FC = () => {
             </header>
             <div className="p-8">
               {isMaster ? (
-                /* Modo Edição (Exclusivo Master) */
                 <div className="space-y-6">
-                  <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100 relative">
-                    <textarea
-                      value={editedComment}
-                      onChange={(e) => setEditedComment(e.target.value)}
-                      placeholder="Adicione uma observação interna para este faturamento..."
-                      className="w-full h-40 bg-transparent border-none outline-none text-sm font-bold text-slate-800 italic resize-none placeholder:text-purple-300"
-                    />
-                  </div>
-                  <div className="flex gap-4">
-                    <button 
-                      onClick={handleClearComment}
-                      className="flex-1 py-4 text-red-500 font-black text-[10px] uppercase border border-red-50 rounded-xl hover:bg-red-50 transition-all flex items-center justify-center"
-                    >
-                      <TrashIcon size={16} className="mr-2" /> Limpar
-                    </button>
-                    <button 
-                      disabled={isSavingComment}
-                      onClick={handleSaveComment}
-                      className="flex-[2] py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center"
-                    >
-                      {isSavingComment ? <Loader2 className="animate-spin mr-2" size={16} /> : <Save className="mr-2" size={16} />}
-                      Salvar Alterações
-                    </button>
-                  </div>
+                  <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100 relative"><textarea value={editedComment} onChange={(e) => setEditedComment(e.target.value)} placeholder="Adicione uma observação interna para este faturamento..." className="w-full h-40 bg-transparent border-none outline-none text-sm font-bold text-slate-800 italic resize-none placeholder:text-purple-300" /></div>
+                  <div className="flex gap-4"><button onClick={handleClearComment} className="flex-1 py-4 text-red-500 font-black text-[10px] uppercase border border-red-50 rounded-xl hover:bg-red-50 transition-all flex items-center justify-center"><TrashIcon size={16} className="mr-2" /> Limpar</button><button disabled={isSavingComment} onClick={handleSaveComment} className="flex-[2] py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center">{isSavingComment ? <Loader2 className="animate-spin mr-2" size={16} /> : <Save className="mr-2" size={16} />}Salvar Alterações</button></div>
                 </div>
               ) : (
-                /* Modo Leitura (Financeiro Comum) */
-                <div className="space-y-6 text-center">
-                  <div className="bg-purple-50 p-8 rounded-3xl border border-purple-100">
-                    <p className="text-sm text-slate-800 font-medium italic leading-relaxed">
-                      {viewingCommentData.comment ? `"${viewingCommentData.comment}"` : "Nenhuma observação registrada para este item."}
-                    </p>
-                  </div>
-                  <button 
-                    onClick={() => setViewingCommentData(null)}
-                    className="px-10 py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95"
-                  >
-                    Fechar Visualização
-                  </button>
-                </div>
+                <div className="space-y-6 text-center"><div className="bg-purple-50 p-8 rounded-3xl border border-purple-100"><p className="text-sm text-slate-800 font-medium italic leading-relaxed">{viewingCommentData.comment ? `"${viewingCommentData.comment}"` : "Nenhuma observação registrada para este item."}</p></div><button onClick={() => setViewingCommentData(null)} className="px-10 py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95">Fechar Visualização</button></div>
               )}
             </div>
           </div>
