@@ -291,6 +291,24 @@ export const sharepointService = {
     }
   },
 
+  /**
+   * TAREFA: Método para atualizar campos específicos diretamente no SharePoint via Graph.
+   */
+  updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
+    try {
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
+      const response = await graphFetch(endpoint, accessToken, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields)
+      });
+      return response.ok;
+    } catch (e) {
+      console.error("Erro updateRequestFields:", e);
+      return false;
+    }
+  },
+
   getItemAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {

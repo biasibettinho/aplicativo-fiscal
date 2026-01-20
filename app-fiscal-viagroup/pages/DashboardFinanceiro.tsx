@@ -5,7 +5,7 @@ import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
   DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History, Copy,
-  FileSearch, PlayCircle, ArrowDown
+  FileSearch, PlayCircle, ArrowDown, Save, Trash2 as TrashIcon
 } from 'lucide-react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../App';
@@ -54,8 +54,10 @@ const DashboardFinanceiro: React.FC = () => {
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  // TAREFA: Novo estado para visualização de comentários
-  const [viewingShareComment, setViewingShareComment] = useState<string | null>(null);
+  // TAREFA: Estado para modal de comentários agora guarda objeto para edição
+  const [viewingCommentData, setViewingCommentData] = useState<{ id: string, graphId: string, comment: string } | null>(null);
+  const [editedComment, setEditedComment] = useState('');
+  const [isSavingComment, setIsSavingComment] = useState(false);
 
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
@@ -341,6 +343,53 @@ const DashboardFinanceiro: React.FC = () => {
     }
   };
 
+  const handleSaveComment = async () => {
+    if (!viewingCommentData || !authState.token || !authState.user) return;
+    
+    setIsSavingComment(true);
+    const newComment = editedComment.trim();
+
+    try {
+      const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
+        COMENTARIO_COMPARTILHAMENTO: newComment
+      });
+
+      if (success) {
+        // Feedback Visual Imediato: Atualiza estado local
+        setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
+        setViewingCommentData(null);
+      } else {
+        alert("Falha ao salvar comentário no servidor.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro crítico ao salvar comentário.");
+    } finally {
+      setIsSavingComment(false);
+    }
+  };
+
+  const handleClearComment = async () => {
+    if (!viewingCommentData || !authState.token) return;
+    if (!window.confirm("Deseja realmente apagar esta observação?")) return;
+
+    setIsSavingComment(true);
+    try {
+      const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
+        COMENTARIO_COMPARTILHAMENTO: ''
+      });
+
+      if (success) {
+        setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: '' } : r));
+        setViewingCommentData(null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingComment(false);
+    }
+  };
+
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.id.toString().includes(searchTerm);
@@ -432,6 +481,8 @@ const DashboardFinanceiro: React.FC = () => {
                 filteredRequests.slice(0, 100).map(r => {
                   const dStatus = resolveDisplayStatus(r);
                   const urgent = isUrgent(r);
+                  const hasComment = r.shareComment && r.shareComment.trim() !== '';
+
                   return (
                     <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}>
                       <div className="flex justify-between items-center mb-2">
@@ -439,16 +490,18 @@ const DashboardFinanceiro: React.FC = () => {
                         <div className="flex items-center space-x-2">
                           {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
                           
-                          {/* TAREFA: Botão de chat no card */}
-                          {r.shareComment && (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setViewingShareComment(r.shareComment || null); }}
-                              className="p-1 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors flex items-center"
-                              title="Ler observação de compartilhamento"
-                            >
-                              <MessageSquare size={14} />
-                            </button>
-                          )}
+                          {/* TAREFA: Botão de chat persistente (Exclusivo Financeiro Master/Comum) */}
+                          <button
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              setViewingCommentData({ id: r.id, graphId: r.graphId, comment: r.shareComment || '' }); 
+                              setEditedComment(r.shareComment || '');
+                            }}
+                            className={`p-1.5 rounded-lg transition-all hover:scale-110 flex items-center ${hasComment ? 'text-purple-600 bg-purple-50 shadow-sm' : 'text-gray-300 hover:text-indigo-400'}`}
+                            title={hasComment ? "Ler observação" : "Adicionar observação"}
+                          >
+                            <MessageSquare size={14} strokeWidth={hasComment ? 2.5 : 2} />
+                          </button>
 
                           <Badge status={dStatus} className="scale-90 origin-right" />
                         </div>
@@ -781,8 +834,8 @@ const DashboardFinanceiro: React.FC = () => {
         </div>
       )}
 
-      {/* TAREFA: Modal de Visualização de Comentário de Compartilhamento */}
-      {viewingShareComment && (
+      {/* TAREFA: Modal de Visualização/Edição de Comentário de Compartilhamento */}
+      {viewingCommentData && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
             <header className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white flex justify-between items-center">
@@ -790,22 +843,53 @@ const DashboardFinanceiro: React.FC = () => {
                 <MessageSquare size={20} />
                 <h3 className="text-lg font-black uppercase italic tracking-tight">Observação do Compartilhamento</h3>
               </div>
-              <button onClick={() => setViewingShareComment(null)} className="hover:rotate-90 transition-transform"><X size={20}/></button>
+              <button onClick={() => setViewingCommentData(null)} className="hover:rotate-90 transition-transform"><X size={20}/></button>
             </header>
             <div className="p-8">
-              <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100">
-                <p className="text-sm text-slate-800 font-medium italic leading-relaxed">
-                  "{viewingShareComment}"
-                </p>
-              </div>
-              <div className="mt-6 flex justify-end">
-                <button 
-                  onClick={() => setViewingShareComment(null)}
-                  className="px-8 py-3 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95"
-                >
-                  Fechar Visualização
-                </button>
-              </div>
+              {isMaster ? (
+                /* Modo Edição (Exclusivo Master) */
+                <div className="space-y-6">
+                  <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100 relative">
+                    <textarea
+                      value={editedComment}
+                      onChange={(e) => setEditedComment(e.target.value)}
+                      placeholder="Adicione uma observação interna para este faturamento..."
+                      className="w-full h-40 bg-transparent border-none outline-none text-sm font-bold text-slate-800 italic resize-none placeholder:text-purple-300"
+                    />
+                  </div>
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={handleClearComment}
+                      className="flex-1 py-4 text-red-500 font-black text-[10px] uppercase border border-red-50 rounded-xl hover:bg-red-50 transition-all flex items-center justify-center"
+                    >
+                      <TrashIcon size={16} className="mr-2" /> Limpar
+                    </button>
+                    <button 
+                      disabled={isSavingComment}
+                      onClick={handleSaveComment}
+                      className="flex-[2] py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center"
+                    >
+                      {isSavingComment ? <Loader2 className="animate-spin mr-2" size={16} /> : <Save className="mr-2" size={16} />}
+                      Salvar Alterações
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Modo Leitura (Financeiro Comum) */
+                <div className="space-y-6 text-center">
+                  <div className="bg-purple-50 p-8 rounded-3xl border border-purple-100">
+                    <p className="text-sm text-slate-800 font-medium italic leading-relaxed">
+                      {viewingCommentData.comment ? `"${viewingCommentData.comment}"` : "Nenhuma observação registrada para este item."}
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setViewingCommentData(null)}
+                    className="px-10 py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95"
+                  >
+                    Fechar Visualização
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
