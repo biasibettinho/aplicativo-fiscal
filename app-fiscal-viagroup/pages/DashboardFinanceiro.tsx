@@ -57,6 +57,8 @@ const DashboardFinanceiro: React.FC = () => {
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
+  
+  // TAREFA: Alterado valor inicial de 'Pendente' para '' (Todas) conforme solicitação
   const [statusFilter, setStatusFilter] = useState('');
 
   // Modais
@@ -229,13 +231,12 @@ const DashboardFinanceiro: React.FC = () => {
       comment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
     }
     
-    // Atualização Otimista
+    // TAREFA: Feedback Visual Imediato
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment } : r));
     setSelectedId(null);
     setIsProcessingAction(true);
 
     try {
-      // Injeção cirúrgica de campo de SLA no payload de finalização
       const payload: any = {
         status: targetStatus,
         approverObservation: comment,
@@ -243,7 +244,7 @@ const DashboardFinanceiro: React.FC = () => {
       };
 
       if (isMaster) {
-        payload.Datafinaliza_x00e7__x00e3_o = new Date().toISOString();
+        payload.sentToFinanceAt = new Date().toISOString(); // Injetando campo de SLA se master
       }
 
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
@@ -253,6 +254,8 @@ const DashboardFinanceiro: React.FC = () => {
         MSG_OBSERVACAO: comment,
         usuario_logado: authState.user.name
       });
+      // Atualização final pós-confirmacao do servidor (segurança extra)
+      loadData(true);
     } catch (e) { 
       alert("Erro ao aprovar no servidor. Recarregando..."); 
       loadData(true);
@@ -265,7 +268,7 @@ const DashboardFinanceiro: React.FC = () => {
     const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
     const logObs = `Reprovado: ${rejectReason}`;
     
-    // Atualização Otimista
+    // TAREFA: Feedback Visual Imediato
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } : r));
     setIsRejectModalOpen(false);
     setSelectedId(null);
@@ -283,6 +286,7 @@ const DashboardFinanceiro: React.FC = () => {
         MSG_OBSERVACAO: rejectComment,
         usuario_logado: authState.user.name
       });
+      loadData(true);
     } catch (e) { 
       alert("Erro ao reprovar no servidor. Recarregando..."); 
       loadData(true);
@@ -298,22 +302,23 @@ const DashboardFinanceiro: React.FC = () => {
     
     const comment = shareCommentText.trim();
     
-    // Atualização Otimista Local
+    // TAREFA: Feedback Visual Imediato
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
         ...r, 
         sharedWithEmail: shareEmail,
         sharedByName: authState.user?.name,
-        statusManual: 'Compartilhado'
+        statusManual: 'Compartilhado',
+        shareComment: comment // Atualizando localmente para exibição imediata
     } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
 
     try {
-      // Persistência: Envia apenas campos estáveis para o SharePoint via Graph
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
         sharedWithEmail: shareEmail,
         statusManual: 'Compartilhado',
-        sharedByName: authState.user?.name || 'Sistema'
+        sharedByName: authState.user?.name || 'Sistema',
+        shareComment: comment
       });
 
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
@@ -323,7 +328,7 @@ const DashboardFinanceiro: React.FC = () => {
         usuario_logado: authState.user.name
       });
       setShareCommentText('');
-      alert("Compartilhamento concluído!");
+      loadData(true);
     } catch (e: any) { 
       console.error(e);
       alert(`Erro ao compartilhar: ${e.message}`);
@@ -435,6 +440,13 @@ const DashboardFinanceiro: React.FC = () => {
                       </div>
                       <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
                       
+                      {/* TAREFA: Visualização de Comentário de Compartilhamento no Card */}
+                      {r.shareComment && (
+                        <p className="text-[9px] text-gray-500 mt-1 italic line-clamp-1">
+                          <strong>Obs:</strong> {r.shareComment}
+                        </p>
+                      )}
+
                       {r.sharedWithEmail && (
                           <div className="flex items-center gap-1 mt-2">
                               <Share2 size={10} className="text-purple-600" />
@@ -563,6 +575,8 @@ const DashboardFinanceiro: React.FC = () => {
                 <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none">
                   <option value="Sem método de pagamento">Sem método de pagamento</option>
                   <option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option>
+                  {/* TAREFA: Adicionada opção 'Outros' */}
+                  <option value="Outros">Outros</option>
                 </select>
               </div>
               <div>
