@@ -441,10 +441,12 @@ const DashboardFinanceiro: React.FC = () => {
                       <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
                       
                       {/* TAREFA: Visualização de Comentário de Compartilhamento no Card */}
-                      {r.shareComment && (
-                        <p className="text-[9px] text-gray-500 mt-1 italic line-clamp-1">
-                          <strong>Obs:</strong> {r.shareComment}
-                        </p>
+                      {r.shareComment && r.shareComment.trim() !== '' && (
+                        <div className="mt-2 p-2 bg-blue-50 border-l-2 border-blue-400 rounded">
+                           <p className="text-[9px] text-gray-700 italic">
+                             <strong>💬 Obs:</strong> {r.shareComment}
+                           </p>
+                        </div>
                       )}
 
                       {r.sharedWithEmail && (
@@ -484,6 +486,19 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
+                {/* Exibir comentário de compartilhamento se existir - Painel Detalhes */}
+                {selectedRequest.shareComment && selectedRequest.shareComment.trim() !== '' && (
+                  <div className="p-5 bg-blue-50 border-l-8 border-blue-400 rounded-3xl animate-in fade-in slide-in-from-top duration-300">
+                    <div className="flex items-center mb-2">
+                      <MessageSquare size={16} className="text-blue-600 mr-2" />
+                      <span className="text-xs font-black text-blue-700 uppercase tracking-widest italic">Observação do Compartilhamento</span>
+                    </div>
+                    <p className="text-sm text-gray-800 font-medium italic">
+                      "{selectedRequest.shareComment}"
+                    </p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                    <section className="bg-indigo-50/30 p-10 rounded-[3rem] border border-indigo-50 shadow-inner">
                       <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center"><Landmark size={14} className="mr-2"/> Detalhes de Pagamento</h3>
@@ -575,7 +590,6 @@ const DashboardFinanceiro: React.FC = () => {
                 <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none">
                   <option value="Sem método de pagamento">Sem método de pagamento</option>
                   <option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option>
-                  {/* TAREFA: Adicionada opção 'Outros' */}
                   <option value="Outros">Outros</option>
                 </select>
               </div>
