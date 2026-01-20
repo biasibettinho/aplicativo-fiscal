@@ -54,6 +54,9 @@ const DashboardFinanceiro: React.FC = () => {
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
+  // TAREFA: Novo estado para visualização de comentários
+  const [viewingShareComment, setViewingShareComment] = useState<string | null>(null);
+
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -435,20 +438,23 @@ const DashboardFinanceiro: React.FC = () => {
                         <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
                         <div className="flex items-center space-x-2">
                           {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
+                          
+                          {/* TAREFA: Botão de chat no card */}
+                          {r.shareComment && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setViewingShareComment(r.shareComment || null); }}
+                              className="p-1 text-purple-600 hover:bg-purple-50 rounded-lg transition-colors flex items-center"
+                              title="Ler observação de compartilhamento"
+                            >
+                              <MessageSquare size={14} />
+                            </button>
+                          )}
+
                           <Badge status={dStatus} className="scale-90 origin-right" />
                         </div>
                       </div>
                       <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
                       
-                      {/* TAREFA: Visualização de Comentário de Compartilhamento no Card */}
-                      {r.shareComment && r.shareComment.trim() !== '' && (
-                        <div className="mt-2 p-2 bg-blue-50 border-l-2 border-blue-400 rounded">
-                           <p className="text-[9px] text-gray-700 italic">
-                             <strong>💬 Obs:</strong> {r.shareComment}
-                           </p>
-                        </div>
-                      )}
-
                       {r.sharedWithEmail && (
                           <div className="flex items-center gap-1 mt-2">
                               <Share2 size={10} className="text-purple-600" />
@@ -486,19 +492,6 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-                {/* Exibir comentário de compartilhamento se existir - Painel Detalhes */}
-                {selectedRequest.shareComment && selectedRequest.shareComment.trim() !== '' && (
-                  <div className="p-5 bg-blue-50 border-l-8 border-blue-400 rounded-3xl animate-in fade-in slide-in-from-top duration-300">
-                    <div className="flex items-center mb-2">
-                      <MessageSquare size={16} className="text-blue-600 mr-2" />
-                      <span className="text-xs font-black text-blue-700 uppercase tracking-widest italic">Observação do Compartilhamento</span>
-                    </div>
-                    <p className="text-sm text-gray-800 font-medium italic">
-                      "{selectedRequest.shareComment}"
-                    </p>
-                  </div>
-                )}
-
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                    <section className="bg-indigo-50/30 p-10 rounded-[3rem] border border-indigo-50 shadow-inner">
                       <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center"><Landmark size={14} className="mr-2"/> Detalhes de Pagamento</h3>
@@ -782,6 +775,36 @@ const DashboardFinanceiro: React.FC = () => {
                     )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAREFA: Modal de Visualização de Comentário de Compartilhamento */}
+      {viewingShareComment && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
+            <header className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white flex justify-between items-center">
+              <div className="flex items-center space-x-3">
+                <MessageSquare size={20} />
+                <h3 className="text-lg font-black uppercase italic tracking-tight">Observação do Compartilhamento</h3>
+              </div>
+              <button onClick={() => setViewingShareComment(null)} className="hover:rotate-90 transition-transform"><X size={20}/></button>
+            </header>
+            <div className="p-8">
+              <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100">
+                <p className="text-sm text-slate-800 font-medium italic leading-relaxed">
+                  "{viewingShareComment}"
+                </p>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button 
+                  onClick={() => setViewingShareComment(null)}
+                  className="px-8 py-3 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-purple-700 transition-all active:scale-95"
+                >
+                  Fechar Visualização
+                </button>
               </div>
             </div>
           </div>
