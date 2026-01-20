@@ -224,11 +224,19 @@ const DashboardFinanceiro: React.FC = () => {
     const comment = shareCommentText.trim();
     
     console.log("[DEBUG UI] Click Compartilhar. ID:", selectedRequest.id, "Divisão:", shareEmail, "Comentário:", comment);
+    console.log("[DEBUG SHARE FLOW] Iniciando. ID:", selectedRequest.id, "Divisão Alvo:", shareEmail, "Texto Comentário:", comment);
 
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
     try {
+      console.log("[DEBUG SHARE FLOW] Enviando payload para ID:", selectedRequest.graphId, "Dados:", {
+        sharedWithEmail: shareEmail,
+        statusManual: 'Compartilhado',
+        sharedByName: authState.user?.name || 'Sistema',
+        shareComment: comment
+      });
+
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { 
         sharedWithEmail: shareEmail, 
         statusManual: 'Compartilhado', 
@@ -237,6 +245,7 @@ const DashboardFinanceiro: React.FC = () => {
       });
 
       console.log("[DEBUG UI] Retorno do Service handleShare (Aparentemente sucesso)");
+      console.log("[DEBUG SHARE FLOW] Sucesso no ID:", selectedRequest.id);
 
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
         ATUALIZACAO: 'Compartilhado', 
@@ -248,6 +257,7 @@ const DashboardFinanceiro: React.FC = () => {
       loadData(true);
     } catch (e: any) { 
         console.error("[DEBUG UI] Erro no compartilhamento:", e);
+        console.error("[DEBUG SHARE FLOW] ERRO no ID:", selectedRequest.id, e);
         alert(`Erro ao compartilhar: ${e.message}`); 
         loadData(true); 
     } finally { setIsProcessingAction(false); }
@@ -510,7 +520,7 @@ const DashboardFinanceiro: React.FC = () => {
             <div className="p-8 space-y-6">
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Motivo</label>
-                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none">
+                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-slate-800 outline-none">
                   <option value="Sem método de pagamento">Sem método de pagamento</option>
                   <option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option>
                   <option value="Outros">Outros</option>
@@ -518,7 +528,7 @@ const DashboardFinanceiro: React.FC = () => {
               </div>
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Comentários</label>
-                <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold outline-none resize-none" />
+                <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-slate-800 outline-none resize-none" />
               </div>
               <div className="flex gap-4 pt-4">
                 <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-gray-400 font-bold hover:bg-gray-100 rounded-xl">Cancelar</button>
