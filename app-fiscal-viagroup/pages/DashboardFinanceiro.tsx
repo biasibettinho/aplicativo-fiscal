@@ -193,28 +193,23 @@ const DashboardFinanceiro: React.FC = () => {
   [requests, sharedStatusFilter]);
 
   /**
-   * Função handleApprove ajustada para respeitar a hierarquia de aprovação:
-   * Financeiro Comum (Regional) envia para análise do Master.
-   * Financeiro Master fatura e finaliza a solicitação.
+   * Função handleApprove ajustada para respeitar a hierarquia de aprovação e feedback local.
    */
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
 
     try {
-        let newStatus = RequestStatus.FATURADO; // Default fallback
+        let newStatus = RequestStatus.FATURADO; 
         let successMessage = "Solicitação finalizada com sucesso!";
         let statusFinalValue = 'Finalizado';
         let logComment = 'Faturamento concluído pelo Master.';
 
-        // LÓGICA HIERÁRQUICA DE APROVAÇÃO
         if (authState.user.role === UserRole.FINANCEIRO) {
-            // Comum -> Manda para Análise do Master
             newStatus = RequestStatus.ANALISE;
             successMessage = "Solicitação pré-aprovada! Aguardando validação do Master.";
             statusFinalValue = 'Em Análise';
             logComment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
         } else if (authState.user.role === UserRole.FINANCEIRO_MASTER || authState.user.role === UserRole.ADMIN_MASTER) {
-            // Master -> Fatura e Finaliza
             newStatus = RequestStatus.FATURADO;
             successMessage = "Solicitação FATURADA com sucesso!";
             statusFinalValue = 'Finalizado';
@@ -235,7 +230,6 @@ const DashboardFinanceiro: React.FC = () => {
             payload.sentToFinanceAt = new Date().toISOString();
         }
 
-        // Executa Update blindado via Graph
         const success = await sharepointService.updateRequestFields(
             authState.token,
             selectedRequest.graphId, 
@@ -243,7 +237,13 @@ const DashboardFinanceiro: React.FC = () => {
         );
 
         if (success) {
-            // Registra no histórico
+            // Atualização de estado local imediata (Feedback Otimista)
+            setRequests(prev => prev.map(r => 
+                r.id === selectedRequest.id 
+                    ? { ...r, status: newStatus, statusFinal: statusFinalValue, approverObservation: logComment } 
+                    : r
+            ));
+
             await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
               ATUALIZACAO: newStatus, 
               OBSERVACAO: logComment, 
@@ -251,17 +251,17 @@ const DashboardFinanceiro: React.FC = () => {
               usuario_logado: authState.user.name 
             });
             
-            alert(successMessage);
-            await loadData(true); // Recarrega silenciosamente para aplicar filtros
+            showToast(successMessage, 'success');
+            loadData(true); 
         } else {
-            alert("Erro ao atualizar status. Tente novamente.");
-            await loadData(true);
+            showToast("Erro ao atualizar status. Tente novamente.", 'error');
+            loadData(true);
         }
 
     } catch (error) {
         console.error("Erro na aprovação:", error);
-        alert("Erro crítico ao aprovar.");
-        await loadData(true);
+        showToast("Erro crítico ao aprovar.", 'error');
+        loadData(true);
     } finally {
         setIsProcessingAction(false);
     }
@@ -272,15 +272,43 @@ const DashboardFinanceiro: React.FC = () => {
     const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
     const logObs = `Reprovado: ${rejectReason}`;
     
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } : r));
+    // Atualização otimista local
+    setRequests(prev => prev.map(r => 
+        r.id === selectedRequest.id 
+            ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } 
+            : r
+    ));
+    
     setIsRejectModalOpen(false);
     setSelectedId(null);
     setIsProcessingAction(true);
+
     try {
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment });
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: targetStatus, OBSERVACAO: logObs, MSG_OBSERVACAO: rejectComment, usuario_logado: authState.user.name });
-      loadData(true);
-    } catch (e) { alert("Erro ao reprovar no servidor. Recarregando..."); loadData(true); } finally { setIsProcessingAction(false); }
+      const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { 
+        status: targetStatus, 
+        errorObservation: rejectReason, 
+        approverObservation: rejectComment 
+      });
+
+      if (result) {
+          showToast("Solicitação devolvida com sucesso!", 'success');
+          await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
+            ATUALIZACAO: targetStatus, 
+            OBSERVACAO: logObs, 
+            MSG_OBSERVACAO: rejectComment, 
+            usuario_logado: authState.user.name 
+          });
+          loadData(true);
+      } else {
+          showToast("Erro ao reprovar no servidor.", 'error');
+          loadData(true);
+      }
+    } catch (e) { 
+        showToast("Erro crítico ao reprovar.", 'error'); 
+        loadData(true); 
+    } finally { 
+        setIsProcessingAction(false); 
+    }
   };
 
   const handleShare = async () => {
@@ -290,26 +318,12 @@ const DashboardFinanceiro: React.FC = () => {
     
     showToast("Enviando compartilhamento...", "info");
     
-    console.log("[DEBUG SHARE] Executando compartilhamento regional. ID:", selectedRequest.id);
-
-    // TAREFA: Diagnóstico Prioritário
-    if (authState.token && selectedRequest.graphId) {
-      console.warn("🔎 Verificando campos no SharePoint via Graph...");
-      await sharepointService.debugGetItemFields(authState.token, selectedRequest.graphId);
-    }
-
-    /**
-     * CORREÇÃO: Removido campo PESSOA_COMPARTILHOU.
-     * Mantidos apenas os campos confirmados pela definição da lista para evitar erro 400.
-     */
     const sharePayload = {
       Status: selectedRequest.status, 
       STATUS_ESPELHO_MANUAL: 'Compartilhado',
       PESSOA_COMPARTILHADA: shareEmail,
       COMENTARIO_COMPARTILHAMENTO: comment
     };
-
-    console.log("[DEBUG SHARE] Payload final enviado ao Graph:", JSON.stringify(sharePayload));
 
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
@@ -332,7 +346,6 @@ const DashboardFinanceiro: React.FC = () => {
         loadData(true);
       }
     } catch (e: any) { 
-        console.error("[DEBUG UI] Falha no processo de compartilhamento:", e);
         showToast("Erro ao compartilhar.", "error");
         loadData(true); 
     } finally { setIsProcessingAction(false); }
@@ -341,11 +354,6 @@ const DashboardFinanceiro: React.FC = () => {
   const handleSaveComment = async () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
     
-    if (authState.token && viewingCommentData.graphId) {
-      console.warn("🔎 Executando diagnóstico pré-salvamento de comentário...");
-      await sharepointService.debugGetItemFields(authState.token, viewingCommentData.graphId);
-    }
-
     setIsSavingComment(true);
     const newComment = editedComment.trim();
     showToast("Salvando comentário...", "info");
