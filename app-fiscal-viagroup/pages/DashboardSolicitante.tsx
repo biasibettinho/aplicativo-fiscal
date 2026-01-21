@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
@@ -178,7 +177,11 @@ const DashboardSolicitante: React.FC = () => {
         const updatePayload: any = {
           ...formData,
           status: targetStatus,
-          approverObservation: 'Correção realizada pelo solicitante.'
+          approverObservation: 'Correção realizada pelo solicitante.',
+          // Mantém autoria consistente na correção
+          createdByUserId: authState.user.id,
+          createdByName: authState.user.name,
+          AuthorEmail: authState.user.email
         };
 
         // Resetar campos de compartilhamento se necessário
@@ -220,8 +223,11 @@ const DashboardSolicitante: React.FC = () => {
         setSubmissionStep('Enviando para o SharePoint...');
         const submissionData: any = {
           ...formData,
+          // ⚠️ CAMPOS OBRIGATÓRIOS PARA CORREÇÃO DE AUTORIA NO SHAREPOINT
           createdByUserId: authState.user.id,
           createdByName: authState.user.name,
+          AuthorEmail: authState.user.email,
+          branch: authState.user.branchDefault || 'Matriz SP', // Envia a filial do perfil do usuário
           status: RequestStatus.PROCESSANDO,
           createdAt: new Date().toISOString()
         };

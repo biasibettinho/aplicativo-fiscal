@@ -54,7 +54,12 @@ const FIELD_MAP = {
     statusEspelho: 'TESTE',
     shareComment: 'comentario_compartilhamento',
     sharedWithEmail: 'PESSOA_COMPARTILHADA',
-    sharedByName: 'PESSOA_COMPARTILHOU'
+    sharedByName: 'PESSOA_COMPARTILHOU',
+
+    // 🆕 NOVAS COLUNAS DE AUTORIA PERSONALIZADA (FLOW)
+    createdByName: 'SolicitanteNome',
+    createdByUserId: 'SOLICITANTE_ID',
+    authorEmail: 'SOLICITANTE_EMAIL'
 };
 
 /**
@@ -88,7 +93,12 @@ const normalizePayloadKeys = (data: any) => {
         'approverObservation': 'Observa_x00e7__x00e3_o',
         
         // ⚠️ CORREÇÃO DE ERRO OBSERVATION
-        'errorObservation': 'OBS_ERRO'
+        'errorObservation': 'OBS_ERRO',
+
+        // MAPEAMENTO DE AUTORIA NAS ATUALIZAÇÕES
+        'createdByName': 'SolicitanteNome',
+        'createdByUserId': 'SOLICITANTE_ID',
+        'AuthorEmail': 'SOLICITANTE_EMAIL'
     };
 
     Object.keys(data).forEach(key => {
@@ -318,7 +328,10 @@ export const sharepointService = {
       return allItems.map((item: any) => {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
-        const creatorId = item.createdBy?.user?.id || f.AuthorLookupId || '';
+
+        // ✅ LÓGICA DE AUTORIA: PRIORIZANDO COLUNAS PERSONALIZADAS (FLOW)
+        const creatorId = f[FIELD_MAP.createdByUserId] || item.createdBy?.user?.id || f.AuthorLookupId || '';
+        const creatorName = f[FIELD_MAP.createdByName] || item.createdBy?.user?.displayName || f.AuthorDisplayName || 'Sistema';
 
         let pDate = f[FIELD_MAP.paymentDate] || '';
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
@@ -357,7 +370,7 @@ export const sharepointService = {
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: creatorId,
-          createdByName: item.createdBy?.user?.displayName || f.AuthorDisplayName || 'Sistema',
+          createdByName: creatorName,
           attachments: []
         };
       });
