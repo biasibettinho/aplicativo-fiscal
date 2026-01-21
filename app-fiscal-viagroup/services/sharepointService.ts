@@ -293,13 +293,14 @@ export const sharepointService = {
       });
 
       console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados:", JSON.stringify(fields));
-      console.log("[DEBUG UPDATE] Executando comando MS Graph PATCH...");
+      console.log("[DEBUG UPDATE] Executando comando MS Graph PATCH (V2)...");
 
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
+      // TENTATIVA V2: Usar endpoint raiz com wrapper 'fields'
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fields)
+        body: JSON.stringify({ fields: fields })
       });
       
       if (!response.ok) {
@@ -319,18 +320,19 @@ export const sharepointService = {
 
   /**
    * TAREFA: Método para atualizar campos específicos diretamente no SharePoint via Graph.
-   * Adicionados logs agressivos para investigação de persistência.
+   * Alterado para usar endpoint raiz com wrapper 'fields' visando mitigar erro 400.
    */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
       console.log("[DEBUG UPDATE_FIELDS] Chamando updateRequestFields. GraphID:", graphId, "Payload:", JSON.stringify(fields));
-      console.log("[DEBUG UPDATE_FIELDS] Executando comando MS Graph PATCH...");
+      console.log("[DEBUG UPDATE_FIELDS] Executando comando MS Graph PATCH (V2)...");
       
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}/fields`;
+      // TENTATIVA V2: Usar endpoint raiz com wrapper 'fields' para evitar limitações do endpoint /fields
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fields)
+        body: JSON.stringify({ fields: fields })
       });
       
       if (response.ok) {
