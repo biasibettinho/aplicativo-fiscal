@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, User, UserRole } from '../types';
 import { sharepointService } from './sharepointService';
 
@@ -12,7 +11,9 @@ export const requestService = {
       if (user.role === UserRole.ADMIN_MASTER) return all;
 
       if (user.role === UserRole.SOLICITANTE) {
-        return all.filter(r => r.createdByUserId === user.id); 
+        // Normalização para evitar erros de case sensitive ou espaços (IDs Microsoft podem variar)
+        const userId = (user.id || '').trim().toLowerCase();
+        return all.filter(r => (r.createdByUserId || '').trim().toLowerCase() === userId);
       }
       
       if (user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
