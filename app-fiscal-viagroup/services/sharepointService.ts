@@ -85,7 +85,10 @@ const normalizePayloadKeys = (data: any) => {
         'STATUS_FINAL': 'STATUS_FINAL',
 
         // ⚠️ NOVA CORREÇÃO OBRIGATÓRIA
-        'approverObservation': 'Observa_x00e7__x00e3_o'
+        'approverObservation': 'Observa_x00e7__x00e3_o',
+        
+        // ⚠️ CORREÇÃO DE ERRO OBSERVATION
+        'errorObservation': 'OBS_ERRO'
     };
 
     Object.keys(data).forEach(key => {
