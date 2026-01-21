@@ -183,31 +183,39 @@ export const sharepointService = {
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
-    try {
-      let allItems: any[] = [];
-      let nextLink = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?expand=fields&$top=500`;
+    let nextLink: string | null = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?$expand=fields&$top=999`;
+    let allItems: any[] = [];
+    let pageCount = 0;
+    const MAX_PAGES = 50;
 
-      while (nextLink) {
+    try {
+      while (nextLink && pageCount < MAX_PAGES) {
+        pageCount++;
         const response = await graphFetch(nextLink, accessToken);
         if (!response.ok) break;
+
         const data = await response.json();
-        allItems = [...allItems, ...(data.value || [])];
+        const items = data.value || [];
+        if (items.length > 0) allItems = [...allItems, ...items];
+
         nextLink = data['@odata.nextLink'] || null;
       }
-      
+
       return allItems.map((item: any) => {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
 
-        // Função auxiliar robusta para ler campos do Graph 'fields'
-        const getF = (key: keyof typeof FIELD_MAP) => f[FIELD_MAP[key]] || f[key] || '';
+        const getVal = (mapKey: keyof typeof FIELD_MAP) => {
+          const internalName = FIELD_MAP[mapKey];
+          return f[internalName] || f[mapKey] || '';
+        };
 
-        // ✅ CORREÇÃO CRÍTICA DE AUTORIA: Priorizando as colunas personalizadas do Power Automate
-        // Lemos SOLICITANTE_ID e SolicitanteNome diretamente do objeto 'fields'
+        // LÓGICA CRÍTICA DE AUTORIA: Lendo das colunas personalizadas do Power Automate escritas no 'fields'
         const authorId = (f['SOLICITANTE_ID'] || f[FIELD_MAP.createdByUserId] || f.AuthorLookupId || item.createdBy?.user?.id || '').toString();
         const authorName = f['SolicitanteNome'] || f[FIELD_MAP.createdByName] || f.AuthorDisplayName || item.createdBy?.user?.displayName || 'Sistema';
+        const authorEmail = f['SOLICITANTE_EMAIL'] || f[FIELD_MAP.authorEmail] || '';
 
-        let pDate = getF('paymentDate');
+        let pDate = getVal('paymentDate');
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
         const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'] || f['comentario_compartilhamento'];
@@ -217,36 +225,39 @@ export const sharepointService = {
           id: numericId.toString(),
           graphId: item.id, 
           mirrorId: parseInt(numericId.toString(), 10),
-          title: f.Title || getF('title') || 'Sem Título',
-          branch: getF('branch'),
-          status: (getF('status') as RequestStatus) || RequestStatus.PENDENTE,
-          orderNumbers: getF('orderNumbers'),
-          invoiceNumber: getF('invoiceNumber'),
-          payee: getF('payee'),
-          paymentMethod: getF('paymentMethod'),
-          pixKey: getF('pixKey'),
+          title: f.Title || getVal('title') || 'Sem Título',
+          branch: getVal('branch'),
+          status: (getVal('status') as RequestStatus) || RequestStatus.PENDENTE,
+          orderNumbers: getVal('orderNumbers'),
+          invoiceNumber: getVal('invoiceNumber'),
+          payee: getVal('payee'),
+          paymentMethod: getVal('paymentMethod'),
+          pixKey: getVal('pixKey'),
           paymentDate: pDate,
-          bank: getF('bank'),
-          agency: getF('agency'),
-          account: getF('account'),
-          accountType: getF('accountType'),
-          generalObservation: stripHtml(getF('generalObservation')),
-          approverObservation: stripHtml(getF('approverObservation')), 
-          statusManual: getF('statusManual'),
-          statusFinal: getF('statusFinal'),
-          statusEspelho: getF('statusEspelho'),
+          bank: getVal('bank'),
+          agency: getVal('agency'),
+          account: getVal('account'),
+          accountType: getVal('accountType'),
+          generalObservation: stripHtml(getVal('generalObservation')),
+          approverObservation: stripHtml(getVal('approverObservation')), 
+          statusManual: getVal('statusManual'),
+          statusFinal: getVal('statusFinal'),
+          statusEspelho: getVal('statusEspelho'),
           sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada'] || '').toLowerCase(),
-          sharedByName: getF('sharedByName'),
+          sharedByName: getVal('sharedByName'),
           shareComment: commentText,
-          errorObservation: getF('errorObservation'),
+          errorObservation: getVal('errorObservation'),
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: authorId,
           createdByName: authorName,
           attachments: []
-        };
+        } as PaymentRequest;
       });
-    } catch (e) { return []; }
+    } catch (e) {
+      console.error("Erro crítico em getRequests:", e);
+      return [];
+    }
   },
 
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
