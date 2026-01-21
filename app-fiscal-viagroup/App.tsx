@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { User, AuthState, UserRole } from './types';
@@ -32,12 +31,10 @@ const App: React.FC = () => {
   });
 
   const login = async (email: string, pass: string) => {
-    // Usamos db.getUsers() pois ele garante que INITIAL_USERS existam no localStorage
     const users = db.getUsers();
     const user = users.find((u: User) => u.email.toLowerCase() === email.toLowerCase() && u.isActive);
     
     if (user) {
-      // Simulação de verificação de senha (em produção usaria hash)
       const newState = { user, isAuthenticated: true, token: 'fake-jwt-' + user.id };
       setAuthState(newState);
       localStorage.setItem('sispag_session', JSON.stringify(newState));
@@ -64,7 +61,21 @@ const App: React.FC = () => {
               </ProtectedRoute>
             } 
           />
-          <Route path="/solicitante" element={<ProtectedRoute roles={[UserRole.SOLICITANTE, UserRole.ADMIN_MASTER]}><Layout><DashboardSolicitante /></Layout></ProtectedRoute>} />
+          <Route 
+            path="/solicitante" 
+            element={
+              <ProtectedRoute roles={[
+                UserRole.SOLICITANTE, 
+                UserRole.FISCAL_COMUM, 
+                UserRole.FISCAL_ADMIN, 
+                UserRole.FINANCEIRO, 
+                UserRole.FINANCEIRO_MASTER, 
+                UserRole.ADMIN_MASTER
+              ]}>
+                <Layout><DashboardSolicitante /></Layout>
+              </ProtectedRoute>
+            } 
+          />
           <Route path="/fiscal" element={<ProtectedRoute roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]}><Layout><DashboardFiscal /></Layout></ProtectedRoute>} />
           <Route path="/financeiro" element={<ProtectedRoute roles={[UserRole.FINANCEIRO, UserRole.FINANCEIRO_MASTER, UserRole.ADMIN_MASTER]}><Layout><DashboardFinanceiro /></Layout></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute roles={[UserRole.ADMIN_MASTER]}><Layout><DashboardAdmin /></Layout></ProtectedRoute>} />

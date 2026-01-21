@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
@@ -13,7 +12,8 @@ import { useAuth } from '../App';
 // Mapeamento de Status para Ícones e Cores
 const STATUS_CONFIG: Record<string, { icon: any; color: string; bgColor: string }> = {
   'Criado': { icon: PlayCircle, color: 'text-gray-600', bgColor: 'bg-gray-100' },
-  'Análise': { icon: FileSearch, color: 'text-yellow-600', bgColor: 'bg-yellow-100' },
+  'Análise': { icon: FileSearch, color: 'text-yellow-800', bgColor: 'bg-yellow-100' },
+  'Em Análise': { icon: FileSearch, color: 'text-yellow-800', bgColor: 'bg-yellow-100' },
   'Análise - Fiscal': { icon: FileSearch, color: 'text-blue-600', bgColor: 'bg-blue-100' },
   'Aprovado': { icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100' },
   'Aprovado - Fiscal': { icon: CheckCircle, color: 'text-blue-600', bgColor: 'bg-blue-100' },
@@ -200,18 +200,15 @@ const DashboardFinanceiro: React.FC = () => {
 
     try {
         let newStatus = RequestStatus.FATURADO; 
-        let successMessage = "Solicitação finalizada com sucesso!";
         let statusFinalValue = 'Finalizado';
         let logComment = 'Faturamento concluído pelo Master.';
 
         if (authState.user.role === UserRole.FINANCEIRO) {
             newStatus = RequestStatus.ANALISE;
-            successMessage = "Solicitação pré-aprovada! Aguardando validação do Master.";
             statusFinalValue = 'Em Análise';
             logComment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
         } else if (authState.user.role === UserRole.FINANCEIRO_MASTER || authState.user.role === UserRole.ADMIN_MASTER) {
             newStatus = RequestStatus.FATURADO;
-            successMessage = "Solicitação FATURADA com sucesso!";
             statusFinalValue = 'Finalizado';
             logComment = 'Faturamento concluído pelo Master.';
         }
@@ -251,7 +248,7 @@ const DashboardFinanceiro: React.FC = () => {
               usuario_logado: authState.user.name 
             });
             
-            showToast(successMessage, 'success');
+            showToast("Solicitação Aprovada", 'success');
             loadData(true); 
         } else {
             showToast("Erro ao atualizar status. Tente novamente.", 'error');

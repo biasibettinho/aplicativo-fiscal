@@ -30,7 +30,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       <Link 
         to={to} 
         onClick={() => {
-           // Em telas pequenas fecha ao clicar, em desktop mantém estado
            if (window.innerWidth < 1024) setIsSidebarOpen(false);
         }}
         className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
@@ -78,14 +77,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
 
         <nav className="flex-1 p-6 space-y-2 mt-4 overflow-y-auto custom-scrollbar">
-          <NavItem to="/solicitante" icon={LayoutDashboard} label="Solicitante" roles={[
-            UserRole.SOLICITANTE, 
-            UserRole.ADMIN_MASTER, 
-            UserRole.FISCAL_COMUM, 
-            UserRole.FISCAL_ADMIN, 
-            UserRole.FINANCEIRO, 
-            UserRole.FINANCEIRO_MASTER
-          ]} />
+          <NavItem 
+            to="/solicitante" 
+            icon={LayoutDashboard} 
+            label="Minhas Solicitações" 
+            roles={[
+              UserRole.SOLICITANTE, 
+              UserRole.FISCAL_COMUM, 
+              UserRole.FISCAL_ADMIN, 
+              UserRole.FINANCEIRO, 
+              UserRole.FINANCEIRO_MASTER,
+              UserRole.ADMIN_MASTER
+            ]} 
+          />
           <NavItem to="/fiscal" icon={ShieldCheck} label="Fiscal" roles={[UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.ADMIN_MASTER]} />
           <NavItem to="/financeiro" icon={BadgeDollarSign} label="Financeiro" roles={[UserRole.FINANCEIRO, UserRole.FINANCEIRO_MASTER, UserRole.ADMIN_MASTER]} />
           <NavItem to="/stats" icon={PieChart} label="Estatísticas" roles={[UserRole.ADMIN_MASTER, UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.FINANCEIRO_MASTER]} />
