@@ -226,7 +226,6 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e) { alert("Erro ao reprovar no servidor. Recarregando..."); loadData(true); } finally { setIsProcessingAction(false); }
   };
 
-  // TAREFA 2: Correção do Compartilhamento (handleShare)
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     if (!shareEmail) { showToast("Por favor, selecione uma regional de destino.", "error"); return; }
@@ -237,6 +236,12 @@ const DashboardFinanceiro: React.FC = () => {
     
     console.log("[DEBUG UI] Click Compartilhar. ID:", selectedRequest.id, "Divisão:", shareEmail, "Comentário:", comment);
     console.log("[DEBUG SHARE FLOW] Iniciando. ID:", selectedRequest.id, "Divisão Alvo:", shareEmail, "Texto Comentário:", comment);
+
+    // TAREFA: Diagnóstico Prioritário (Executar Antes da Falha)
+    if (authState.token && selectedRequest.graphId) {
+      console.warn("🔎 Iniciando diagnóstico pré-update para compartilhamento...");
+      await sharepointService.debugGetItemFields(authState.token, selectedRequest.graphId);
+    }
 
     // CORREÇÃO DO PAYLOAD (O Bug): Garantindo nomes internos corretos
     const sharePayload = {
@@ -275,18 +280,19 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e: any) { 
         console.error("[DEBUG UI] Erro no compartilhamento:", e);
         showToast("Erro ao compartilhar.", "error");
-        
-        // ADIÇÃO PARA DEBUG: DIAGNÓSTICO DE CAMPOS NO ERRO
-        if (authState.token && selectedRequest?.graphId) {
-          await sharepointService.debugGetItemFields(authState.token, selectedRequest.graphId);
-        }
-
         loadData(true); 
     } finally { setIsProcessingAction(false); }
   };
 
   const handleSaveComment = async () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
+    
+    // TAREFA: Diagnóstico Prioritário (Executar Antes da Falha)
+    if (authState.token && viewingCommentData.graphId) {
+      console.warn("🔎 Iniciando diagnóstico pré-update para salvamento de comentário...");
+      await sharepointService.debugGetItemFields(authState.token, viewingCommentData.graphId);
+    }
+
     setIsSavingComment(true);
     const newComment = editedComment.trim();
     
@@ -310,11 +316,6 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e) { 
       console.error("[DEBUG UI] Erro crítico no handleSaveComment:", e);
       showToast("Erro crítico ao salvar.", "error");
-
-      // ADIÇÃO PARA DEBUG: DIAGNÓSTICO DE CAMPOS NO ERRO
-      if (authState.token && viewingCommentData?.graphId) {
-        await sharepointService.debugGetItemFields(authState.token, viewingCommentData.graphId);
-      }
     } finally { setIsSavingComment(false); }
   };
 
