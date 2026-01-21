@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { authService } from './authService';
 
@@ -43,7 +42,7 @@ const FIELD_MAP = {
     paymentDate: 'DATA_PAG',
 
     // Campos de Aprovação e Status
-    approverObservation: 'OBSERVACAO_APROVADORES',
+    approverObservation: 'Observa_x00e7__x00e3_o', // ✅ CORREÇÃO: Alinhado com InternalName do XML
     statusManual: 'STATUS_ESPELHO_MANUAL',
     statusFinal: 'STATUS_FINAL',
     errorObservation: 'OBS_ERRO',
