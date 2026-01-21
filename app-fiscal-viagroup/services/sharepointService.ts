@@ -16,62 +16,74 @@ const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.env
 
 console.log("[DEBUG INIT] Usando Lista Principal (ID):", MAIN_LIST_ID);
 
+/**
+ * TAREFA 1: Atualizar FIELD_MAP (Correção Baseada em XML Oficial)
+ */
 const FIELD_MAP = {
-  title: 'Title',
-  invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
-  orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
-  status: 'Status',
-  branch: 'Filial',
-  generalObservation: 'Observa_x00e7__x00e3_o',
-  approverObservation: 'OBSERVACAO_APROVADORES', 
-  paymentMethod: 'MET_PAGAMENTO',
-  pixKey: 'CAMPO_PIX',
-  paymentDate: 'DATA_PAG',
-  payee: 'PESSOA',
-  statusManual: 'STATUS_ESPELHO_MANUAL',
-  statusFinal: 'STATUS_FINAL',
-  statusEspelho: 'STATUS_ESPELHO',
-  bank: 'BANCO',
-  agency: 'AGENCIA',
-  account: 'CONTA',
-  accountType: 'TIPO_CONTA',
-  sharedWithEmail: 'PESSOA_COMPARTILHADA',
-  sharedByName: 'PESSOA_COMPARTILHOU',
-  shareComment: 'COMENTARIO_COMPARTILHAMENTO',
-  errorObservation: 'OBS_ERRO' 
+    // Campos Simples
+    title: 'Title',
+    branch: 'Filial',
+    status: 'Status',
+    payee: 'FAVORECIDO',
+    bank: 'BANCO',
+    agency: 'AGENCIA',
+    account: 'CONTA',
+    accountType: 'TIPO_CONTA',
+    discount: 'DESCONTO',
+    messageId: 'Message_ID',
+
+    // Campos com Codificação ou Nomes Diferentes do Display
+    invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
+    orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
+    generalObservation: 'Observa_x00e7__x00e3_o',
+    budget: 'Or_x00e7_amento',
+    finalizationDate: 'Datafinaliza_x00e7__x00e3_o',
+    paymentMethod: 'MET_PAGAMENTO',
+    pixKey: 'CAMPO_PIX',
+    paymentDate: 'DATA_PAG',
+
+    // Campos de Aprovação e Status
+    approverObservation: 'OBSERVACAO_APROVADORES',
+    statusManual: 'STATUS_ESPELHO_MANUAL',
+    statusFinal: 'STATUS_FINAL',
+    errorObservation: 'OBS_ERRO',
+    creationObservation: 'OBS_CRIACAO',
+    sendDateFiscal: 'Dataenvio_fiscal',
+    sendDateFinance: 'Dataenvio_financeiro',
+
+    // ⚠️ CORREÇÕES CRÍTICAS ⚠️
+    statusEspelho: 'TESTE',
+    shareComment: 'comentario_compartilhamento',
+    sharedWithEmail: 'PESSOA_COMPARTILHADA',
+    sharedByName: 'PESSOA_COMPARTILHOU'
 };
 
 /**
- * TAREFA 1: Sanitização de Payload
+ * TAREFA 2: Implementar Função sanitizePayload
  * Remove campos do sistema e metadados que o Graph rejeita em operações de update (PATCH).
  */
 const sanitizePayload = (data: any) => {
-  if (!data) return {};
-  const clean = { ...data };
-  
-  const forbidden = [
-    'id', 'ID', 'Author', 'Editor', 'Created', 'Modified', 
-    'Attachments', 'AttachmentFiles', 'GUID', 'UniqueId',
-    'ContentType', 'ContentTypeId', 'eTag', '_ComplianceFlags',
-    '_ComplianceTag', '_ComplianceTagWrittenTime', '_ComplianceTagUserId'
-  ];
-  
-  // Remove chaves proibidas conhecidas
-  forbidden.forEach(key => delete clean[key]);
-  
-  // Remove metadados OData e campos aninhados complexos (objetos ou arrays de sistema)
-  Object.keys(clean).forEach(key => {
-    if (
-      key.startsWith('odata.') || 
-      key.includes('@') || 
-      key.startsWith('__') ||
-      clean[key] === null // Opcional: SharePoint as vezes reclama de nulos em colunas obrigatórias
-    ) {
-      delete clean[key];
-    }
-  });
-  
-  return clean;
+    if (!data) return {};
+    const clean = { ...data };
+    
+    // Lista negra de campos que o Graph rejeita em updates
+    const forbidden = [
+        'id', 'ID', 'Author', 'Editor', 'Created', 'Modified', 
+        'Attachments', 'AttachmentFiles', 'GUID', 'UniqueId',
+        'ContentType', 'ContentTypeId', 'eTag', 'odata.type', 
+        'odata.id', 'odata.etag', 'odata.editLink', 'fields@odata.context'
+    ];
+    
+    forbidden.forEach(key => delete clean[key]);
+    
+    // Remove propriedades de metadados do sistema
+    Object.keys(clean).forEach(key => {
+        if (key.startsWith('odata.') || key.startsWith('__')) {
+            delete clean[key];
+        }
+    });
+    
+    return clean;
 };
 
 /**
@@ -274,7 +286,7 @@ export const sharepointService = {
         let pDate = f[FIELD_MAP.paymentDate] || '';
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
-        const rawComment = f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'];
+        const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'];
         const commentText = typeof rawComment === 'object' && rawComment !== null 
             ? (rawComment as any).toString() 
             : (rawComment || '');
@@ -319,7 +331,7 @@ export const sharepointService = {
   },
 
   /**
-   * TAREFA 2: Refatorar Métodos de Update com Sanitização
+   * TAREFA 3: Blindar os Métodos de Update (Uso de sanitizePayload e Log Detalhado)
    */
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
@@ -341,7 +353,6 @@ export const sharepointService = {
       });
       
       if (!response.ok) {
-        // TAREFA 3: Melhorar Logs de Erro
         const errorBody = await response.json();
         console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
         return null;
@@ -376,7 +387,6 @@ export const sharepointService = {
         console.log("[DEBUG UPDATE_FIELDS] Sucesso MS Graph PATCH! GraphID:", graphId);
         return true;
       } else {
-        // TAREFA 3: Melhorar Logs de Erro
         const errorBody = await response.json();
         console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
         return false;

@@ -232,24 +232,26 @@ const DashboardFinanceiro: React.FC = () => {
     
     showToast("Enviando compartilhamento...", "info");
     
-    console.log("[DEBUG SHARE] Iniciando correção de payload. ID:", selectedRequest.id);
+    console.log("[DEBUG SHARE] Executando compartilhamento regional. ID:", selectedRequest.id);
 
     // TAREFA: Diagnóstico Prioritário
     if (authState.token && selectedRequest.graphId) {
-      console.warn("🔎 Executando diagnóstico prévio...");
+      console.warn("🔎 Verificando campos no SharePoint via Graph...");
       await sharepointService.debugGetItemFields(authState.token, selectedRequest.graphId);
     }
 
-    // CORREÇÃO: Removendo PESSOA_COMPARTILHOU que não existe e causava 400.
+    /**
+     * CORREÇÃO: Removido campo PESSOA_COMPARTILHOU.
+     * Mantidos apenas os campos confirmados pela definição da lista para evitar erro 400.
+     */
     const sharePayload = {
       Status: selectedRequest.status, 
       STATUS_ESPELHO_MANUAL: 'Compartilhado',
       PESSOA_COMPARTILHADA: shareEmail,
       COMENTARIO_COMPARTILHAMENTO: comment
-      // PESSOA_COMPARTILHOU: removido conforme diagnóstico
     };
 
-    console.log("[DEBUG SHARE] Enviando Payload Final:", sharePayload);
+    console.log("[DEBUG SHARE] Payload final enviado ao Graph:", JSON.stringify(sharePayload));
 
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
@@ -272,7 +274,7 @@ const DashboardFinanceiro: React.FC = () => {
         loadData(true);
       }
     } catch (e: any) { 
-        console.error("[DEBUG UI] Erro no compartilhamento:", e);
+        console.error("[DEBUG UI] Falha no processo de compartilhamento:", e);
         showToast("Erro ao compartilhar.", "error");
         loadData(true); 
     } finally { setIsProcessingAction(false); }
@@ -282,7 +284,7 @@ const DashboardFinanceiro: React.FC = () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
     
     if (authState.token && viewingCommentData.graphId) {
-      console.warn("🔎 Diagnóstico pré-comentário...");
+      console.warn("🔎 Executando diagnóstico pré-salvamento de comentário...");
       await sharepointService.debugGetItemFields(authState.token, viewingCommentData.graphId);
     }
 
