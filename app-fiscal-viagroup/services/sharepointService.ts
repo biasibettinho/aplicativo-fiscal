@@ -183,49 +183,49 @@ export const sharepointService = {
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
-    let nextLink: string | null = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?$expand=fields&$top=999`;
-    let allItems: any[] = [];
-    let pageCount = 0;
-    const MAX_PAGES = 50;
-
     try {
-      while (nextLink && pageCount < MAX_PAGES) {
-        pageCount++;
-        const response = await graphFetch(nextLink, accessToken);
-        if (!response.ok) break;
+      // Usando SharePoint REST API Nativa em vez de Graph para garantir leitura de colunas personalizadas sem cache
+      const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items?$top=5000&$select=*,Author/Title,Author/Id&$expand=Author`;
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json;odata=verbose'
+        }
+      });
 
-        const data = await response.json();
-        const items = data.value || [];
-        if (items.length > 0) allItems = [...allItems, ...items];
-
-        nextLink = data['@odata.nextLink'] || null;
+      if (!response.ok) {
+        console.error(`Erro SharePoint REST: ${response.status}`);
+        return [];
       }
 
-      return allItems.map((item: any) => {
-        const f = item.fields || {};
-        const numericId = f.id || f.ID || item.id;
+      const data = await response.json();
+      const items = data.d?.results || [];
 
+      return items.map((item: any) => {
+        // Helper para extrair valores baseados no FIELD_MAP
         const getVal = (mapKey: keyof typeof FIELD_MAP) => {
           const internalName = FIELD_MAP[mapKey];
-          return f[internalName] || f[mapKey] || '';
+          return item[internalName] || item[mapKey] || '';
         };
 
-        // LÓGICA CRÍTICA DE AUTORIA: Lendo das colunas personalizadas do Power Automate escritas no 'fields'
-        const authorId = (f['SOLICITANTE_ID'] || f[FIELD_MAP.createdByUserId] || f.AuthorLookupId || item.createdBy?.user?.id || '').toString();
-        const authorName = f['SolicitanteNome'] || f[FIELD_MAP.createdByName] || f.AuthorDisplayName || item.createdBy?.user?.displayName || 'Sistema';
-        const authorEmail = f['SOLICITANTE_EMAIL'] || f[FIELD_MAP.authorEmail] || '';
+        // LÓGICA CRÍTICA DE AUTORIA: Lendo das colunas personalizadas (Internal Names mapeados)
+        const authorId = (item.SOLICITANTE_ID || item.OData__x0053_OLICITANTE_ID || item.AuthorId || '').toString();
+        const authorName = item.SolicitanteNome || item.Author?.Title || 'Sistema';
+        const authorEmail = item.SOLICITANTE_EMAIL || '';
 
         let pDate = getVal('paymentDate');
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
-        const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'] || f['comentario_compartilhamento'];
-        const commentText = typeof rawComment === 'object' && rawComment !== null ? (rawComment as any).toString() : (rawComment || '');
+        const rawComment = item[FIELD_MAP.shareComment] || item['COMENTARIO_COMPARTILHAMENTO'] || item['comentario_compartilhamento'];
+        const commentText = typeof rawComment === 'string' ? rawComment : (rawComment ? String(rawComment) : '');
 
         return {
-          id: numericId.toString(),
-          graphId: item.id, 
-          mirrorId: parseInt(numericId.toString(), 10),
-          title: f.Title || getVal('title') || 'Sem Título',
+          id: String(item.ID),
+          graphId: String(item.ID), // ID numérico convertido para string para manter compatibilidade
+          mirrorId: item.ID,
+          title: item.Title || getVal('title') || 'Sem Título',
           branch: getVal('branch'),
           status: (getVal('status') as RequestStatus) || RequestStatus.PENDENTE,
           orderNumbers: getVal('orderNumbers'),
@@ -243,19 +243,19 @@ export const sharepointService = {
           statusManual: getVal('statusManual'),
           statusFinal: getVal('statusFinal'),
           statusEspelho: getVal('statusEspelho'),
-          sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada'] || '').toLowerCase(),
+          sharedWithEmail: stripHtml(getVal('sharedWithEmail')).toLowerCase(),
           sharedByName: getVal('sharedByName'),
-          shareComment: commentText,
+          shareComment: stripHtml(commentText),
           errorObservation: getVal('errorObservation'),
-          createdAt: item.createdDateTime,
-          updatedAt: item.lastModifiedDateTime,
+          createdAt: item.Created,
+          updatedAt: item.Modified,
           createdByUserId: authorId,
           createdByName: authorName,
           attachments: []
         } as PaymentRequest;
       });
     } catch (e) {
-      console.error("Erro crítico em getRequests:", e);
+      console.error("Erro fatal ao buscar solicitações (REST):", e);
       return [];
     }
   },
