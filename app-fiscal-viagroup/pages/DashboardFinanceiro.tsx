@@ -58,12 +58,12 @@ const DashboardFinanceiro: React.FC = () => {
   const [editedComment, setEditedComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
 
-  // NOVO: Sistema de Notificações
-  const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' | 'info' } | null>(null);
+  // TAREFA 1: Sistema de Toast
+  const [toast, setToast] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
 
-  const showNotification = (message: string, type: 'success' | 'error' | 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+  const showToast = (msg: string, type: 'info' | 'success' | 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
   };
 
   // Filtros
@@ -226,57 +226,55 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e) { alert("Erro ao reprovar no servidor. Recarregando..."); loadData(true); } finally { setIsProcessingAction(false); }
   };
 
+  // TAREFA 2: Correção do Compartilhamento (handleShare)
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
-    if (!shareEmail) { alert("Por favor, selecione uma regional de destino."); return; }
+    if (!shareEmail) { showToast("Por favor, selecione uma regional de destino.", "error"); return; }
     const comment = shareCommentText.trim();
+    
+    // Feedback Visual Inicial
+    showToast("Enviando compartilhamento...", "info");
     
     console.log("[DEBUG UI] Click Compartilhar. ID:", selectedRequest.id, "Divisão:", shareEmail, "Comentário:", comment);
     console.log("[DEBUG SHARE FLOW] Iniciando. ID:", selectedRequest.id, "Divisão Alvo:", shareEmail, "Texto Comentário:", comment);
-    
-    // Feedback Visual Inicial
-    showNotification("Iniciando compartilhamento...", "info");
+
+    // CORREÇÃO DO PAYLOAD (O Bug): Garantindo nomes internos corretos
+    const sharePayload = {
+      Status: selectedRequest.status, // Mantendo status principal 'Aprovado' para visibilidade
+      STATUS_ESPELHO_MANUAL: 'Compartilhado',
+      PESSOA_COMPARTILHADA: shareEmail,
+      COMENTARIO_COMPARTILHAMENTO: comment,
+      PESSOA_COMPARTILHOU: authState.user?.email || authState.user?.name || ''
+    };
+
+    console.log("[DEBUG SHARE] Enviando Payload:", sharePayload);
 
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
     try {
-      console.log("[DEBUG SHARE FLOW] Enviando payload para ID:", selectedRequest.graphId, "Dados:", {
-        sharedWithEmail: shareEmail,
-        statusManual: 'Compartilhado',
-        sharedByName: authState.user?.name || 'Sistema',
-        shareComment: comment
-      });
+      // Uso de updateRequestFields para garantir o envio direto das chaves SharePoint
+      const success = await sharepointService.updateRequestFields(authState.token, selectedRequest.graphId, sharePayload);
 
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { 
-        sharedWithEmail: shareEmail, 
-        statusManual: 'Compartilhado', 
-        sharedByName: authState.user?.name || 'Sistema', 
-        shareComment: comment 
-      });
+      if (success) {
+        console.log("[DEBUG UI] Retorno do Service handleShare (Sucesso)");
+        showToast("Compartilhado com sucesso!", "success");
 
-      console.log("[DEBUG UI] Retorno do Service handleShare (Aparentemente sucesso)");
-      console.log("[DEBUG SHARE FLOW] Sucesso no ID:", selectedRequest.id);
-      
-      // Feedback Visual Sucesso
-      showNotification("Solicitação compartilhada com sucesso!", "success");
-
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
-        ATUALIZACAO: 'Compartilhado', 
-        OBSERVACAO: `Compartilhado com ${shareEmail}`, 
-        MSG_OBSERVACAO: comment, 
-        usuario_logado: authState.user.name 
-      });
-      setShareCommentText('');
-      loadData(true);
+        await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
+          ATUALIZACAO: 'Compartilhado', 
+          OBSERVACAO: `Compartilhado com ${shareEmail}`, 
+          MSG_OBSERVACAO: comment, 
+          usuario_logado: authState.user.name 
+        });
+        setShareCommentText('');
+        loadData(true);
+      } else {
+        showToast("Erro ao processar no servidor.", "error");
+        loadData(true);
+      }
     } catch (e: any) { 
         console.error("[DEBUG UI] Erro no compartilhamento:", e);
-        console.error("[DEBUG SHARE FLOW] ERRO no ID:", selectedRequest.id, e);
-        
-        // Feedback Visual Erro
-        showNotification("Erro ao compartilhar.", "error");
-        
-        alert(`Erro ao compartilhar: ${e.message}`); 
+        showToast("Erro ao compartilhar.", "error");
         loadData(true); 
     } finally { setIsProcessingAction(false); }
   };
@@ -286,38 +284,26 @@ const DashboardFinanceiro: React.FC = () => {
     setIsSavingComment(true);
     const newComment = editedComment.trim();
     
-    console.log("[DEBUG UI] Click Salvar Comentário. ID:", viewingCommentData.id, "Texto:", newComment);
-    
     // Feedback Visual Inicial
-    showNotification("Salvando comentário...", "info");
+    showToast("Salvando comentário...", "info");
+    console.log("[DEBUG UI] Click Salvar Comentário. ID:", viewingCommentData.id, "Texto:", newComment);
 
     try {
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: newComment
       });
       if (success) {
-        console.log("[DEBUG UI] Retorno do Service handleSaveComment (Aparentemente sucesso)");
-        
-        // Feedback Visual Sucesso
-        showNotification("Comentário salvo!", "success");
-        
+        console.log("[DEBUG UI] Retorno do Service handleSaveComment (Sucesso)");
+        showToast("Comentário salvo!", "success");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
         setViewingCommentData(null);
       } else { 
         console.error("[DEBUG UI] O serviço retornou falha no salvamento.");
-        
-        // Feedback Visual Erro
-        showNotification("Erro ao salvar comentário.", "error");
-        
-        alert("Falha ao salvar comentário no servidor."); 
+        showToast("Erro ao salvar comentário.", "error");
       }
     } catch (e) { 
       console.error("[DEBUG UI] Erro crítico no handleSaveComment:", e);
-      
-      // Feedback Visual Erro
-      showNotification("Erro ao salvar comentário.", "error");
-      
-      alert("Erro crítico ao salvar comentário."); 
+      showToast("Erro crítico ao salvar.", "error");
     } finally { setIsSavingComment(false); }
   };
 
@@ -326,25 +312,23 @@ const DashboardFinanceiro: React.FC = () => {
     if (!window.confirm("Deseja realmente apagar esta observação?")) return;
     setIsSavingComment(true);
     
+    showToast("Limpando observação...", "info");
     console.log("[DEBUG UI] Iniciando limpeza de comentário para ID:", viewingCommentData.id);
-    showNotification("Limpando observação...", "info");
 
     try {
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: ''
       });
       if (success) {
-        console.log("[DEBUG UI] Comentário limpo com sucesso.");
-        showNotification("Observação removida!", "success");
+        showToast("Observação removida!", "success");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: '' } : r));
         setViewingCommentData(null);
       } else {
-        console.error("[DEBUG UI] Falha ao limpar comentário no servidor.");
-        showNotification("Erro ao remover observação.", "error");
+        showToast("Erro ao limpar no servidor.", "error");
       }
     } catch (e) { 
         console.error("[DEBUG UI] Erro crítico no handleClearComment:", e);
-        showNotification("Erro crítico ao remover observação.", "error");
+        showToast("Erro crítico ao limpar.", "error");
     } finally { setIsSavingComment(false); }
   };
 
@@ -368,22 +352,19 @@ const DashboardFinanceiro: React.FC = () => {
   const isFinalized = selectedRequest && [RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(selectedRequest.status);
 
   return (
-    <div className="flex flex-col h-full gap-4 overflow-hidden">
-      {/* Sistema de Notificação Toast */}
-      {notification && (
-        <div className="fixed bottom-6 right-6 z-[300] animate-in slide-in-from-bottom duration-300">
-          <div className={`flex items-center space-x-3 px-6 py-4 rounded-2xl shadow-2xl border-l-4 bg-white ${
-            notification.type === 'success' ? 'border-green-500 text-green-800' : 
-            notification.type === 'error' ? 'border-red-500 text-red-800' : 
-            'border-blue-500 text-blue-800'
+    <div className="flex flex-col h-full gap-4 overflow-hidden relative">
+      {/* RENDERIZAÇÃO DO TOAST */}
+      {toast && (
+        <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top duration-300">
+          <div className={`flex items-center space-x-3 px-8 py-4 rounded-[2rem] shadow-2xl border ${
+            toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' :
+            toast.type === 'error' ? 'bg-red-600 border-red-500 text-white' :
+            'bg-slate-800 border-slate-700 text-white'
           }`}>
-            {notification.type === 'success' ? <CheckCircle size={20} /> : 
-             notification.type === 'error' ? <AlertTriangle size={20} /> : 
+            {toast.type === 'success' ? <CheckCircle size={20} /> : 
+             toast.type === 'error' ? <XCircle size={20} /> : 
              <Info size={20} />}
-            <span className="text-sm font-black uppercase italic tracking-tight">{notification.message}</span>
-            <button onClick={() => setNotification(null)} className="ml-4 text-gray-400 hover:text-gray-600">
-              <X size={16} />
-            </button>
+            <span className="font-black uppercase italic tracking-tight text-sm">{toast.msg}</span>
           </div>
         </div>
       )}
