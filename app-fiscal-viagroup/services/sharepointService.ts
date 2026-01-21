@@ -82,7 +82,10 @@ const normalizePayloadKeys = (data: any) => {
         'Status': 'Status',
         
         'statusFinal': 'STATUS_FINAL',
-        'STATUS_FINAL': 'STATUS_FINAL'
+        'STATUS_FINAL': 'STATUS_FINAL',
+
+        // ⚠️ NOVA CORREÇÃO OBRIGATÓRIA
+        'approverObservation': 'Observa_x00e7__x00e3_o'
     };
 
     Object.keys(data).forEach(key => {
