@@ -17,7 +17,7 @@ const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.env
 console.log("[DEBUG INIT] Usando Lista Principal (ID):", MAIN_LIST_ID);
 
 /**
- * TAREFA 1: Atualizar FIELD_MAP (Correção Baseada em XML Oficial)
+ * Mapeamento corrigido baseado no XML oficial da Lista (InternalNames)
  */
 const FIELD_MAP = {
     // Campos Simples
@@ -51,7 +51,7 @@ const FIELD_MAP = {
     sendDateFiscal: 'Dataenvio_fiscal',
     sendDateFinance: 'Dataenvio_financeiro',
 
-    // ⚠️ CORREÇÕES CRÍTICAS ⚠️
+    // ⚠️ CORREÇÕES CRÍTICAS (Alinhado com XML) ⚠️
     statusEspelho: 'TESTE',
     shareComment: 'comentario_compartilhamento',
     sharedWithEmail: 'PESSOA_COMPARTILHADA',
@@ -59,7 +59,40 @@ const FIELD_MAP = {
 };
 
 /**
- * TAREFA 2: Implementar Função sanitizePayload
+ * TAREFA 2: Função normalizePayloadKeys
+ * Troca chaves legadas ou incorretas pelos nomes internos reais aceitos pelo SharePoint.
+ */
+const normalizePayloadKeys = (data: any) => {
+    if (!data) return {};
+    const normalized: any = {};
+    const corrections: Record<string, string> = {
+        // Mapeia ERROS COMUNS -> NOME CORRETO (InternalName do XML)
+        'COMENTARIO_COMPARTILHAMENTO': 'comentario_compartilhamento',
+        'SharingComment': 'comentario_compartilhamento',
+        'shareComment': 'comentario_compartilhamento',
+        
+        'PESSOA_COMPARTILHADA': 'PESSOA_COMPARTILHADA',
+        'PessoaCompartilhada': 'PESSOA_COMPARTILHADA',
+        'sharedWithEmail': 'PESSOA_COMPARTILHADA',
+        
+        'STATUS_ESPELHO': 'TESTE',
+        'statusEspelho': 'TESTE',
+        'TESTE': 'TESTE',
+
+        'PESSOA_COMPARTILHOU': 'PESSOA_COMPARTILHOU',
+        'sharedByName': 'PESSOA_COMPARTILHOU'
+    };
+
+    Object.keys(data).forEach(key => {
+        const correctKey = corrections[key] || key;
+        normalized[correctKey] = data[key];
+    });
+
+    return normalized;
+};
+
+/**
+ * TAREFA: Função sanitizePayload
  * Remove campos do sistema e metadados que o Graph rejeita em operações de update (PATCH).
  */
 const sanitizePayload = (data: any) => {
@@ -286,7 +319,7 @@ export const sharepointService = {
         let pDate = f[FIELD_MAP.paymentDate] || '';
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
-        const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'];
+        const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'] || f['comentario_compartilhamento'];
         const commentText = typeof rawComment === 'object' && rawComment !== null 
             ? (rawComment as any).toString() 
             : (rawComment || '');
@@ -313,7 +346,7 @@ export const sharepointService = {
           statusManual: f[FIELD_MAP.statusManual] || '',
           statusFinal: f[FIELD_MAP.statusFinal] || '',
           statusEspelho: f[FIELD_MAP.statusEspelho] || '',
-          sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada']).toLowerCase(),
+          sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada'] || '').toLowerCase(),
           sharedByName: f[FIELD_MAP.sharedByName] || '',
           shareComment: commentText,
           errorObservation: f[FIELD_MAP.errorObservation] || '',
@@ -331,7 +364,7 @@ export const sharepointService = {
   },
 
   /**
-   * TAREFA 3: Blindar os Métodos de Update (Uso de sanitizePayload e Log Detalhado)
+   * TAREFA 3: Blindar os Métodos de Update (Uso de normalizePayloadKeys, sanitizePayload e Log Detalhado)
    */
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
@@ -340,10 +373,13 @@ export const sharepointService = {
         if ((data as any)[key] !== undefined) rawFields[spField] = (data as any)[key];
       });
 
-      // Aplica sanitização
-      const cleanedFields = sanitizePayload(rawFields);
+      // 1. Normaliza chaves (converte nomes antigos/errados para InternalNames)
+      const normalizedFields = normalizePayloadKeys(rawFields);
+      
+      // 2. Sanitiza (remove id, Author, readonly)
+      const cleanedFields = sanitizePayload(normalizedFields);
 
-      console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados Sanitizados:", JSON.stringify(cleanedFields));
+      console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados Finais:", JSON.stringify(cleanedFields));
 
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
       const response = await graphFetch(endpoint, accessToken, {
@@ -367,12 +403,15 @@ export const sharepointService = {
   },
 
   /**
-   * Método para atualizar campos específicos diretamente no SharePoint via Graph.
+   * Método para atualizar campos específicos diretamente no SharePoint via Graph com proteção extra.
    */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
-      // Aplica sanitização antes do envio
-      const cleanedFields = sanitizePayload(fields);
+      // 1. Normaliza chaves (converte nomes antigos/errados para InternalNames)
+      const normalizedFields = normalizePayloadKeys(fields);
+      
+      // 2. Sanitiza antes do envio
+      const cleanedFields = sanitizePayload(normalizedFields);
 
       console.log("[DEBUG UPDATE_FIELDS] Chamando updateRequestFields. GraphID:", graphId, "Payload Sanitizado:", JSON.stringify(cleanedFields));
       
