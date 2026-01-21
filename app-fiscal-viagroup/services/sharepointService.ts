@@ -96,6 +96,19 @@ const stripHtml = (html: any) => {
 };
 
 export const sharepointService = {
+  // Função puramente para debug
+  debugGetItemFields: async (accessToken: string, itemId: string) => {
+    try {
+      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
+      const response = await graphFetch(endpoint, accessToken);
+      const data = await response.json();
+      console.log("🔥 [DIAGNÓSTICO] CAMPOS DISPONÍVEIS NO GRAPH:", data);
+      return data;
+    } catch (e) {
+      console.error("[DIAGNÓSTICO] Erro ao ler campos:", e);
+    }
+  },
+
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$filter=EmailUsuario eq '${email}'`;

@@ -275,6 +275,12 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e: any) { 
         console.error("[DEBUG UI] Erro no compartilhamento:", e);
         showToast("Erro ao compartilhar.", "error");
+        
+        // ADIÇÃO PARA DEBUG: DIAGNÓSTICO DE CAMPOS NO ERRO
+        if (authState.token && selectedRequest?.graphId) {
+          await sharepointService.debugGetItemFields(authState.token, selectedRequest.graphId);
+        }
+
         loadData(true); 
     } finally { setIsProcessingAction(false); }
   };
@@ -304,6 +310,11 @@ const DashboardFinanceiro: React.FC = () => {
     } catch (e) { 
       console.error("[DEBUG UI] Erro crítico no handleSaveComment:", e);
       showToast("Erro crítico ao salvar.", "error");
+
+      // ADIÇÃO PARA DEBUG: DIAGNÓSTICO DE CAMPOS NO ERRO
+      if (authState.token && viewingCommentData?.graphId) {
+        await sharepointService.debugGetItemFields(authState.token, viewingCommentData.graphId);
+      }
     } finally { setIsSavingComment(false); }
   };
 
