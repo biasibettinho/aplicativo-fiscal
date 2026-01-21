@@ -192,21 +192,79 @@ const DashboardFinanceiro: React.FC = () => {
     applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br')), 
   [requests, sharedStatusFilter]);
 
+  /**
+   * Função handleApprove ajustada para respeitar a hierarquia de aprovação:
+   * Financeiro Comum (Regional) envia para análise do Master.
+   * Financeiro Master fatura e finaliza a solicitação.
+   */
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
-    let targetStatus = isMaster ? RequestStatus.FATURADO : RequestStatus.ANALISE;
-    let comment = isMaster ? 'Faturamento concluído pelo Master.' : 'Validado pelo financeiro regional. Aguardando conferência Master.';
-    
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment } : r));
-    setSelectedId(null);
-    setIsProcessingAction(true);
+
     try {
-      const payload: any = { status: targetStatus, approverObservation: comment, errorObservation: '' };
-      if (isMaster) payload.sentToFinanceAt = new Date().toISOString();
-      await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
-      await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: targetStatus, OBSERVACAO: comment, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
-      loadData(true);
-    } catch (e) { alert("Erro ao aprovar no servidor. Recarregando..."); loadData(true); } finally { setIsProcessingAction(false); }
+        let newStatus = RequestStatus.FATURADO; // Default fallback
+        let successMessage = "Solicitação finalizada com sucesso!";
+        let statusFinalValue = 'Finalizado';
+        let logComment = 'Faturamento concluído pelo Master.';
+
+        // LÓGICA HIERÁRQUICA DE APROVAÇÃO
+        if (authState.user.role === UserRole.FINANCEIRO) {
+            // Comum -> Manda para Análise do Master
+            newStatus = RequestStatus.ANALISE;
+            successMessage = "Solicitação pré-aprovada! Aguardando validação do Master.";
+            statusFinalValue = 'Em Análise';
+            logComment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
+        } else if (authState.user.role === UserRole.FINANCEIRO_MASTER || authState.user.role === UserRole.ADMIN_MASTER) {
+            // Master -> Fatura e Finaliza
+            newStatus = RequestStatus.FATURADO;
+            successMessage = "Solicitação FATURADA com sucesso!";
+            statusFinalValue = 'Finalizado';
+            logComment = 'Faturamento concluído pelo Master.';
+        }
+
+        setSelectedId(null);
+        setIsProcessingAction(true);
+
+        const payload: any = { 
+            status: newStatus,
+            statusFinal: statusFinalValue,
+            approverObservation: logComment,
+            errorObservation: ''
+        };
+
+        if (newStatus === RequestStatus.FATURADO) {
+            payload.sentToFinanceAt = new Date().toISOString();
+        }
+
+        // Executa Update blindado via Graph
+        const success = await sharepointService.updateRequestFields(
+            authState.token,
+            selectedRequest.graphId, 
+            payload
+        );
+
+        if (success) {
+            // Registra no histórico
+            await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
+              ATUALIZACAO: newStatus, 
+              OBSERVACAO: logComment, 
+              MSG_OBSERVACAO: logComment, 
+              usuario_logado: authState.user.name 
+            });
+            
+            alert(successMessage);
+            await loadData(true); // Recarrega silenciosamente para aplicar filtros
+        } else {
+            alert("Erro ao atualizar status. Tente novamente.");
+            await loadData(true);
+        }
+
+    } catch (error) {
+        console.error("Erro na aprovação:", error);
+        alert("Erro crítico ao aprovar.");
+        await loadData(true);
+    } finally {
+        setIsProcessingAction(false);
+    }
   };
 
   const handleConfirmReject = async () => {

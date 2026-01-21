@@ -59,14 +59,14 @@ const FIELD_MAP = {
 };
 
 /**
- * TAREFA 2: Função normalizePayloadKeys
- * Troca chaves legadas ou incorretas pelos nomes internos reais aceitos pelo SharePoint.
+ * Normaliza chaves do payload para garantir que nomes antigos ou apelidos sejam convertidos
+ * para os nomes internos (InternalNames) reais aceitos pelo SharePoint/Graph API.
  */
 const normalizePayloadKeys = (data: any) => {
     if (!data) return {};
     const normalized: any = {};
     const corrections: Record<string, string> = {
-        // Mapeia ERROS COMUNS -> NOME CORRETO (InternalName do XML)
+        // Mapeia ERROS COMUNS ou APELIDOS -> NOME CORRETO (InternalName do XML)
         'COMENTARIO_COMPARTILHAMENTO': 'comentario_compartilhamento',
         'SharingComment': 'comentario_compartilhamento',
         'shareComment': 'comentario_compartilhamento',
@@ -78,9 +78,12 @@ const normalizePayloadKeys = (data: any) => {
         'STATUS_ESPELHO': 'TESTE',
         'statusEspelho': 'TESTE',
         'TESTE': 'TESTE',
-
-        'PESSOA_COMPARTILHOU': 'PESSOA_COMPARTILHOU',
-        'sharedByName': 'PESSOA_COMPARTILHOU'
+        
+        'status': 'Status',
+        'Status': 'Status',
+        
+        'statusFinal': 'STATUS_FINAL',
+        'STATUS_FINAL': 'STATUS_FINAL'
     };
 
     Object.keys(data).forEach(key => {
@@ -92,14 +95,12 @@ const normalizePayloadKeys = (data: any) => {
 };
 
 /**
- * TAREFA: Função sanitizePayload
- * Remove campos do sistema e metadados que o Graph rejeita em operações de update (PATCH).
+ * Remove campos do sistema e metadados que o Graph rejeita em operações de PATCH.
  */
 const sanitizePayload = (data: any) => {
     if (!data) return {};
     const clean = { ...data };
     
-    // Lista negra de campos que o Graph rejeita em updates
     const forbidden = [
         'id', 'ID', 'Author', 'Editor', 'Created', 'Modified', 
         'Attachments', 'AttachmentFiles', 'GUID', 'UniqueId',
@@ -109,7 +110,6 @@ const sanitizePayload = (data: any) => {
     
     forbidden.forEach(key => delete clean[key]);
     
-    // Remove propriedades de metadados do sistema
     Object.keys(clean).forEach(key => {
         if (key.startsWith('odata.') || key.startsWith('__')) {
             delete clean[key];
@@ -174,7 +174,6 @@ const stripHtml = (html: any) => {
 };
 
 export const sharepointService = {
-  // Função puramente para debug
   debugGetItemFields: async (accessToken: string, itemId: string) => {
     try {
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
@@ -363,9 +362,6 @@ export const sharepointService = {
     }
   },
 
-  /**
-   * TAREFA 3: Blindar os Métodos de Update (Uso de normalizePayloadKeys, sanitizePayload e Log Detalhado)
-   */
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
       const rawFields: any = {};
@@ -373,10 +369,7 @@ export const sharepointService = {
         if ((data as any)[key] !== undefined) rawFields[spField] = (data as any)[key];
       });
 
-      // 1. Normaliza chaves (converte nomes antigos/errados para InternalNames)
       const normalizedFields = normalizePayloadKeys(rawFields);
-      
-      // 2. Sanitiza (remove id, Author, readonly)
       const cleanedFields = sanitizePayload(normalizedFields);
 
       console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados Finais:", JSON.stringify(cleanedFields));
@@ -394,7 +387,6 @@ export const sharepointService = {
         return null;
       }
       
-      console.log("[DEBUG UPDATE] Sucesso MS Graph PATCH!");
       return await response.json();
     } catch (e: any) {
       console.error("[DEBUG UPDATE] FALHA CRÍTICA:", e);
@@ -403,36 +395,37 @@ export const sharepointService = {
   },
 
   /**
-   * Método para atualizar campos específicos diretamente no SharePoint via Graph com proteção extra.
+   * Método blindado para atualizar campos específicos diretamente no SharePoint via Graph.
+   * Aplica normalização de chaves e sanitização do payload.
    */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
-      // 1. Normaliza chaves (converte nomes antigos/errados para InternalNames)
-      const normalizedFields = normalizePayloadKeys(fields);
-      
-      // 2. Sanitiza antes do envio
-      const cleanedFields = sanitizePayload(normalizedFields);
+        // 1. Normaliza chaves (converte nomes antigos/errados para InternalNames)
+        const normalizedFields = normalizePayloadKeys(fields);
+        
+        // 2. Sanitiza (remove id, Author, readonly)
+        const cleanedFields = sanitizePayload(normalizedFields);
 
-      console.log("[DEBUG UPDATE_FIELDS] Chamando updateRequestFields. GraphID:", graphId, "Payload Sanitizado:", JSON.stringify(cleanedFields));
-      
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
-      const response = await graphFetch(endpoint, accessToken, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: cleanedFields })
-      });
-      
-      if (response.ok) {
-        console.log("[DEBUG UPDATE_FIELDS] Sucesso MS Graph PATCH! GraphID:", graphId);
-        return true;
-      } else {
-        const errorBody = await response.json();
-        console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
-        return false;
-      }
+        console.log("[DEBUG UPDATE_FIELDS] Payload Final:", JSON.stringify(cleanedFields));
+
+        const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
+        const response = await graphFetch(endpoint, accessToken, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: cleanedFields })
+        });
+        
+        if (response.ok) {
+            console.log("[DEBUG UPDATE_FIELDS] Sucesso PATCH GraphID:", graphId);
+            return true;
+        } else {
+            const errorBody = await response.json();
+            console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
+            return false;
+        }
     } catch (e) {
-      console.error("[DEBUG UPDATE_FIELDS] FALHA CRÍTICA ao atualizar GraphID:", graphId, e);
-      return false;
+        console.error("[DEBUG UPDATE_FIELDS] FALHA CRÍTICA ao atualizar GraphID:", graphId, e);
+        return false;
     }
   },
 
