@@ -42,6 +42,39 @@ const FIELD_MAP = {
 };
 
 /**
+ * TAREFA 1: Sanitização de Payload
+ * Remove campos do sistema e metadados que o Graph rejeita em operações de update (PATCH).
+ */
+const sanitizePayload = (data: any) => {
+  if (!data) return {};
+  const clean = { ...data };
+  
+  const forbidden = [
+    'id', 'ID', 'Author', 'Editor', 'Created', 'Modified', 
+    'Attachments', 'AttachmentFiles', 'GUID', 'UniqueId',
+    'ContentType', 'ContentTypeId', 'eTag', '_ComplianceFlags',
+    '_ComplianceTag', '_ComplianceTagWrittenTime', '_ComplianceTagUserId'
+  ];
+  
+  // Remove chaves proibidas conhecidas
+  forbidden.forEach(key => delete clean[key]);
+  
+  // Remove metadados OData e campos aninhados complexos (objetos ou arrays de sistema)
+  Object.keys(clean).forEach(key => {
+    if (
+      key.startsWith('odata.') || 
+      key.includes('@') || 
+      key.startsWith('__') ||
+      clean[key] === null // Opcional: SharePoint as vezes reclama de nulos em colunas obrigatórias
+    ) {
+      delete clean[key];
+    }
+  });
+  
+  return clean;
+};
+
+/**
  * Função auxiliar para detectar a chave real do campo ID_SOL no fields do Graph
  */
 const detectIdSolFieldKey = (fieldsObj: any): string | null => {
@@ -102,7 +135,6 @@ export const sharepointService = {
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
       const response = await graphFetch(endpoint, accessToken);
       const data = await response.json();
-      // TAREFA: Melhorar Log de Diagnóstico (JSON como string para verificação direta)
       console.warn("🔥🔥 [RELATÓRIO JSON] CAMPOS:", JSON.stringify(data, null, 2));
       return data;
     } catch (e) {
@@ -286,33 +318,37 @@ export const sharepointService = {
     }
   },
 
+  /**
+   * TAREFA 2: Refatorar Métodos de Update com Sanitização
+   */
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
-      const fields: any = {};
+      const rawFields: any = {};
       Object.entries(FIELD_MAP).forEach(([key, spField]) => {
-        if ((data as any)[key] !== undefined) fields[spField] = (data as any)[key];
+        if ((data as any)[key] !== undefined) rawFields[spField] = (data as any)[key];
       });
 
-      console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados:", JSON.stringify(fields));
-      console.log("[DEBUG UPDATE] Executando comando MS Graph PATCH (V2)...");
+      // Aplica sanitização
+      const cleanedFields = sanitizePayload(rawFields);
 
-      // TENTATIVA V2: Usar endpoint raiz com wrapper 'fields'
+      console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados Sanitizados:", JSON.stringify(cleanedFields));
+
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: fields })
+        body: JSON.stringify({ fields: cleanedFields })
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        console.error("[DEBUG UPDATE] FALHA NA RESPOSTA:", errorData);
+        // TAREFA 3: Melhorar Logs de Erro
+        const errorBody = await response.json();
+        console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
         return null;
       }
       
       console.log("[DEBUG UPDATE] Sucesso MS Graph PATCH!");
-      const result = await response.json();
-      return result;
+      return await response.json();
     } catch (e: any) {
       console.error("[DEBUG UPDATE] FALHA CRÍTICA:", e);
       return null;
@@ -320,28 +356,29 @@ export const sharepointService = {
   },
 
   /**
-   * TAREFA: Método para atualizar campos específicos diretamente no SharePoint via Graph.
-   * Alterado para usar endpoint raiz com wrapper 'fields' visando mitigar erro 400.
+   * Método para atualizar campos específicos diretamente no SharePoint via Graph.
    */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
-      console.log("[DEBUG UPDATE_FIELDS] Chamando updateRequestFields. GraphID:", graphId, "Payload:", JSON.stringify(fields));
-      console.log("[DEBUG UPDATE_FIELDS] Executando comando MS Graph PATCH (V2)...");
+      // Aplica sanitização antes do envio
+      const cleanedFields = sanitizePayload(fields);
+
+      console.log("[DEBUG UPDATE_FIELDS] Chamando updateRequestFields. GraphID:", graphId, "Payload Sanitizado:", JSON.stringify(cleanedFields));
       
-      // TENTATIVA V2: Usar endpoint raiz com wrapper 'fields' para evitar limitações do endpoint /fields
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
       const response = await graphFetch(endpoint, accessToken, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: fields })
+        body: JSON.stringify({ fields: cleanedFields })
       });
       
       if (response.ok) {
         console.log("[DEBUG UPDATE_FIELDS] Sucesso MS Graph PATCH! GraphID:", graphId);
         return true;
       } else {
-        const errorData = await response.json();
-        console.error("[DEBUG UPDATE_FIELDS] Erro na resposta do Graph:", errorData);
+        // TAREFA 3: Melhorar Logs de Erro
+        const errorBody = await response.json();
+        console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
         return false;
       }
     } catch (e) {
