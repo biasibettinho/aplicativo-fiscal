@@ -184,19 +184,21 @@ export const sharepointService = {
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
     try {
-      // Usando SharePoint REST API Nativa em vez de Graph para garantir leitura de colunas personalizadas sem cache
+      // [MIGRAÇÃO REST] Usando API nativa para evitar delay de indexação do Graph
+      // Isso garante que colunas recém-criadas como SOLICITANTE_ID sejam retornadas
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items?$top=5000&$select=*,Author/Title,Author/Id&$expand=Author`;
       
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json;odata=verbose'
+          'Accept': 'application/json;odata=verbose' // Crucial para metadados antigos/customizados
         }
       });
 
       if (!response.ok) {
-        console.error(`Erro SharePoint REST: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`Erro SharePoint REST (${response.status}):`, errorText);
         return [];
       }
 
@@ -207,23 +209,23 @@ export const sharepointService = {
         // Helper para extrair valores baseados no FIELD_MAP
         const getVal = (mapKey: keyof typeof FIELD_MAP) => {
           const internalName = FIELD_MAP[mapKey];
-          return item[internalName] || item[mapKey] || '';
+          return item[internalName] !== undefined ? item[internalName] : (item[mapKey] || '');
         };
 
-        // LÓGICA CRÍTICA DE AUTORIA: Lendo das colunas personalizadas (Internal Names mapeados)
-        const authorId = (item.SOLICITANTE_ID || item.OData__x0053_OLICITANTE_ID || item.AuthorId || '').toString();
+        // Tenta obter o ID de várias formas (InternalName vs DisplayName)
+        const idSolicitante = (item.SOLICITANTE_ID || item.OData__x0053_OLICITANTE_ID || item.AuthorId || '').toString();
         const authorName = item.SolicitanteNome || item.Author?.Title || 'Sistema';
         const authorEmail = item.SOLICITANTE_EMAIL || '';
 
         let pDate = getVal('paymentDate');
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
-        const rawComment = item[FIELD_MAP.shareComment] || item['COMENTARIO_COMPARTILHAMENTO'] || item['comentario_compartilhamento'];
+        const rawComment = item[FIELD_MAP.shareComment] || item['COMENTARIO_COMPARTILHAMENTO'] || '';
         const commentText = typeof rawComment === 'string' ? rawComment : (rawComment ? String(rawComment) : '');
 
         return {
           id: String(item.ID),
-          graphId: String(item.ID), // ID numérico convertido para string para manter compatibilidade
+          graphId: String(item.ID), // ID numérico convertido para string para compatibilidade
           mirrorId: item.ID,
           title: item.Title || getVal('title') || 'Sem Título',
           branch: getVal('branch'),
@@ -249,13 +251,13 @@ export const sharepointService = {
           errorObservation: getVal('errorObservation'),
           createdAt: item.Created,
           updatedAt: item.Modified,
-          createdByUserId: authorId,
+          createdByUserId: idSolicitante,
           createdByName: authorName,
           attachments: []
         } as PaymentRequest;
       });
     } catch (e) {
-      console.error("Erro fatal ao buscar solicitações (REST):", e);
+      console.error("Erro fatal (REST) ao buscar solicitações:", e);
       return [];
     }
   },
