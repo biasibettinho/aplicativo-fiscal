@@ -199,13 +199,15 @@ export const sharepointService = {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
 
-        // ✅ AJUSTE CRÍTICO DE AUTORIA: Lendo das colunas personalizadas do Power Automate
-        // f[FIELD_MAP.createdByUserId] mapeia para 'SOLICITANTE_ID'
-        // f[FIELD_MAP.createdByName] mapeia para 'SolicitanteNome'
-        const authorId = (f[FIELD_MAP.createdByUserId] || f.AuthorLookupId || item.createdBy?.user?.id || '').toString();
-        const authorName = f[FIELD_MAP.createdByName] || f.AuthorDisplayName || item.createdBy?.user?.displayName || 'Sistema';
+        // Função auxiliar robusta para ler campos do Graph 'fields'
+        const getF = (key: keyof typeof FIELD_MAP) => f[FIELD_MAP[key]] || f[key] || '';
 
-        let pDate = f[FIELD_MAP.paymentDate] || '';
+        // ✅ CORREÇÃO CRÍTICA DE AUTORIA: Priorizando as colunas personalizadas do Power Automate
+        // Lemos SOLICITANTE_ID e SolicitanteNome diretamente do objeto 'fields'
+        const authorId = (f['SOLICITANTE_ID'] || f[FIELD_MAP.createdByUserId] || f.AuthorLookupId || item.createdBy?.user?.id || '').toString();
+        const authorName = f['SolicitanteNome'] || f[FIELD_MAP.createdByName] || f.AuthorDisplayName || item.createdBy?.user?.displayName || 'Sistema';
+
+        let pDate = getF('paymentDate');
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
         const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'] || f['comentario_compartilhamento'];
@@ -215,28 +217,28 @@ export const sharepointService = {
           id: numericId.toString(),
           graphId: item.id, 
           mirrorId: parseInt(numericId.toString(), 10),
-          title: f.Title || 'Sem Título',
-          branch: f[FIELD_MAP.branch] || '',
-          status: (f[FIELD_MAP.status] as RequestStatus) || RequestStatus.PENDENTE,
-          orderNumbers: f[FIELD_MAP.orderNumbers] || '',
-          invoiceNumber: f[FIELD_MAP.invoiceNumber] || '',
-          payee: f[FIELD_MAP.payee] || '',
-          paymentMethod: f[FIELD_MAP.paymentMethod] || '',
-          pixKey: f[FIELD_MAP.pixKey] || '',
+          title: f.Title || getF('title') || 'Sem Título',
+          branch: getF('branch'),
+          status: (getF('status') as RequestStatus) || RequestStatus.PENDENTE,
+          orderNumbers: getF('orderNumbers'),
+          invoiceNumber: getF('invoiceNumber'),
+          payee: getF('payee'),
+          paymentMethod: getF('paymentMethod'),
+          pixKey: getF('pixKey'),
           paymentDate: pDate,
-          bank: f[FIELD_MAP.bank] || '',
-          agency: f[FIELD_MAP.agency] || '',
-          account: f[FIELD_MAP.account] || '',
-          accountType: f[FIELD_MAP.accountType] || '',
-          generalObservation: stripHtml(f[FIELD_MAP.generalObservation] || ''),
-          approverObservation: stripHtml(f[FIELD_MAP.approverObservation] || ''), 
-          statusManual: f[FIELD_MAP.statusManual] || '',
-          statusFinal: f[FIELD_MAP.statusFinal] || '',
-          statusEspelho: f[FIELD_MAP.statusEspelho] || '',
+          bank: getF('bank'),
+          agency: getF('agency'),
+          account: getF('account'),
+          accountType: getF('accountType'),
+          generalObservation: stripHtml(getF('generalObservation')),
+          approverObservation: stripHtml(getF('approverObservation')), 
+          statusManual: getF('statusManual'),
+          statusFinal: getF('statusFinal'),
+          statusEspelho: getF('statusEspelho'),
           sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || f['PessoaCompartilhada'] || '').toLowerCase(),
-          sharedByName: f[FIELD_MAP.sharedByName] || '',
+          sharedByName: getF('sharedByName'),
           shareComment: commentText,
-          errorObservation: f[FIELD_MAP.errorObservation] || '',
+          errorObservation: getF('errorObservation'),
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
           createdByUserId: authorId,
