@@ -42,7 +42,7 @@ const FIELD_MAP = {
     paymentDate: 'DATA_PAG',
 
     // Campos de Aprovação e Status
-    approverObservation: 'Observa_x00e7__x00e3_o', // ✅ CORREÇÃO: Alinhado com InternalName do XML
+    approverObservation: 'Observa_x00e7__x00e3_o', 
     statusManual: 'STATUS_ESPELHO_MANUAL',
     statusFinal: 'STATUS_FINAL',
     errorObservation: 'OBS_ERRO',
@@ -50,136 +50,70 @@ const FIELD_MAP = {
     sendDateFiscal: 'Dataenvio_fiscal',
     sendDateFinance: 'Dataenvio_financeiro',
 
-    // ⚠️ CORREÇÕES CRÍTICAS (Alinhado com XML) ⚠️
+    // CORREÇÕES CRÍTICAS
     statusEspelho: 'TESTE',
     shareComment: 'comentario_compartilhamento',
     sharedWithEmail: 'PESSOA_COMPARTILHADA',
     sharedByName: 'PESSOA_COMPARTILHOU',
 
-    // 🆕 NOVAS COLUNAS DE AUTORIA PERSONALIZADA (FLOW)
+    // NOVAS COLUNAS DE AUTORIA PERSONALIZADA (POWER AUTOMATE FLOW)
     createdByName: 'SolicitanteNome',
     createdByUserId: 'SOLICITANTE_ID',
     authorEmail: 'SOLICITANTE_EMAIL'
 };
 
-/**
- * Normaliza chaves do payload para garantir que nomes antigos ou apelidos sejam convertidos
- * para os nomes internos (InternalNames) reais aceitos pelo SharePoint/Graph API.
- */
 const normalizePayloadKeys = (data: any) => {
     if (!data) return {};
     const normalized: any = {};
     const corrections: Record<string, string> = {
-        // Mapeia ERROS COMUNS ou APELIDOS -> NOME CORRETO (InternalName do XML)
         'COMENTARIO_COMPARTILHAMENTO': 'comentario_compartilhamento',
-        'SharingComment': 'comentario_compartilhamento',
         'shareComment': 'comentario_compartilhamento',
-        
         'PESSOA_COMPARTILHADA': 'PESSOA_COMPARTILHADA',
-        'PessoaCompartilhada': 'PESSOA_COMPARTILHADA',
         'sharedWithEmail': 'PESSOA_COMPARTILHADA',
-        
         'STATUS_ESPELHO': 'TESTE',
-        'statusEspelho': 'TESTE',
-        'TESTE': 'TESTE',
-        
         'status': 'Status',
-        'Status': 'Status',
-        
         'statusFinal': 'STATUS_FINAL',
-        'STATUS_FINAL': 'STATUS_FINAL',
-
-        // ⚠️ NOVA CORREÇÃO OBRIGATÓRIA
         'approverObservation': 'Observa_x00e7__x00e3_o',
-        
-        // ⚠️ CORREÇÃO DE ERRO OBSERVATION
         'errorObservation': 'OBS_ERRO',
-
-        // MAPEAMENTO DE AUTORIA NAS ATUALIZAÇÕES
         'createdByName': 'SolicitanteNome',
         'createdByUserId': 'SOLICITANTE_ID',
         'AuthorEmail': 'SOLICITANTE_EMAIL'
     };
-
     Object.keys(data).forEach(key => {
         const correctKey = corrections[key] || key;
         normalized[correctKey] = data[key];
     });
-
     return normalized;
 };
 
-/**
- * Remove campos do sistema e metadados que o Graph rejeita em operações de PATCH.
- */
 const sanitizePayload = (data: any) => {
     if (!data) return {};
     const clean = { ...data };
-    
-    const forbidden = [
-        'id', 'ID', 'Author', 'Editor', 'Created', 'Modified', 
-        'Attachments', 'AttachmentFiles', 'GUID', 'UniqueId',
-        'ContentType', 'ContentTypeId', 'eTag', 'odata.type', 
-        'odata.id', 'odata.etag', 'odata.editLink', 'fields@odata.context'
-    ];
-    
+    const forbidden = ['id', 'ID', 'Author', 'Editor', 'Created', 'Modified', 'Attachments', 'AttachmentFiles', 'GUID', 'UniqueId', 'ContentType', 'ContentTypeId', 'eTag', 'odata.type', 'odata.id', 'odata.etag', 'odata.editLink', 'fields@odata.context'];
     forbidden.forEach(key => delete clean[key]);
-    
-    Object.keys(clean).forEach(key => {
-        if (key.startsWith('odata.') || key.startsWith('__')) {
-            delete clean[key];
-        }
-    });
-    
+    Object.keys(clean).forEach(key => { if (key.startsWith('odata.') || key.startsWith('__')) delete clean[key]; });
     return clean;
 };
 
-/**
- * Função auxiliar para detectar a chave real do campo ID_SOL no fields do Graph
- */
 const detectIdSolFieldKey = (fieldsObj: any): string | null => {
   if (!fieldsObj) return null;
   if (fieldsObj.ID_SOL !== undefined) return "ID_SOL";
-
   const keys = Object.keys(fieldsObj);
-  const found = keys.find(k => k.toLowerCase().includes("id") && k.toLowerCase().includes("sol"));
-  return found || null;
+  return keys.find(k => k.toLowerCase().includes("id") && k.toLowerCase().includes("sol")) || null;
 };
 
 async function graphFetch(url: string, accessToken: string, options: RequestInit = {}) {
-  const headers: any = {
-    Authorization: `Bearer ${accessToken}`,
-    Accept: "application/json",
-    ...options.headers,
-  };
-
+  const headers: any = { Authorization: `Bearer ${accessToken}`, Accept: "application/json", ...options.headers };
   const res = await fetch(url, { ...options, headers });
-
-  if (!res.ok) {
-    console.error(`[MS GRAPH ERROR] URL: ${url}`, { 
-      status: res.status, 
-      statusText: res.statusText 
-    });
-  }
-
+  if (!res.ok) console.error(`[MS GRAPH ERROR] URL: ${url}`, { status: res.status, statusText: res.statusText });
   return res;
 }
 
 async function spRestFetch(url: string, options: RequestInit = {}) {
   const spToken = await authService.getSharePointToken();
-  if (!spToken) {
-    console.error("[SP REST] Falha ao adquirir token de audiência SharePoint.");
-    return new Response(null, { status: 401 });
-  }
-
-  const headers: any = {
-    Authorization: `Bearer ${spToken}`,
-    'Accept': 'application/json;odata=verbose',
-    'Content-Type': 'application/json;odata=verbose',
-    ...options.headers,
-  };
-  const res = await fetch(url, { ...options, headers });
-  return res;
+  if (!spToken) return new Response(null, { status: 401 });
+  const headers: any = { Authorization: `Bearer ${spToken}`, 'Accept': 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', ...options.headers };
+  return await fetch(url, { ...options, headers });
 }
 
 const stripHtml = (html: any) => {
@@ -189,127 +123,63 @@ const stripHtml = (html: any) => {
 };
 
 export const sharepointService = {
-  debugGetItemFields: async (accessToken: string, itemId: string) => {
-    try {
-      const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
-      const response = await graphFetch(endpoint, accessToken);
-      const data = await response.json();
-      console.warn("🔥🔥 [RELATÓRIO JSON] CAMPOS:", JSON.stringify(data, null, 2));
-      return data;
-    } catch (e) {
-      console.error("[DIAGNÓSTICO] Erro ao ler campos:", e);
-    }
-  },
-
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$filter=EmailUsuario eq '${email}'`;
       const response = await spRestFetch(endpoint);
       if (!response.ok) return UserRole.SOLICITANTE;
-      
       const data = await response.json();
       const items = data.d?.results || [];
-      
       if (items.length === 0) return UserRole.SOLICITANTE;
-      
       const { Setor, Nivel } = items[0];
-      
       if (Nivel === 'Admin') return UserRole.ADMIN_MASTER;
       if (Setor === 'Fiscal') return Nivel === 'Master' ? UserRole.FISCAL_ADMIN : UserRole.FISCAL_COMUM;
       if (Setor === 'Financeiro') return Nivel === 'Master' ? UserRole.FINANCEIRO_MASTER : UserRole.FINANCEIRO;
-      
       return UserRole.SOLICITANTE;
-    } catch (e) {
-      console.error("Erro ao buscar papel do usuário no SharePoint:", e);
-      return UserRole.SOLICITANTE;
-    }
+    } catch (e) { return UserRole.SOLICITANTE; }
   },
 
   getAllSharePointUsers: async (): Promise<any[]> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$select=EmailUsuario,Setor,Nivel,Title,Id`;
       const response = await spRestFetch(endpoint);
-      if (!response.ok) {
-        console.error("Erro na resposta da lista de usuários:", response.status);
-        return [];
-      }
+      if (!response.ok) return [];
       const data = await response.json();
       return data.d?.results || [];
-    } catch (e) {
-      console.error("Erro crítico ao buscar todos os usuários do SharePoint:", e);
-      return [];
-    }
+    } catch (e) { return []; }
   },
 
-  addSharePointUser: async (userData: { EmailUsuario: string, Setor: string, Nivel: string, Title: string }): Promise<boolean> => {
+  addSharePointUser: async (userData: any): Promise<boolean> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items`;
-      const payload = {
-        '__metadata': { 'type': 'SP.Data.App_Gestao_UsuariosListItem' },
-        ...userData
-      };
-      const response = await spRestFetch(endpoint, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      const payload = { '__metadata': { 'type': 'SP.Data.App_Gestao_UsuariosListItem' }, ...userData };
+      const response = await spRestFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) });
       return response.ok;
-    } catch (e) {
-      console.error("Erro ao adicionar usuário no SharePoint:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
-  updateSharePointUser: async (id: number, userData: { EmailUsuario: string, Setor: string, Nivel: string, Title: string }): Promise<boolean> => {
+  updateSharePointUser: async (id: number, userData: any): Promise<boolean> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items(${id})`;
-      const payload = {
-        '__metadata': { 'type': 'SP.Data.App_Gestao_UsuariosListItem' },
-        ...userData
-      };
-      const response = await spRestFetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'X-HTTP-Method': 'MERGE',
-          'IF-MATCH': '*'
-        },
-        body: JSON.stringify(payload)
-      });
+      const payload = { '__metadata': { 'type': 'SP.Data.App_Gestao_UsuariosListItem' }, ...userData };
+      const response = await spRestFetch(endpoint, { method: 'POST', headers: { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' }, body: JSON.stringify(payload) });
       return response.ok;
-    } catch (e) {
-      console.error("Erro ao atualizar usuário no SharePoint:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   deleteSharePointUser: async (id: number): Promise<boolean> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items(${id})`;
-      const response = await spRestFetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'X-HTTP-Method': 'DELETE',
-          'IF-MATCH': '*'
-        }
-      });
+      const response = await spRestFetch(endpoint, { method: 'POST', headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } });
       return response.ok;
-    } catch (e) {
-      console.error("Erro ao deletar usuário no SharePoint:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   triggerPowerAutomateFlow: async (payload: any): Promise<boolean> => {
     try {
-      const response = await fetch(POWER_AUTOMATE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const response = await fetch(POWER_AUTOMATE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       return response.ok;
-    } catch (e) {
-      console.error("Erro ao disparar Power Automate:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
@@ -329,17 +199,17 @@ export const sharepointService = {
         const f = item.fields || {};
         const numericId = f.id || f.ID || item.id;
 
-        // ✅ LÓGICA DE AUTORIA: PRIORIZANDO COLUNAS PERSONALIZADAS (FLOW)
-        const creatorId = f[FIELD_MAP.createdByUserId] || item.createdBy?.user?.id || f.AuthorLookupId || '';
-        const creatorName = f[FIELD_MAP.createdByName] || item.createdBy?.user?.displayName || f.AuthorDisplayName || 'Sistema';
+        // ✅ AJUSTE CRÍTICO DE AUTORIA: Lendo das colunas personalizadas do Power Automate
+        // f[FIELD_MAP.createdByUserId] mapeia para 'SOLICITANTE_ID'
+        // f[FIELD_MAP.createdByName] mapeia para 'SolicitanteNome'
+        const authorId = (f[FIELD_MAP.createdByUserId] || f.AuthorLookupId || item.createdBy?.user?.id || '').toString();
+        const authorName = f[FIELD_MAP.createdByName] || f.AuthorDisplayName || item.createdBy?.user?.displayName || 'Sistema';
 
         let pDate = f[FIELD_MAP.paymentDate] || '';
         if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
 
         const rawComment = f[FIELD_MAP.shareComment] || f['COMENTARIO_COMPARTILHAMENTO'] || f['SharingComment'] || f['comentario_compartilhamento'];
-        const commentText = typeof rawComment === 'object' && rawComment !== null 
-            ? (rawComment as any).toString() 
-            : (rawComment || '');
+        const commentText = typeof rawComment === 'object' && rawComment !== null ? (rawComment as any).toString() : (rawComment || '');
 
         return {
           id: numericId.toString(),
@@ -369,109 +239,47 @@ export const sharepointService = {
           errorObservation: f[FIELD_MAP.errorObservation] || '',
           createdAt: item.createdDateTime,
           updatedAt: item.lastModifiedDateTime,
-          createdByUserId: creatorId,
-          createdByName: creatorName,
+          createdByUserId: authorId,
+          createdByName: authorName,
           attachments: []
         };
       });
-    } catch (e) {
-      console.error("Erro getRequests:", e);
-      return [];
-    }
+    } catch (e) { return []; }
   },
 
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
     try {
       const rawFields: any = {};
-      Object.entries(FIELD_MAP).forEach(([key, spField]) => {
-        if ((data as any)[key] !== undefined) rawFields[spField] = (data as any)[key];
-      });
-
+      Object.entries(FIELD_MAP).forEach(([key, spField]) => { if ((data as any)[key] !== undefined) rawFields[spField] = (data as any)[key]; });
       const normalizedFields = normalizePayloadKeys(rawFields);
       const cleanedFields = sanitizePayload(normalizedFields);
-
-      console.log("[DEBUG UPDATE] Chamando updateRequest. ID:", graphId, "Dados Finais:", JSON.stringify(cleanedFields));
-
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
-      const response = await graphFetch(endpoint, accessToken, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: cleanedFields })
-      });
-      
-      if (!response.ok) {
-        const errorBody = await response.json();
-        console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
-        return null;
-      }
-      
+      const response = await graphFetch(endpoint, accessToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: cleanedFields }) });
+      if (!response.ok) return null;
       return await response.json();
-    } catch (e: any) {
-      console.error("[DEBUG UPDATE] FALHA CRÍTICA:", e);
-      return null;
-    }
+    } catch (e) { return null; }
   },
 
-  /**
-   * Método blindado para atualizar campos específicos diretamente no SharePoint via Graph.
-   * Aplica normalização de chaves e sanitização do payload.
-   */
   updateRequestFields: async (accessToken: string, graphId: string, fields: any): Promise<boolean> => {
     try {
-        // 1. Normaliza chaves (converte nomes antigos/errados para InternalNames)
         const normalizedFields = normalizePayloadKeys(fields);
-        
-        // 2. Sanitiza (remove id, Author, readonly)
         const cleanedFields = sanitizePayload(normalizedFields);
-
-        console.log("[DEBUG UPDATE_FIELDS] Payload Final:", JSON.stringify(cleanedFields));
-
         const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
-        const response = await graphFetch(endpoint, accessToken, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: cleanedFields })
-        });
-        
-        if (response.ok) {
-            console.log("[DEBUG UPDATE_FIELDS] Sucesso PATCH GraphID:", graphId);
-            return true;
-        } else {
-            const errorBody = await response.json();
-            console.error("[GRAPH ERROR DETAILS]:", JSON.stringify(errorBody, null, 2));
-            return false;
-        }
-    } catch (e) {
-        console.error("[DEBUG UPDATE_FIELDS] FALHA CRÍTICA ao atualizar GraphID:", graphId, e);
-        return false;
-    }
+        const response = await graphFetch(endpoint, accessToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: cleanedFields }) });
+        return response.ok;
+    } catch (e) { return false; }
   },
 
   getItemAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
     if (!itemId) return [];
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items(${itemId})/AttachmentFiles`;
-      
       const response = await spRestFetch(endpoint);
       if (!response.ok) return [];
-      
       const data = await response.json();
       const files = data.d?.results || [];
-
-      return files.map((file: any) => ({
-        id: file.FileName,
-        requestId: itemId,
-        fileName: file.FileName,
-        type: 'invoice_pdf',
-        mimeType: 'application/pdf',
-        size: 0,
-        storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
-        createdAt: new Date().toISOString()
-      }));
-    } catch (e) {
-      console.error("Erro getItemAttachments (Main Invoice):", e);
-      return [];
-    }
+      return files.map((file: any) => ({ id: file.FileName, requestId: itemId, fileName: file.FileName, type: 'invoice_pdf', mimeType: 'application/pdf', size: 0, storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`, createdAt: new Date().toISOString() }));
+    } catch (e) { return []; }
   },
 
   getSecondaryAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
@@ -479,61 +287,32 @@ export const sharepointService = {
     try {
       const filter = `ID_SOL eq '${itemId}'`;
       const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id,Attachments`;
-      
       const findResponse = await spRestFetch(findItemUrl);
       if (!findResponse.ok) return [];
-      
       const findData = await findResponse.json();
       const secondaryItems = findData.d?.results || [];
-      
       const allSecondaryAttachments: Attachment[] = [];
-
       for (const item of secondaryItems) {
         if (item.Attachments) {
           const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
           const attResponse = await spRestFetch(attUrl);
-          
           if (attResponse.ok) {
             const attData = await attResponse.json();
             const files = attData.d?.results || [];
-            
-            files.forEach((file: any) => {
-              allSecondaryAttachments.push({
-                id: `${item.Id}_${file.FileName}`,
-                requestId: itemId,
-                fileName: file.FileName,
-                type: 'boleto',
-                mimeType: 'application/pdf',
-                size: 0,
-                storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`,
-                createdAt: new Date().toISOString()
-              });
-            });
+            files.forEach((file: any) => { allSecondaryAttachments.push({ id: `${item.Id}_${file.FileName}`, requestId: itemId, fileName: file.FileName, type: 'boleto', mimeType: 'application/pdf', size: 0, storageUrl: `${BASE_URL}${file.ServerRelativeUrl}`, createdAt: new Date().toISOString() }); });
           }
         }
       }
-
       return allSecondaryAttachments;
-    } catch (e) {
-      console.error("Erro getSecondaryAttachments (Boletos):", e);
-      return [];
-    }
+    } catch (e) { return []; }
   },
 
   deleteAttachment: async (listGuid: string, itemId: string, fileName: string): Promise<boolean> => {
     try {
       const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/getByFileName('${fileName}')`;
-      const response = await spRestFetch(url, {
-        method: 'POST',
-        headers: {
-          'X-HTTP-Method': 'DELETE'
-        }
-      });
+      const response = await spRestFetch(url, { method: 'POST', headers: { 'X-HTTP-Method': 'DELETE' } });
       return response.ok;
-    } catch (e) {
-      console.error("[DEBUG-SP] Erro ao deletar anexo:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   uploadAttachment: async (listGuid: string, itemId: string, file: File): Promise<boolean> => {
@@ -541,21 +320,9 @@ export const sharepointService = {
       const spToken = await authService.getSharePointToken();
       const arrayBuffer = await file.arrayBuffer();
       const url = `${SITE_URL}/_api/web/lists(guid'${listGuid}')/items(${itemId})/AttachmentFiles/add(FileName='${file.name}')`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${spToken}`,
-          'Accept': 'application/json;odata=verbose',
-          'Content-Type': file.type
-        },
-        body: arrayBuffer
-      });
+      const response = await fetch(url, { method: 'POST', headers: { 'Authorization': `Bearer ${spToken}`, 'Accept': 'application/json;odata=verbose', 'Content-Type': file.type }, body: arrayBuffer });
       return response.ok;
-    } catch (e) {
-      console.error("[DEBUG-SP] Erro ao subir anexo:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   deleteSecondaryItemsByRequestId: async (requestId: string): Promise<void> => {
@@ -566,132 +333,58 @@ export const sharepointService = {
       if (res.ok) {
         const data = await res.json();
         const items = data.d?.results || [];
-        for (const item of items) {
-          await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, {
-            method: 'POST',
-            headers: { 
-              'X-HTTP-Method': 'DELETE', 
-              'IF-MATCH': '*' 
-            }
-          });
-        }
+        for (const item of items) { await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, { method: 'POST', headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } }); }
       }
-    } catch (e) {
-      console.error("[DEBUG-SP] Erro ao limpar lista secundária:", e);
-    }
+    } catch (e) { }
   },
 
   createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
     try {
       const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
-      const body = JSON.stringify({
-        'ID_SOL': requestId,
-        'Title': `Boleto - Sol ${requestId}`
-      });
-
-      const res = await spRestFetch(url, {
-        method: 'POST',
-        body: body,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
-
+      const body = JSON.stringify({ 'ID_SOL': requestId, 'Title': `Boleto - Sol ${requestId}` });
+      const res = await spRestFetch(url, { method: 'POST', body: body, headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } });
       if (res.ok) {
         const data = await res.json();
         const newItemId = data.Id || data.d?.Id;
-        const uploadSuccess = await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
-        return uploadSuccess;
-      } else {
-        return false;
+        return await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
       }
-    } catch (e: any) {
-      console.error("[DEBUG-SP] Exceção ao criar item secundário:", e);
       return false;
-    }
+    } catch (e) { return false; }
   },
 
-  addHistoryLog: async (accessToken: string, requestId: number, logData: { ATUALIZACAO: string, OBSERVACAO: string, MSG_OBSERVACAO: string, usuario_logado: string }): Promise<boolean> => {
+  addHistoryLog: async (accessToken: string, requestId: number, logData: any): Promise<boolean> => {
     try {
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items`;
-      const response = await graphFetch(endpoint, accessToken, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fields: {
-            ID_SOL: requestId,
-            ATUALIZACAO: logData.ATUALIZACAO,
-            OBSERVACAO: logData.OBSERVACAO,
-            MSG_OBSERVACAO: logData.MSG_OBSERVACAO,
-            usuario_logado: logData.usuario_logado
-          }
-        })
-      });
+      const response = await graphFetch(endpoint, accessToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { ID_SOL: requestId, ATUALIZACAO: logData.ATUALIZACAO, OBSERVACAO: logData.OBSERVACAO, MSG_OBSERVACAO: logData.MSG_OBSERVACAO, usuario_logado: logData.usuario_logado } }) });
       return response.ok;
-    } catch (e) {
-      console.error("Erro ao adicionar log de histórico:", e);
-      return false;
-    }
+    } catch (e) { return false; }
   },
 
   getHistoryLogs: async (accessToken: string, requestId: string): Promise<any[]> => {
     let nextLink: string | null = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items?$expand=fields&$orderby=createdDateTime desc&$top=100`;
-    let pageCount = 0;
-    let allMatches: any[] = [];
-    let idKey: string | null = null;
-    const MAX_PAGES = 30; 
-
+    let pageCount = 0; let allMatches: any[] = []; let idKey: string | null = null;
     try {
-      while (nextLink && pageCount < MAX_PAGES) {
+      while (nextLink && pageCount < 30) {
         pageCount++;
         const response = await graphFetch(nextLink, accessToken);
         if (!response.ok) break;
-
         const data = await response.json();
         const pageItems = data.value || [];
         nextLink = data['@odata.nextLink'] || null;
-
         if (pageItems.length === 0) break;
-
-        if (!idKey) {
-          for (const item of pageItems) {
-            idKey = detectIdSolFieldKey(item.fields);
-            if (idKey) break;
-          }
-        }
-
+        if (!idKey) { for (const item of pageItems) { idKey = detectIdSolFieldKey(item.fields); if (idKey) break; } }
         if (idKey) {
           const matches = pageItems.filter((item: any) => {
             const fieldValue = item.fields?.[idKey!];
             if (fieldValue === undefined || fieldValue === null) return false;
-            const fValueStr = fieldValue.toString().trim();
-            const targetStr = requestId.toString().trim();
-            if (fValueStr === targetStr) return true;
-            const nTarget = parseInt(targetStr, 10);
-            const nValue = typeof fieldValue === 'number' ? fieldValue : parseInt(fValueStr, 10);
-            if (!isNaN(nTarget) && !isNaN(nValue) && nTarget === nValue) return true;
-            return false;
+            return fieldValue.toString().trim() === requestId.toString().trim();
           });
           if (matches.length > 0) allMatches = [...allMatches, ...matches];
         }
       }
-
       const uniqueMatches = Array.from(new Map(allMatches.map(item => [item.id, item])).values());
       uniqueMatches.sort((a: any, b: any) => new Date(b.createdDateTime).getTime() - new Date(a.createdDateTime).getTime());
-
-      return uniqueMatches.map((item: any) => ({
-        id: item.id,
-        createdAt: item.createdDateTime,
-        status: item.fields?.ATUALIZACAO || '',
-        obs: item.fields?.OBSERVACAO || '',
-        msg: item.fields?.MSG_OBSERVACAO || '',
-        user: item.fields?.usuario_logado || ''
-      }));
-
-    } catch (e: any) {
-      console.error("[DEBUG-HISTORY] Erro crítico:", e);
-      return [];
-    }
+      return uniqueMatches.map((item: any) => ({ id: item.id, createdAt: item.createdDateTime, status: item.fields?.ATUALIZACAO || '', obs: item.fields?.OBSERVACAO || '', msg: item.fields?.MSG_OBSERVACAO || '', user: item.fields?.usuario_logado || '' }));
+    } catch (e) { return []; }
   }
 };
