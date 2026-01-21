@@ -58,7 +58,6 @@ const DashboardFinanceiro: React.FC = () => {
   const [editedComment, setEditedComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
 
-  // TAREFA 1: Sistema de Toast
   const [toast, setToast] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
 
   const showToast = (msg: string, type: 'info' | 'success' | 'error') => {
@@ -231,40 +230,35 @@ const DashboardFinanceiro: React.FC = () => {
     if (!shareEmail) { showToast("Por favor, selecione uma regional de destino.", "error"); return; }
     const comment = shareCommentText.trim();
     
-    // Feedback Visual Inicial
     showToast("Enviando compartilhamento...", "info");
     
-    console.log("[DEBUG UI] Click Compartilhar. ID:", selectedRequest.id, "Divisão:", shareEmail, "Comentário:", comment);
-    console.log("[DEBUG SHARE FLOW] Iniciando. ID:", selectedRequest.id, "Divisão Alvo:", shareEmail, "Texto Comentário:", comment);
+    console.log("[DEBUG SHARE] Iniciando correção de payload. ID:", selectedRequest.id);
 
-    // TAREFA: Diagnóstico Prioritário (Executar Antes da Falha)
+    // TAREFA: Diagnóstico Prioritário
     if (authState.token && selectedRequest.graphId) {
-      console.warn("🔎 Iniciando diagnóstico pré-update para compartilhamento...");
+      console.warn("🔎 Executando diagnóstico prévio...");
       await sharepointService.debugGetItemFields(authState.token, selectedRequest.graphId);
     }
 
-    // CORREÇÃO DO PAYLOAD (O Bug): Garantindo nomes internos corretos
+    // CORREÇÃO: Removendo PESSOA_COMPARTILHOU que não existe e causava 400.
     const sharePayload = {
-      Status: selectedRequest.status, // Mantendo status principal 'Aprovado' para visibilidade
+      Status: selectedRequest.status, 
       STATUS_ESPELHO_MANUAL: 'Compartilhado',
       PESSOA_COMPARTILHADA: shareEmail,
-      COMENTARIO_COMPARTILHAMENTO: comment,
-      PESSOA_COMPARTILHOU: authState.user?.email || authState.user?.name || ''
+      COMENTARIO_COMPARTILHAMENTO: comment
+      // PESSOA_COMPARTILHOU: removido conforme diagnóstico
     };
 
-    console.log("[DEBUG SHARE] Enviando Payload:", sharePayload);
+    console.log("[DEBUG SHARE] Enviando Payload Final:", sharePayload);
 
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
     try {
-      // Uso de updateRequestFields para garantir o envio direto das chaves SharePoint
       const success = await sharepointService.updateRequestFields(authState.token, selectedRequest.graphId, sharePayload);
 
       if (success) {
-        console.log("[DEBUG UI] Retorno do Service handleShare (Sucesso)");
         showToast("Compartilhado com sucesso!", "success");
-
         await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
           ATUALIZACAO: 'Compartilhado', 
           OBSERVACAO: `Compartilhado com ${shareEmail}`, 
@@ -287,34 +281,27 @@ const DashboardFinanceiro: React.FC = () => {
   const handleSaveComment = async () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
     
-    // TAREFA: Diagnóstico Prioritário (Executar Antes da Falha)
     if (authState.token && viewingCommentData.graphId) {
-      console.warn("🔎 Iniciando diagnóstico pré-update para salvamento de comentário...");
+      console.warn("🔎 Diagnóstico pré-comentário...");
       await sharepointService.debugGetItemFields(authState.token, viewingCommentData.graphId);
     }
 
     setIsSavingComment(true);
     const newComment = editedComment.trim();
-    
-    // Feedback Visual Inicial
     showToast("Salvando comentário...", "info");
-    console.log("[DEBUG UI] Click Salvar Comentário. ID:", viewingCommentData.id, "Texto:", newComment);
 
     try {
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
         COMENTARIO_COMPARTILHAMENTO: newComment
       });
       if (success) {
-        console.log("[DEBUG UI] Retorno do Service handleSaveComment (Sucesso)");
         showToast("Comentário salvo!", "success");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
         setViewingCommentData(null);
       } else { 
-        console.error("[DEBUG UI] O serviço retornou falha no salvamento.");
         showToast("Erro ao salvar comentário.", "error");
       }
     } catch (e) { 
-      console.error("[DEBUG UI] Erro crítico no handleSaveComment:", e);
       showToast("Erro crítico ao salvar.", "error");
     } finally { setIsSavingComment(false); }
   };
@@ -323,9 +310,7 @@ const DashboardFinanceiro: React.FC = () => {
     if (!viewingCommentData || !authState.token) return;
     if (!window.confirm("Deseja realmente apagar esta observação?")) return;
     setIsSavingComment(true);
-    
     showToast("Limpando observação...", "info");
-    console.log("[DEBUG UI] Iniciando limpeza de comentário para ID:", viewingCommentData.id);
 
     try {
       const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, {
@@ -339,7 +324,6 @@ const DashboardFinanceiro: React.FC = () => {
         showToast("Erro ao limpar no servidor.", "error");
       }
     } catch (e) { 
-        console.error("[DEBUG UI] Erro crítico no handleClearComment:", e);
         showToast("Erro crítico ao limpar.", "error");
     } finally { setIsSavingComment(false); }
   };

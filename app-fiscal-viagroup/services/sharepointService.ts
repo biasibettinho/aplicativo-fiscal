@@ -102,7 +102,8 @@ export const sharepointService = {
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${itemId}/fields`;
       const response = await graphFetch(endpoint, accessToken);
       const data = await response.json();
-      console.warn("🔥🔥 [RELATÓRIO DE CAMPOS] RETORNO DO GRAPH:", data);
+      // TAREFA: Melhorar Log de Diagnóstico (JSON como string para verificação direta)
+      console.warn("🔥🔥 [RELATÓRIO JSON] CAMPOS:", JSON.stringify(data, null, 2));
       return data;
     } catch (e) {
       console.error("[DIAGNÓSTICO] Erro ao ler campos:", e);
