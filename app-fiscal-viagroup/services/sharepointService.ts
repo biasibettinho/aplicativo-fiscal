@@ -181,7 +181,7 @@ export const sharepointService = {
                     id: String(f.id || f.ID || item.id), // ID do Graph (string)
                     graphId: item.id,
                     mirrorId: parseInt(f.id || f.ID || '0', 10),
-                    title: f.Title || 'Sem Título',
+                    title: f.Title || getVal('title') || 'Sem Título',
                     status: (getVal('status') as RequestStatus) || (f.Status as RequestStatus) || RequestStatus.PENDENTE,
                     
                     // CAMPOS CRÍTICOS PARA FILTRO
@@ -194,8 +194,8 @@ export const sharepointService = {
                     paymentDate: pDate,
                     
                     invoiceNumber: f.Qualon_x00fa_merodaNF_x003f_ || f.NF || '',
-                    // CORREÇÃO AQUI: Renomeado de orderNumbers para orderNumber
-                    orderNumber: f.Qualopedido_x0028_s_x0029__x003f_ || f.Pedido || '',
+                    // CORREÇÃO: Tenta variações do nome interno para garantir que pegue o valor do pedido
+                    orderNumber: f.Qualopedido_x0028_s_x0029__x003f || f.Qualopedido_x0028_s_x0029__x003f_ || f.Pedido || '',
                     
                     payee: getVal('payee'),
                     bank: getVal('bank'),
