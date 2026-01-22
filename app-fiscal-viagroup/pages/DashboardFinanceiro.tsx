@@ -113,6 +113,16 @@ const DashboardFinanceiro: React.FC = () => {
     return fallback;
   };
 
+  // Regra de Visibilidade Restritiva para o Financeiro
+  const allowedStatus = [
+      RequestStatus.APROVADO, 
+      RequestStatus.ANALISE, // Mapeado para 'Em Análise' no Financeiro
+      RequestStatus.LANCADO, 
+      RequestStatus.FATURADO, 
+      RequestStatus.ERRO_FINANCEIRO,
+      RequestStatus.COMPARTILHADO
+  ];
+
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
 
@@ -125,13 +135,8 @@ const DashboardFinanceiro: React.FC = () => {
           ]);
           setSpUsers(users);
           
-          let filtered = data.filter(r => [
-            RequestStatus.APROVADO, 
-            RequestStatus.ANALISE, 
-            RequestStatus.FATURADO, 
-            RequestStatus.ERRO_FINANCEIRO, 
-            RequestStatus.COMPARTILHADO
-          ].includes(r.status) || (r.sharedWithEmail && stripHtml(r.sharedWithEmail).trim() !== ''));
+          // TAREFA 1: Ajustar Filtro de Visibilidade
+          let filtered = data.filter(r => allowedStatus.includes(r.status) || r.statusManual === 'Compartilhado');
 
           if (authState.user.role === UserRole.FINANCEIRO) {
             filtered = filtered.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === authState.user?.email.toLowerCase());
@@ -152,7 +157,7 @@ const DashboardFinanceiro: React.FC = () => {
                     const map = new Map(prev.map(r => [r.id, r]));
                     updatedItems.forEach(item => {
                         const isShared = item.sharedWithEmail && stripHtml(item.sharedWithEmail).trim() !== '';
-                        const financeAllowed = [RequestStatus.APROVADO, RequestStatus.ANALISE, RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO, RequestStatus.COMPARTILHADO].includes(item.status);
+                        const financeAllowed = allowedStatus.includes(item.status);
                         
                         let shouldInclude = financeAllowed || isShared || item.statusManual === 'Compartilhado';
                         
@@ -238,20 +243,18 @@ const DashboardFinanceiro: React.FC = () => {
         setSelectedId(null);
         setIsProcessingAction(true);
 
+        // TAREFA 2: Corrigir Erro de Aprovação (Payload Limpo e updateRequest)
         const payload: any = { 
             status: newStatus,
             statusFinal: statusFinalValue,
             approverObservation: logComment,
-            errorObservation: ''
+            errorObservation: '',
+            ...(newStatus === RequestStatus.FATURADO ? { sentToFinanceAt: new Date().toISOString() } : {})
         };
 
-        if (newStatus === RequestStatus.FATURADO) {
-            payload.sentToFinanceAt = new Date().toISOString();
-        }
+        const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
 
-        const success = await sharepointService.updateRequestFields(authState.token, selectedRequest.graphId, payload);
-
-        if (success) {
+        if (result) {
             setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: newStatus, statusFinal: statusFinalValue, approverObservation: logComment } : r));
             await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: newStatus, OBSERVACAO: logComment, MSG_OBSERVACAO: logComment, usuario_logado: authState.user.name });
             showToast("Solicitação Aprovada", 'success');
@@ -375,7 +378,8 @@ const DashboardFinanceiro: React.FC = () => {
 
   const applySharedFilter = (reqs: PaymentRequest[]) => {
     if (sharedStatusFilter === 'TODOS') return reqs;
-    return reqs.filter(r => [RequestStatus.APROVADO, RequestStatus.ANALISE, RequestStatus.PENDENTE].includes(r.status as RequestStatus) || resolveDisplayStatus(r) === 'Pendente');
+    // TAREFA 1: Ajuste na lógica applySharedFilter para ser consistente
+    return reqs.filter(r => allowedStatus.includes(r.status as RequestStatus) || r.statusManual === 'Compartilhado');
   };
 
   const northShared = useMemo(() => 
