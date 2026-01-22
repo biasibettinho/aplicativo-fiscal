@@ -1,3 +1,4 @@
+
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
@@ -8,6 +9,15 @@ import {
 } from 'lucide-react';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
+
+// TAREFA: Blindagem de Visibilidade - Lista de status permitidos para o Financeiro
+const FINANCE_VISIBLE_STATUS = [
+    RequestStatus.APROVADO,
+    RequestStatus.LANCADO,
+    RequestStatus.FATURADO,
+    RequestStatus.ERRO_FINANCEIRO,
+    RequestStatus.COMPARTILHADO
+];
 
 // Mapeamento de Status para Ícones e Cores no Histórico
 const STATUS_CONFIG: Record<string, { icon: any; color: string; bgColor: string }> = {
@@ -91,6 +101,12 @@ const DashboardFinanceiro: React.FC = () => {
     return authState.user?.role === UserRole.FINANCEIRO_MASTER || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
 
+  // Define availableBranches to fix Reference Error
+  const availableBranches = useMemo(() => {
+    const branches = requests.map(r => r.branch).filter(branch => branch && branch.trim() !== '');
+    return Array.from(new Set(branches)).sort();
+  }, [requests]);
+
   const isUrgent = (req: PaymentRequest) => {
     if (req.status === RequestStatus.FATURADO || req.statusFinal === 'Faturado') return false;
     if (!req.paymentDate) return false;
@@ -113,16 +129,6 @@ const DashboardFinanceiro: React.FC = () => {
     return fallback;
   };
 
-  // Regra de Visibilidade Restritiva para o Financeiro
-  const allowedStatus = [
-      RequestStatus.APROVADO, 
-      RequestStatus.ANALISE, // Mapeado para 'Em Análise' no Financeiro
-      RequestStatus.LANCADO, 
-      RequestStatus.FATURADO, 
-      RequestStatus.ERRO_FINANCEIRO,
-      RequestStatus.COMPARTILHADO
-  ];
-
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
 
@@ -135,13 +141,13 @@ const DashboardFinanceiro: React.FC = () => {
           ]);
           setSpUsers(users);
           
-          // TAREFA 1: Ajustar Filtro de Visibilidade
-          let filtered = data.filter(r => allowedStatus.includes(r.status) || r.statusManual === 'Compartilhado');
+          // TRAVA DE SEGURANÇA: Filtro na Carga de Dados
+          const validData = data.filter(r => 
+            FINANCE_VISIBLE_STATUS.includes(r.status) || 
+            r.statusManual === 'Compartilhado'
+          );
 
-          if (authState.user.role === UserRole.FINANCEIRO) {
-            filtered = filtered.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === authState.user?.email.toLowerCase());
-          }
-          setRequests(filtered);
+          setRequests(validData);
           setLastUpdate(new Date());
         } catch (e) {
           console.error(e);
@@ -153,26 +159,32 @@ const DashboardFinanceiro: React.FC = () => {
         try {
             const updatedItems = await sharepointService.getRequestsDelta(authState.token, lastUpdate);
             if (updatedItems.length > 0) {
-                setRequests(prev => {
-                    const map = new Map(prev.map(r => [r.id, r]));
-                    updatedItems.forEach(item => {
-                        const isShared = item.sharedWithEmail && stripHtml(item.sharedWithEmail).trim() !== '';
-                        const financeAllowed = allowedStatus.includes(item.status);
-                        
-                        let shouldInclude = financeAllowed || isShared || item.statusManual === 'Compartilhado';
-                        
-                        if (authState.user?.role === UserRole.FINANCEIRO) {
-                            shouldInclude = shouldInclude && stripHtml(item.sharedWithEmail || '').toLowerCase() === authState.user.email.toLowerCase();
-                        }
+                // TRAVA DE SEGURANÇA: Filtro no Polling
+                const filteredDelta = updatedItems.filter(item => 
+                  FINANCE_VISIBLE_STATUS.includes(item.status) || 
+                  item.statusManual === 'Compartilhado'
+                );
 
-                        if (shouldInclude) {
-                            map.set(item.id, item);
-                        } else {
-                            map.delete(item.id);
-                        }
-                    });
-                    return Array.from(map.values());
-                });
+                if (filteredDelta.length > 0) {
+                  setRequests(prev => {
+                      const map = new Map(prev.map(r => [r.id, r]));
+                      filteredDelta.forEach(item => {
+                          // Aplica filtros de visibilidade regional (RLS) se não for Master
+                          let shouldInclude = true;
+                          if (authState.user?.role === UserRole.FINANCEIRO) {
+                              const sharedEmail = stripHtml(item.sharedWithEmail || '').toLowerCase();
+                              shouldInclude = sharedEmail === authState.user.email.toLowerCase();
+                          }
+
+                          if (shouldInclude) {
+                              map.set(item.id, item);
+                          } else {
+                              map.delete(item.id);
+                          }
+                      });
+                      return Array.from(map.values());
+                  });
+                }
                 setLastUpdate(new Date());
             }
         } catch (e) {
@@ -231,10 +243,10 @@ const DashboardFinanceiro: React.FC = () => {
         let logComment = 'Faturamento concluído pelo Master.';
 
         if (authState.user.role === UserRole.FINANCEIRO) {
-            newStatus = RequestStatus.ANALISE;
-            statusFinalValue = 'Em Análise';
-            logComment = 'Validado pelo financeiro regional. Aguardando conferência Master.';
-        } else if (authState.user.role === UserRole.FINANCEIRO_MASTER || authState.user.role === UserRole.ADMIN_MASTER) {
+            newStatus = RequestStatus.LANCADO; // Regional lança
+            statusFinalValue = 'Lançado Regional';
+            logComment = 'Lançamento realizado pelo regional. Aguardando finalização Master.';
+        } else if (isMaster) {
             newStatus = RequestStatus.FATURADO;
             statusFinalValue = 'Finalizado';
             logComment = 'Faturamento concluído pelo Master.';
@@ -243,24 +255,25 @@ const DashboardFinanceiro: React.FC = () => {
         setSelectedId(null);
         setIsProcessingAction(true);
 
-        // TAREFA 2: Corrigir Erro de Aprovação (Payload Limpo e updateRequest)
+        // Payload limpo para evitar erros de campo protegido
         const payload: any = { 
             status: newStatus,
             statusFinal: statusFinalValue,
             approverObservation: logComment,
             errorObservation: '',
-            ...(newStatus === RequestStatus.FATURADO ? { sentToFinanceAt: new Date().toISOString() } : {})
+            ...(newStatus === RequestStatus.FATURADO ? { finalizedAt: new Date().toISOString() } : {})
         };
 
         const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
 
         if (result) {
+            // Se o item não for mais visível após a mudança (ex: virou LANCADO e regional não vê), ele sumirá no próximo sync
             setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: newStatus, statusFinal: statusFinalValue, approverObservation: logComment } : r));
             await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: newStatus, OBSERVACAO: logComment, MSG_OBSERVACAO: logComment, usuario_logado: authState.user.name });
-            showToast("Solicitação Aprovada", 'success');
+            showToast("Solicitação Processada", 'success');
             loadData(true); 
         } else {
-            showToast("Erro ao atualizar status. Tente novamente.", 'error');
+            showToast("Erro ao atualizar status.", 'error');
             loadData(true);
         }
     } catch (error) {
@@ -273,8 +286,8 @@ const DashboardFinanceiro: React.FC = () => {
 
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
-    const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
-    const logObs = `Reprovado: ${rejectReason}`;
+    const targetStatus = RequestStatus.ERRO_FINANCEIRO;
+    const logObs = `Reprovado Financeiro: ${rejectReason}`;
     
     setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } : r));
     setIsRejectModalOpen(false);
@@ -284,11 +297,11 @@ const DashboardFinanceiro: React.FC = () => {
     try {
       const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment });
       if (result) {
-          showToast("Solicitação devolvida com sucesso!", 'success');
+          showToast("Solicitação devolvida!", 'success');
           await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: targetStatus, OBSERVACAO: logObs, MSG_OBSERVACAO: rejectComment, usuario_logado: authState.user.name });
           loadData(true);
       } else {
-          showToast("Erro ao reprovar no servidor.", 'error');
+          showToast("Erro ao reprovar.", 'error');
           loadData(true);
       }
     } catch (e) { 
@@ -301,34 +314,33 @@ const DashboardFinanceiro: React.FC = () => {
 
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
-    if (!shareEmail) { showToast("Por favor, selecione uma regional de destino.", "error"); return; }
+    if (!shareEmail) { showToast("Selecione uma regional.", "error"); return; }
     
     const userExists = spUsers.find(u => u.EmailUsuario.toLowerCase() === shareEmail.toLowerCase());
     if (!userExists) {
-        alert("Erro: O canal selecionado para compartilhamento não foi encontrado na base de usuários autorizados.");
+        alert("Erro: Usuário/Canal não encontrado na base autorizada.");
         return;
     }
 
     const comment = shareCommentText.trim();
-    showToast("Enviando compartilhamento...", "info");
-    const sharePayload = { Status: selectedRequest.status, STATUS_ESPELHO_MANUAL: 'Compartilhado', PESSOA_COMPARTILHADA: shareEmail, COMENTARIO_COMPARTILHAMENTO: comment };
+    showToast("Compartilhando...", "info");
+    const sharePayload = { statusManual: 'Compartilhado', sharedWithEmail: shareEmail, shareComment: comment, sharedByName: authState.user.name };
 
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, sharedWithEmail: shareEmail, sharedByName: authState.user?.name, statusManual: 'Compartilhado', shareComment: comment } : r));
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
     try {
-      const success = await sharepointService.updateRequestFields(authState.token, selectedRequest.graphId, sharePayload);
-      if (success) {
+      const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, sharePayload);
+      if (result) {
         showToast("Compartilhado com sucesso!", "success");
-        await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: 'Compartilhado', OBSERVACAO: `Compartilhado com ${shareEmail}`, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
+        await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: 'Compartilhado', OBSERVACAO: `Direcionado para ${shareEmail}`, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
         setShareCommentText('');
         loadData(true);
       } else {
-        showToast("Erro ao processar no servidor.", "error");
+        showToast("Erro ao compartilhar.", "error");
         loadData(true);
       }
     } catch (e: any) { 
-        showToast("Erro ao compartilhar.", "error");
+        showToast("Erro crítico ao compartilhar.", "error");
         loadData(true); 
     } finally { setIsProcessingAction(false); }
   };
@@ -337,49 +349,47 @@ const DashboardFinanceiro: React.FC = () => {
     if (!viewingCommentData || !authState.token || !authState.user) return;
     setIsSavingComment(true);
     const newComment = editedComment.trim();
-    showToast("Salvando comentário...", "info");
     try {
-      const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, { COMENTARIO_COMPARTILHAMENTO: newComment });
-      if (success) {
-        showToast("Comentário salvo!", "success");
+      const result = await sharepointService.updateRequest(authState.token, viewingCommentData.graphId, { shareComment: newComment });
+      if (result) {
+        showToast("Observação salva!", "success");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: newComment } : r));
         setViewingCommentData(null);
       } else { 
-        showToast("Erro ao salvar comentário.", "error");
+        showToast("Erro ao salvar.", "error");
       }
     } catch (e) { 
-      showToast("Erro crítico ao salvar.", "error");
+      showToast("Erro crítico.", "error");
     } finally { setIsSavingComment(false); }
   };
 
   const handleClearComment = async () => {
     if (!viewingCommentData || !authState.token) return;
-    if (!window.confirm("Deseja realmente apagar esta observação?")) return;
+    if (!window.confirm("Apagar observação?")) return;
     setIsSavingComment(true);
-    showToast("Limpando observação...", "info");
     try {
-      const success = await sharepointService.updateRequestFields(authState.token, viewingCommentData.graphId, { COMENTARIO_COMPARTILHAMENTO: '' });
-      if (success) {
-        showToast("Observação removida!", "success");
+      const result = await sharepointService.updateRequest(authState.token, viewingCommentData.graphId, { shareComment: '' });
+      if (result) {
+        showToast("Removido!", "success");
         setRequests(prev => prev.map(r => r.id === viewingCommentData.id ? { ...r, shareComment: '' } : r));
         setViewingCommentData(null);
-      } else {
-        showToast("Erro ao limpar no servidor.", "error");
       }
     } catch (e) { 
-        showToast("Erro crítico ao limpar.", "error");
+        showToast("Erro crítico.", "error");
     } finally { setIsSavingComment(false); }
   };
 
-  const availableBranches = useMemo(() => {
-    const branches = requests.map(r => r.branch).filter(b => b && b.trim() !== '');
-    return Array.from(new Set(branches)).sort();
-  }, [requests]);
-
   const applySharedFilter = (reqs: PaymentRequest[]) => {
-    if (sharedStatusFilter === 'TODOS') return reqs;
-    // TAREFA 1: Ajuste na lógica applySharedFilter para ser consistente
-    return reqs.filter(r => allowedStatus.includes(r.status as RequestStatus) || r.statusManual === 'Compartilhado');
+    if (sharedStatusFilter === 'TODOS') {
+        return reqs.filter(r => 
+            FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) || 
+            r.statusManual === 'Compartilhado'
+        );
+    }
+    return reqs.filter(r => 
+        (FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) || r.statusManual === 'Compartilhado') &&
+        (r.status === RequestStatus.APROVADO || resolveDisplayStatus(r) === 'Pendente')
+    );
   };
 
   const northShared = useMemo(() => 
@@ -390,6 +400,7 @@ const DashboardFinanceiro: React.FC = () => {
     applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br')), 
   [requests, sharedStatusFilter]);
 
+  // TRAVA DE SEGURANÇA FINAL: Filtro na Renderização
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.id.toString().includes(searchTerm);
@@ -399,7 +410,11 @@ const DashboardFinanceiro: React.FC = () => {
         const currentDisplay = resolveDisplayStatus(r);
         matchesStatus = statusFilter === 'Pendente' ? (r.status === RequestStatus.APROVADO || currentDisplay === 'Pendente') : (currentDisplay === statusFilter);
       }
-      return matchesSearch && matchesBranch && matchesStatus;
+      
+      // Bloqueio de qualquer status que não esteja no contrato do financeiro
+      const isAllowed = FINANCE_VISIBLE_STATUS.includes(r.status) || r.statusManual === 'Compartilhado';
+      
+      return matchesSearch && matchesBranch && matchesStatus && isAllowed;
     }).sort((a, b) => {
       const urgentA = isUrgent(a); const urgentB = isUrgent(b);
       if (urgentA && !urgentB) return -1; if (!urgentA && urgentB) return 1;
@@ -424,6 +439,7 @@ const DashboardFinanceiro: React.FC = () => {
         </div>
       )}
 
+      {/* Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-64 min-w-[200px]">
@@ -470,6 +486,7 @@ const DashboardFinanceiro: React.FC = () => {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden">
+        {/* Sidebar Lista */}
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
@@ -510,6 +527,7 @@ const DashboardFinanceiro: React.FC = () => {
           </div>
         </div>
 
+        {/* Detalhes */}
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
