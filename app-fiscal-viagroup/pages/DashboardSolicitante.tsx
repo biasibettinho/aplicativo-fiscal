@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
-// Importando MAIN_LIST_ID explicitamente para corrigir erros de referência
 import { sharepointService, MAIN_LIST_ID } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
@@ -24,7 +23,7 @@ const DashboardSolicitante: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStep, setSubmissionStep] = useState('');
   
-  // Controle de Sincronização Delta com Estado conforme instrução
+  // Controle Delta Polling
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
   // Filtros de Lista
@@ -79,7 +78,7 @@ const DashboardSolicitante: React.FC = () => {
           if (!silent) setIsLoading(false); 
         }
     } else {
-        // Carga Incremental (Delta) para Polling
+        // Polling Delta
         try {
             const updatedItems = await sharepointService.getRequestsDelta(authState.token, lastUpdate);
             if (updatedItems.length > 0) {
@@ -99,7 +98,7 @@ const DashboardSolicitante: React.FC = () => {
                 setLastUpdate(new Date());
             }
         } catch (e) {
-            console.warn("Delta falhou no polling", e);
+            console.warn("Delta polling falhou no solicitante", e);
         }
     }
   };
@@ -109,7 +108,7 @@ const DashboardSolicitante: React.FC = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       syncData(true);
-    }, 60000); // 1 minuto para Solicitantes (Redução de carga)
+    }, 60000); 
     return () => clearInterval(interval);
   }, [authState.user, authState.token, lastUpdate, requests.length]);
 
