@@ -64,7 +64,7 @@ const DashboardFiscal: React.FC = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       loadData(true);
-    }, 30000); // 30 segundos
+    }, 15000); // 15s para Operacional (Real-time necessário)
     return () => clearInterval(interval);
   }, [authState.user, authState.token]);
 

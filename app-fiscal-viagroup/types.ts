@@ -61,6 +61,8 @@ export interface PaymentRequest {
   branch: string;
   createdByUserId: string;
   createdByName: string;
+  // Adicionado authorEmail para corrigir erro de tipo no requestService.ts
+  authorEmail?: string;
   createdAt: string;
   updatedAt: string;
   status: RequestStatus;

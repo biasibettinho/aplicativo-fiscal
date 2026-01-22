@@ -109,6 +109,38 @@ async function graphFetch(url: string, accessToken: string, options: RequestInit
   return res;
 }
 
+/**
+ * Função auxiliar para fazer fetch com retry caso o token expire (401).
+ */
+async function graphFetchWithRetry(url: string, token: string, options: any = {}) {
+    let response = await fetch(url, { 
+        ...options, 
+        headers: { 
+            ...options.headers, 
+            Authorization: `Bearer ${token}`,
+            'Accept': 'application/json',
+            'Content-Type': options.method === 'PATCH' || options.method === 'POST' ? 'application/json' : undefined
+        } 
+    });
+    
+    if (response.status === 401) {
+        console.warn("Token expirado (401). Tentando renovar...");
+        const newToken = await authService.getSharePointToken();
+        if (newToken) {
+            response = await fetch(url, { 
+                ...options, 
+                headers: { 
+                    ...options.headers, 
+                    Authorization: `Bearer ${newToken}`,
+                    'Accept': 'application/json',
+                    'Content-Type': options.method === 'PATCH' || options.method === 'POST' ? 'application/json' : undefined
+                } 
+            });
+        }
+    }
+    return response;
+}
+
 async function spRestFetch(url: string, options: RequestInit = {}) {
   const spToken = await authService.getSharePointToken();
   if (!spToken) return new Response(null, { status: 401 });
@@ -132,7 +164,7 @@ export const sharepointService = {
 
             // Loop de Paginação (Busca tudo até acabar)
             while (nextLink) {
-                const response = await graphFetch(nextLink, accessToken, {
+                const response = await graphFetchWithRetry(nextLink, accessToken, {
                     headers: {
                         'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly'
                     }
@@ -283,9 +315,22 @@ export const sharepointService = {
 
   triggerPowerAutomateFlow: async (payload: any): Promise<boolean> => {
     try {
-      const response = await fetch(POWER_AUTOMATE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutos de Timeout
+
+      const response = await fetch(POWER_AUTOMATE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
       return response.ok;
-    } catch (e) { return false; }
+    } catch (e) {
+      console.error("Erro ou Timeout no Power Automate:", e);
+      return false;
+    }
   },
 
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {
@@ -295,7 +340,7 @@ export const sharepointService = {
       const normalizedFields = normalizePayloadKeys(rawFields);
       const cleanedFields = sanitizePayload(normalizedFields);
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
-      const response = await graphFetch(endpoint, accessToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: cleanedFields }) });
+      const response = await graphFetchWithRetry(endpoint, accessToken, { method: 'PATCH', body: JSON.stringify({ fields: cleanedFields }) });
       if (!response.ok) return null;
       return await response.json();
     } catch (e) { return null; }
@@ -306,7 +351,7 @@ export const sharepointService = {
         const normalizedFields = normalizePayloadKeys(fields);
         const cleanedFields = sanitizePayload(normalizedFields);
         const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items/${graphId}`;
-        const response = await graphFetch(endpoint, accessToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: cleanedFields }) });
+        const response = await graphFetchWithRetry(endpoint, accessToken, { method: 'PATCH', body: JSON.stringify({ fields: cleanedFields }) });
         return response.ok;
     } catch (e) { return false; }
   },
@@ -396,7 +441,7 @@ export const sharepointService = {
   addHistoryLog: async (accessToken: string, requestId: number, logData: any): Promise<boolean> => {
     try {
       const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${HISTORY_LIST_ID}/items`;
-      const response = await graphFetch(endpoint, accessToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { ID_SOL: requestId, ATUALIZACAO: logData.ATUALIZACAO, OBSERVACAO: logData.OBSERVACAO, MSG_OBSERVACAO: logData.MSG_OBSERVACAO, usuario_logado: logData.usuario_logado } }) });
+      const response = await graphFetchWithRetry(endpoint, accessToken, { method: 'POST', body: JSON.stringify({ fields: { ID_SOL: requestId, ATUALIZACAO: logData.ATUALIZACAO, OBSERVACAO: logData.OBSERVACAO, MSG_OBSERVACAO: logData.MSG_OBSERVACAO, usuario_logado: logData.usuario_logado } }) });
       return response.ok;
     } catch (e) { return false; }
   },
@@ -407,7 +452,7 @@ export const sharepointService = {
     try {
       while (nextLink && pageCount < 30) {
         pageCount++;
-        const response = await graphFetch(nextLink, accessToken);
+        const response = await graphFetchWithRetry(nextLink, accessToken);
         if (!response.ok) break;
         const data = await response.json();
         const pageItems = data.value || [];

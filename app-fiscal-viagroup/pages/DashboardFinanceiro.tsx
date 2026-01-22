@@ -45,6 +45,7 @@ const CopyButton = ({ text }: { text: string }) => (
 const DashboardFinanceiro: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
+  const [spUsers, setSpUsers] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
@@ -113,7 +114,12 @@ const DashboardFinanceiro: React.FC = () => {
     if (!authState.user || !authState.token) return;
     if (!silent) setIsLoading(true);
     try {
-      const data = await requestService.getRequestsFiltered(authState.user, authState.token);
+      const [data, users] = await Promise.all([
+        requestService.getRequestsFiltered(authState.user, authState.token),
+        sharepointService.getAllSharePointUsers()
+      ]);
+      setSpUsers(users);
+      
       let filtered = data.filter(r => [
         RequestStatus.APROVADO, 
         RequestStatus.ANALISE, 
@@ -136,7 +142,7 @@ const DashboardFinanceiro: React.FC = () => {
   useEffect(() => { loadData(false); }, [authState.user, authState.token]);
 
   useEffect(() => {
-    const interval = setInterval(() => { loadData(true); }, 30000);
+    const interval = setInterval(() => { loadData(true); }, 15000); // 15s para Operacional
     return () => clearInterval(interval);
   }, [authState.user, authState.token]);
 
@@ -192,9 +198,6 @@ const DashboardFinanceiro: React.FC = () => {
     applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br')), 
   [requests, sharedStatusFilter]);
 
-  /**
-   * Função handleApprove ajustada para respeitar a hierarquia de aprovação e feedback local.
-   */
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
 
@@ -234,7 +237,6 @@ const DashboardFinanceiro: React.FC = () => {
         );
 
         if (success) {
-            // Atualização de estado local imediata (Feedback Otimista)
             setRequests(prev => prev.map(r => 
                 r.id === selectedRequest.id 
                     ? { ...r, status: newStatus, statusFinal: statusFinalValue, approverObservation: logComment } 
@@ -269,7 +271,6 @@ const DashboardFinanceiro: React.FC = () => {
     const targetStatus = isMaster ? RequestStatus.ERRO_FINANCEIRO : RequestStatus.ANALISE;
     const logObs = `Reprovado: ${rejectReason}`;
     
-    // Atualização otimista local
     setRequests(prev => prev.map(r => 
         r.id === selectedRequest.id 
             ? { ...r, status: targetStatus, errorObservation: rejectReason, approverObservation: rejectComment } 
@@ -311,8 +312,15 @@ const DashboardFinanceiro: React.FC = () => {
   const handleShare = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     if (!shareEmail) { showToast("Por favor, selecione uma regional de destino.", "error"); return; }
-    const comment = shareCommentText.trim();
     
+    // VALIDAÇÃO DE SEGURANÇA: Verifica se a regional existe na base de usuários autorizados
+    const userExists = spUsers.find(u => u.EmailUsuario.toLowerCase() === shareEmail.toLowerCase());
+    if (!userExists) {
+        alert("Erro: O canal selecionado para compartilhamento não foi encontrado na base de usuários autorizados.");
+        return;
+    }
+
+    const comment = shareCommentText.trim();
     showToast("Enviando compartilhamento...", "info");
     
     const sharePayload = {

@@ -63,8 +63,8 @@ const DashboardSolicitante: React.FC = () => {
     if (!silent) setIsLoading(true);
     try {
       const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
-      // Filtra apenas solicitações criadas pelo próprio usuário logado
-      setRequests(allAvailable.filter(r => r.createdByUserId === authState.user?.id || r.createdByName === authState.user?.name));
+      // Filtra apenas solicitações criadas pelo próprio usuário logado ou vinculadas por email
+      setRequests(allAvailable);
     } catch (e) { 
       console.error(e); 
     } finally { 
@@ -77,7 +77,7 @@ const DashboardSolicitante: React.FC = () => {
   useEffect(() => {
     const interval = setInterval(() => {
       syncData(true);
-    }, 30000); // Polling a cada 30 segundos
+    }, 60000); // 1 minuto para Solicitantes (Redução de carga)
     return () => clearInterval(interval);
   }, [authState.user, authState.token]);
 

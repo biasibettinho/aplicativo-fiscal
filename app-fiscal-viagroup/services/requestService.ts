@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, User, UserRole } from '../types';
 import { sharepointService } from './sharepointService';
 
@@ -11,8 +10,15 @@ export const requestService = {
       
       if (user.role === UserRole.ADMIN_MASTER) return all;
 
+      // SOLICITANTE: Filtro Robusto (ID ou Email)
+      // Isso garante que o usuário veja seus itens mesmo se houver divergência de Case no ID
       if (user.role === UserRole.SOLICITANTE) {
-        return all.filter(r => r.createdByUserId === user.id); 
+          return all.filter(r => {
+              const idMatch = r.createdByUserId && user.id && r.createdByUserId.toString().toLowerCase() === user.id.toString().toLowerCase();
+              const emailMatch = r.authorEmail && user.email && r.authorEmail.toLowerCase() === user.email.toLowerCase();
+              
+              return idMatch || emailMatch;
+          });
       }
       
       if (user.role === UserRole.FISCAL_COMUM || user.role === UserRole.FISCAL_ADMIN) {
