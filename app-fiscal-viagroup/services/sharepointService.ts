@@ -123,34 +123,47 @@ const stripHtml = (html: any) => {
 };
 
 export const sharepointService = {
-    // --- INÍCIO DA FUNÇÃO REIMPLANTADA ---
+    // --- FUNÇÃO GETREQUESTS COM PAGINAÇÃO E FILTRO HÍBRIDO ---
     getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
         try {
-            // Busca itens usando Graph API com expansão de campos para pegar metadados customizados
-            // A query expand=fields é essencial para ler SOLICITANTE_ID
-            const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?$expand=fields&$top=500`;
-            
-            const response = await graphFetch(endpoint, accessToken, {
-                headers: {
-                    'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly'
-                }
-            });
+            let allItems: any[] = [];
+            // URL Inicial com paginação máxima (999) e expansão de campos
+            let nextLink: string | null = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?$expand=fields&$top=999`;
 
-            if (!response.ok) {
-                console.error(`[GRAPH ERROR] getRequests: ${response.status}`);
-                return [];
+            // Loop de Paginação (Busca tudo até acabar)
+            while (nextLink) {
+                const response = await graphFetch(nextLink, accessToken, {
+                    headers: {
+                        'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly'
+                    }
+                });
+
+                if (!response.ok) {
+                    console.error(`[GRAPH ERROR] getRequests: ${response.status}`);
+                    break;
+                }
+
+                const data = await response.json();
+                const pageItems = data.value || [];
+                allItems = [...allItems, ...pageItems];
+                
+                // Atualiza o link para a próxima página (ou null se acabou)
+                nextLink = data['@odata.nextLink'] || null;
             }
 
-            const data = await response.json();
-            const items = data.value || [];
+            console.log(`[DEBUG] Total de itens carregados: ${allItems.length}`);
 
-            return items.map((item: any) => {
+            return allItems.map((item: any) => {
                 const f = item.fields || {};
                 
-                // LÓGICA DE FALLBACK HÍBRIDA PARA FILTRO:
-                // 1. Tenta SOLICITANTE_ID (itens novos via Power Automate)
-                // 2. Se vazio, usa createdBy.user.id (itens legados criados direto no SharePoint)
+                // LÓGICA DE FALLBACK HÍBRIDA (SUPORTE LEGADO + NOVO)
+                // 1. Tenta SOLICITANTE_ID (itens novos)
+                // 2. Tenta createdBy.user.id (itens antigos/legados)
+                // 3. Normaliza para string vazia se falhar
                 const idSolicitante = f.SOLICITANTE_ID || item.createdBy?.user?.id || '';
+
+                // Normalização de Email (minúsculo para comparação segura)
+                const emailSolicitante = (f.SOLICITANTE_EMAIL || item.createdBy?.user?.email || '').toLowerCase();
 
                 // Helper para extrair valores baseados no FIELD_MAP
                 const getVal = (mapKey: keyof typeof FIELD_MAP) => {
@@ -159,26 +172,27 @@ export const sharepointService = {
                 };
 
                 let pDate = getVal('paymentDate');
-                if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
+                if (pDate && !pDate.includes('T')) {
+                  const d = new Date(pDate);
+                  if (!isNaN(d.getTime())) pDate = d.toISOString();
+                }
 
                 return {
-                    id: item.id, // ID do Graph (string)
+                    id: String(f.id || f.ID || item.id), // ID do Graph (string)
                     graphId: item.id,
                     mirrorId: parseInt(f.id || f.ID || '0', 10),
                     title: f.Title || 'Sem Título',
                     status: (getVal('status') as RequestStatus) || (f.Status as RequestStatus) || RequestStatus.PENDENTE,
                     
-                    // O CAMPO CHAVE DO FILTRO
+                    // CAMPOS CRÍTICOS PARA FILTRO
                     createdByUserId: idSolicitante, 
-                    
                     createdByName: f.SolicitanteNome || item.createdBy?.user?.displayName || 'Sistema',
-                    authorEmail: f.SOLICITANTE_EMAIL || item.createdBy?.user?.email || '',
+                    authorEmail: emailSolicitante,
                     
                     branch: getVal('branch'),
                     paymentMethod: getVal('paymentMethod'),
                     paymentDate: pDate,
                     
-                    // Mapeamento de campos com nomes internos complexos
                     invoiceNumber: f.Qualon_x00fa_merodaNF_x003f_ || f.NF || '',
                     orderNumbers: f.Qualopedido_x0028_s_x0029__x003f_ || f.Pedido || '',
                     
@@ -189,6 +203,7 @@ export const sharepointService = {
                     accountType: getVal('accountType'),
                     pixKey: getVal('pixKey'),
                     
+                    totalValue: 0, 
                     generalObservation: stripHtml(getVal('generalObservation')),
                     approverObservation: stripHtml(getVal('approverObservation')),
                     
@@ -207,7 +222,7 @@ export const sharepointService = {
             });
 
         } catch (error) {
-            console.error("Erro fatal ao buscar solicitações:", error);
+            console.error("Erro fatal ao buscar solicitações (Paginação):", error);
             return [];
         }
     },
@@ -410,6 +425,9 @@ export const sharepointService = {
       const uniqueMatches = Array.from(new Map(allMatches.map(item => [item.id, item])).values());
       uniqueMatches.sort((a: any, b: any) => new Date(b.createdDateTime).getTime() - new Date(a.createdDateTime).getTime());
       return uniqueMatches.map((item: any) => ({ id: item.id, createdAt: item.createdDateTime, status: item.fields?.ATUALIZACAO || '', obs: item.fields?.OBSERVACAO || '', msg: item.fields?.MSG_OBSERVACAO || '', user: item.fields?.usuario_logado || '' }));
-    } catch (e) { return []; }
+    } catch (error) {
+      console.error("Erro ao carregar histórico:", error);
+      return [];
+    }
   }
 };
