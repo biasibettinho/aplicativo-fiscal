@@ -123,6 +123,96 @@ const stripHtml = (html: any) => {
 };
 
 export const sharepointService = {
+    // --- INÍCIO DA FUNÇÃO REIMPLANTADA ---
+    getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
+        try {
+            // Busca itens usando Graph API com expansão de campos para pegar metadados customizados
+            // A query expand=fields é essencial para ler SOLICITANTE_ID
+            const endpoint = `https://graph.microsoft.com/v1.0/sites/${GRAPH_SITE_ID}/lists/${MAIN_LIST_ID}/items?$expand=fields&$top=500`;
+            
+            const response = await graphFetch(endpoint, accessToken, {
+                headers: {
+                    'Prefer': 'HonorNonIndexedQueriesWarningMayFailRandomly'
+                }
+            });
+
+            if (!response.ok) {
+                console.error(`[GRAPH ERROR] getRequests: ${response.status}`);
+                return [];
+            }
+
+            const data = await response.json();
+            const items = data.value || [];
+
+            return items.map((item: any) => {
+                const f = item.fields || {};
+                
+                // LÓGICA DE FALLBACK HÍBRIDA PARA FILTRO:
+                // 1. Tenta SOLICITANTE_ID (itens novos via Power Automate)
+                // 2. Se vazio, usa createdBy.user.id (itens legados criados direto no SharePoint)
+                const idSolicitante = f.SOLICITANTE_ID || item.createdBy?.user?.id || '';
+
+                // Helper para extrair valores baseados no FIELD_MAP
+                const getVal = (mapKey: keyof typeof FIELD_MAP) => {
+                    const internalName = FIELD_MAP[mapKey];
+                    return f[internalName] || f[mapKey] || '';
+                };
+
+                let pDate = getVal('paymentDate');
+                if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
+
+                return {
+                    id: item.id, // ID do Graph (string)
+                    graphId: item.id,
+                    mirrorId: parseInt(f.id || f.ID || '0', 10),
+                    title: f.Title || 'Sem Título',
+                    status: (getVal('status') as RequestStatus) || (f.Status as RequestStatus) || RequestStatus.PENDENTE,
+                    
+                    // O CAMPO CHAVE DO FILTRO
+                    createdByUserId: idSolicitante, 
+                    
+                    createdByName: f.SolicitanteNome || item.createdBy?.user?.displayName || 'Sistema',
+                    authorEmail: f.SOLICITANTE_EMAIL || item.createdBy?.user?.email || '',
+                    
+                    branch: getVal('branch'),
+                    paymentMethod: getVal('paymentMethod'),
+                    paymentDate: pDate,
+                    
+                    // Mapeamento de campos com nomes internos complexos
+                    invoiceNumber: f.Qualon_x00fa_merodaNF_x003f_ || f.NF || '',
+                    orderNumbers: f.Qualopedido_x0028_s_x0029__x003f_ || f.Pedido || '',
+                    
+                    payee: getVal('payee'),
+                    bank: getVal('bank'),
+                    agency: getVal('agency'),
+                    account: getVal('account'),
+                    accountType: getVal('accountType'),
+                    pixKey: getVal('pixKey'),
+                    
+                    generalObservation: stripHtml(getVal('generalObservation')),
+                    approverObservation: stripHtml(getVal('approverObservation')),
+                    
+                    createdAt: item.createdDateTime,
+                    updatedAt: item.lastModifiedDateTime,
+                    
+                    statusManual: f.StatusManual || getVal('statusManual'),
+                    statusFinal: getVal('statusFinal'),
+                    statusEspelho: getVal('statusEspelho'),
+                    sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || '').toLowerCase(),
+                    sharedByName: getVal('sharedByName'),
+                    shareComment: stripHtml(getVal('shareComment')),
+                    errorObservation: getVal('errorObservation'),
+                    attachments: []
+                } as PaymentRequest;
+            });
+
+        } catch (error) {
+            console.error("Erro fatal ao buscar solicitações:", error);
+            return [];
+        }
+    },
+    // --- FIM DA FUNÇÃO ---
+
   getUserRoleFromSharePoint: async (email: string): Promise<UserRole> => {
     try {
       const endpoint = `${SITE_URL}/_api/web/lists(guid'${USER_LIST_ID}')/items?$filter=EmailUsuario eq '${email}'`;
@@ -180,86 +270,6 @@ export const sharepointService = {
       const response = await fetch(POWER_AUTOMATE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       return response.ok;
     } catch (e) { return false; }
-  },
-
-  getRequests: async (accessToken: string): Promise<PaymentRequest[]> => {
-    try {
-      // [MIGRAÇÃO REST] Usando API nativa para evitar delay de indexação do Graph
-      // Isso garante que colunas recém-criadas como SOLICITANTE_ID sejam retornadas
-      const endpoint = `${SITE_URL}/_api/web/lists(guid'${MAIN_LIST_ID}')/items?$top=5000&$select=*,Author/Title,Author/Id&$expand=Author`;
-      
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Accept': 'application/json;odata=verbose' // Crucial para metadados antigos/customizados
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Erro SharePoint REST (${response.status}):`, errorText);
-        return [];
-      }
-
-      const data = await response.json();
-      const items = data.d?.results || [];
-
-      return items.map((item: any) => {
-        // Helper para extrair valores baseados no FIELD_MAP
-        const getVal = (mapKey: keyof typeof FIELD_MAP) => {
-          const internalName = FIELD_MAP[mapKey];
-          return item[internalName] !== undefined ? item[internalName] : (item[mapKey] || '');
-        };
-
-        // Tenta obter o ID de várias formas (InternalName vs DisplayName)
-        const idSolicitante = (item.SOLICITANTE_ID || item.OData__x0053_OLICITANTE_ID || item.AuthorId || '').toString();
-        const authorName = item.SolicitanteNome || item.Author?.Title || 'Sistema';
-        const authorEmail = item.SOLICITANTE_EMAIL || '';
-
-        let pDate = getVal('paymentDate');
-        if (pDate && !pDate.includes('T')) pDate = new Date(pDate).toISOString();
-
-        const rawComment = item[FIELD_MAP.shareComment] || item['COMENTARIO_COMPARTILHAMENTO'] || '';
-        const commentText = typeof rawComment === 'string' ? rawComment : (rawComment ? String(rawComment) : '');
-
-        return {
-          id: String(item.ID),
-          graphId: String(item.ID), // ID numérico convertido para string para compatibilidade
-          mirrorId: item.ID,
-          title: item.Title || getVal('title') || 'Sem Título',
-          branch: getVal('branch'),
-          status: (getVal('status') as RequestStatus) || RequestStatus.PENDENTE,
-          orderNumbers: getVal('orderNumbers'),
-          invoiceNumber: getVal('invoiceNumber'),
-          payee: getVal('payee'),
-          paymentMethod: getVal('paymentMethod'),
-          pixKey: getVal('pixKey'),
-          paymentDate: pDate,
-          bank: getVal('bank'),
-          agency: getVal('agency'),
-          account: getVal('account'),
-          accountType: getVal('accountType'),
-          generalObservation: stripHtml(getVal('generalObservation')),
-          approverObservation: stripHtml(getVal('approverObservation')), 
-          statusManual: getVal('statusManual'),
-          statusFinal: getVal('statusFinal'),
-          statusEspelho: getVal('statusEspelho'),
-          sharedWithEmail: stripHtml(getVal('sharedWithEmail')).toLowerCase(),
-          sharedByName: getVal('sharedByName'),
-          shareComment: stripHtml(commentText),
-          errorObservation: getVal('errorObservation'),
-          createdAt: item.Created,
-          updatedAt: item.Modified,
-          createdByUserId: idSolicitante,
-          createdByName: authorName,
-          attachments: []
-        } as PaymentRequest;
-      });
-    } catch (e) {
-      console.error("Erro fatal (REST) ao buscar solicitações:", e);
-      return [];
-    }
   },
 
   updateRequest: async (accessToken: string, graphId: string, data: Partial<PaymentRequest>): Promise<any> => {

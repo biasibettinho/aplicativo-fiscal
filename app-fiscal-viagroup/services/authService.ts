@@ -1,3 +1,4 @@
+
 import { User, AuthState, UserRole } from '../types';
 import { db } from './db';
 import { msalInstance, loginRequest } from './msalConfig';
@@ -31,16 +32,12 @@ export const authService = {
       // Consulta obrigatória à lista SharePoint App_Gestao_Usuarios para capturar a Role correta
       const role = await sharepointService.getUserRoleFromSharePoint(email);
 
-      // GARANTIA DE ID CORRETO:
-      // Pega o ID da conta Microsoft (prioriza localAccountId, depois homeAccountId ou OID)
-      const microsoftId = account.localAccountId || account.homeAccountId?.split('.')[0] || (account.idTokenClaims as any)?.oid || '';
-
       const users = db.getUsers();
       let user = users.find(u => u.email.toLowerCase() === email);
 
       if (!user) {
         user = {
-          id: microsoftId,
+          id: account.localAccountId,
           email: email,
           name: account.name || email.split('@')[0],
           role: role, 
@@ -51,23 +48,10 @@ export const authService = {
         };
         db.saveUsers([...users, user]);
       } else {
-        // USUÁRIO EXISTENTE:
-        // Força a atualização do ID e da Role para garantir consistência
-        let hasChanges = false;
-
-        if (user.id !== microsoftId && microsoftId) {
-            user.id = microsoftId; // <--- CORREÇÃO CRÍTICA
-            hasChanges = true;
-        }
-        
+        // Sincroniza a Role caso tenha havido alteração no SharePoint
         if (user.role !== role) {
-            user.role = role;
-            hasChanges = true;
-        }
-
-        if (hasChanges) {
-            // Salva as alterações no DB local
-            db.saveUsers(users.map(u => u.email.toLowerCase() === email ? user! : u));
+          user.role = role;
+          db.saveUsers(users.map(u => u.email.toLowerCase() === email ? { ...u, role } : u));
         }
       }
 
