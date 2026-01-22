@@ -43,6 +43,26 @@ export const requestService = {
     }
   },
 
+  // Função dedicada para a tela "Minhas Solicitações" (DashboardSolicitante usado por Admin/Financeiro)
+  // Garante que o usuário veja seus próprios itens, ignorando filtros de Role
+  getMyRequests: async (user: User, accessToken: string): Promise<PaymentRequest[]> => {
+      if (!user || !accessToken) return [];
+
+      try {
+          // Busca tudo (pode ser otimizado com filtro OData no futuro, mas por segurança filtramos em memória agora)
+          const all = await sharepointService.getRequests(accessToken);
+          
+          return all.filter(r => {
+              const idMatch = r.createdByUserId && user.id && r.createdByUserId.toString().toLowerCase() === user.id.toString().toLowerCase();
+              const emailMatch = r.authorEmail && user.email && r.authorEmail.toLowerCase() === user.email.toLowerCase();
+              return idMatch || emailMatch;
+          });
+      } catch (error) {
+          console.error("Erro ao buscar minhas solicitações:", error);
+          return [];
+      }
+  },
+
   /**
    * Centraliza o envio para o Power Automate.
    * Não cria mais o item via Graph antes do envio.

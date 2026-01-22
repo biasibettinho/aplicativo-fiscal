@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 import { PaymentRequest, RequestStatus, Attachment } from '../types';
 import { requestService } from '../services/requestService';
-import { sharepointService } from '../services/sharepointService';
+// Importando MAIN_LIST_ID explicitamente para corrigir erros de referência
+import { sharepointService, MAIN_LIST_ID } from '../services/sharepointService';
 import { PAYMENT_METHODS } from '../constants';
 import { 
   Plus, Search, Clock, Loader2, CreditCard, Landmark, Send, Paperclip, FileText, Banknote, X, AlertCircle, CheckCircle2, ExternalLink, ChevronLeft, Calendar, Info, Smartphone, Filter, Trash2, Edit3, MessageSquare, PanelLeftClose, PanelLeft, AlertTriangle
@@ -23,6 +24,9 @@ const DashboardSolicitante: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStep, setSubmissionStep] = useState('');
   
+  // Controle de Sincronização Delta com Estado conforme instrução
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
   // Filtros de Lista
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -57,18 +61,46 @@ const DashboardSolicitante: React.FC = () => {
     return status === RequestStatus.ERRO_FISCAL || status === RequestStatus.ERRO_FINANCEIRO;
   }, [selectedRequest]);
 
-  // Função de sincronização com suporte a atualização silenciosa
+  // Função de sincronização hibrida (Carga Inicial + Incremental)
   const syncData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
-    if (!silent) setIsLoading(true);
-    try {
-      const allAvailable = await requestService.getRequestsFiltered(authState.user, authState.token);
-      // Filtra apenas solicitações criadas pelo próprio usuário logado ou vinculadas por email
-      setRequests(allAvailable);
-    } catch (e) { 
-      console.error(e); 
-    } finally { 
-      if (!silent) setIsLoading(false); 
+    
+    // Se for a primeira carga, faz full fetch usando getMyRequests
+    if (!silent || requests.length === 0) {
+        if (!silent) setIsLoading(true);
+        try {
+          // CORREÇÃO: Usa getMyRequests para garantir filtro por autoria (independente da Role)
+          const allAvailable = await requestService.getMyRequests(authState.user, authState.token);
+          setRequests(allAvailable);
+          setLastUpdate(new Date());
+        } catch (e) { 
+          console.error(e); 
+        } finally { 
+          if (!silent) setIsLoading(false); 
+        }
+    } else {
+        // Carga Incremental (Delta) para Polling
+        try {
+            const updatedItems = await sharepointService.getRequestsDelta(authState.token, lastUpdate);
+            if (updatedItems.length > 0) {
+                setRequests(prev => {
+                    const map = new Map(prev.map(r => [r.id, r]));
+                    updatedItems.forEach(item => {
+                        // Filtro de propriedade (Minhas Solicitações): Aplica a regra de getMyRequests no Delta
+                        const idMatch = item.createdByUserId && authState.user?.id && item.createdByUserId.toString().toLowerCase() === authState.user.id.toString().toLowerCase();
+                        const emailMatch = item.authorEmail && authState.user?.email && item.authorEmail.toLowerCase() === authState.user.email.toLowerCase();
+                        
+                        if (idMatch || emailMatch) {
+                            map.set(item.id, item);
+                        }
+                    });
+                    return Array.from(map.values());
+                });
+                setLastUpdate(new Date());
+            }
+        } catch (e) {
+            console.warn("Delta falhou no polling", e);
+        }
     }
   };
 
@@ -79,7 +111,7 @@ const DashboardSolicitante: React.FC = () => {
       syncData(true);
     }, 60000); // 1 minuto para Solicitantes (Redução de carga)
     return () => clearInterval(interval);
-  }, [authState.user, authState.token]);
+  }, [authState.user, authState.token, lastUpdate, requests.length]);
 
   const fetchAllAttachments = async () => {
     if (selectedId && authState.token) {
@@ -162,7 +194,6 @@ const DashboardSolicitante: React.FC = () => {
 
     try {
       if (isEditing && selectedRequest) {
-        // Regra de transição de status pós-correção
         let targetStatus = RequestStatus.PENDENTE;
         let shouldResetShare = false;
 
@@ -178,13 +209,11 @@ const DashboardSolicitante: React.FC = () => {
           ...formData,
           status: targetStatus,
           approverObservation: 'Correção realizada pelo solicitante.',
-          // Mantém autoria consistente na correção
           createdByUserId: authState.user.id,
           createdByName: authState.user.name,
           AuthorEmail: authState.user.email
         };
 
-        // Resetar campos de compartilhamento se necessário
         if (shouldResetShare) {
           updatePayload.sharedWithEmail = '';
           updatePayload.sharedByName = '';
@@ -200,9 +229,9 @@ const DashboardSolicitante: React.FC = () => {
           setSubmissionStep('Substituindo Nota Fiscal...');
           const currentMainAtts = await sharepointService.getItemAttachments(authState.token, selectedRequest.id);
           for (const att of currentMainAtts) {
-            await sharepointService.deleteAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, att.fileName);
+            await sharepointService.deleteAttachment(MAIN_LIST_ID, selectedRequest.id, att.fileName);
           }
-          await sharepointService.uploadAttachment('51e89570-51be-41d0-98c9-d57a5686e13b', selectedRequest.id, invoiceFile);
+          await sharepointService.uploadAttachment(MAIN_LIST_ID, selectedRequest.id, invoiceFile);
         }
 
         if (ticketFile) {
@@ -211,7 +240,6 @@ const DashboardSolicitante: React.FC = () => {
           await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
         }
 
-        // Atualização Otimista Local
         const updatedRequest = { ...selectedRequest, ...updatePayload };
         setRequests(prev => prev.map(r => r.id === selectedRequest.id ? updatedRequest : r));
 
@@ -219,15 +247,13 @@ const DashboardSolicitante: React.FC = () => {
         handleCancelCreate();
         alert("Solicitação corrigida com sucesso!");
       } else {
-        // FLUXO DE CRIAÇÃO
         setSubmissionStep('Enviando para o SharePoint...');
         const submissionData: any = {
           ...formData,
-          // ⚠️ CAMPOS OBRIGATÓRIOS PARA CORREÇÃO DE AUTORIA NO SHAREPOINT
           createdByUserId: authState.user.id,
           createdByName: authState.user.name,
           AuthorEmail: authState.user.email,
-          branch: authState.user.branchDefault || 'Matriz SP', // Envia a filial do perfil do usuário
+          branch: authState.user.branchDefault || 'Matriz SP',
           status: RequestStatus.PROCESSANDO,
           createdAt: new Date().toISOString()
         };
@@ -266,24 +292,20 @@ const DashboardSolicitante: React.FC = () => {
                            r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                            r.id.toString().includes(searchTerm);
       const matchesStatus = statusFilter === '' || r.status === statusFilter;
-      
       const requestDate = new Date(r.createdAt);
       requestDate.setHours(0, 0, 0, 0);
-      
       let matchesStartDate = true;
       if (startDate) {
         const start = new Date(startDate);
         start.setHours(0,0,0,0);
         matchesStartDate = requestDate.getTime() >= start.getTime();
       }
-
       let matchesEndDate = true;
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
         matchesEndDate = requestDate.getTime() <= end.getTime();
       }
-
       return matchesSearch && matchesStatus && matchesStartDate && matchesEndDate;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, statusFilter, startDate, endDate]);
@@ -592,6 +614,8 @@ const DashboardSolicitante: React.FC = () => {
                   <p className="text-xs font-black text-blue-600 uppercase mb-4 border-b pb-2 flex items-center italic"><Banknote size={16} className="mr-3"/> Dados Fiscais</p>
                   <div className="space-y-6">
                     <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">NF</span><p className="text-xl lg:text-2xl font-black text-slate-900 leading-none truncate">{selectedRequest.invoiceNumber || '---'}</p></div>
+                    {/* EXIBIÇÃO DO NÚMERO DO PEDIDO CONFORME TAREFA 3 */}
+                    <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Número do Pedido (OC)</span><p className="text-sm lg:text-base font-black text-slate-700 truncate">{selectedRequest.orderNumber || '---'}</p></div>
                     <div className="grid grid-cols-2 gap-4">
                       <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Vencimento</span><p className="text-sm lg:text-base font-black text-slate-900">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
                       <div><span className="text-[10px] font-black text-gray-400 uppercase block mb-1">Filial</span><p className="text-sm lg:text-base font-black text-slate-900 uppercase truncate">{selectedRequest.branch}</p></div>
