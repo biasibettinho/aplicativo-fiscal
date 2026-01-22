@@ -1,4 +1,3 @@
-
 import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
@@ -10,7 +9,7 @@ import {
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 
-// TAREFA: Blindagem de Visibilidade - Lista de status permitidos para o Financeiro
+// TRAVA DE SEGURANÇA: Status permitidos para visibilidade no Financeiro
 const FINANCE_VISIBLE_STATUS = [
     RequestStatus.APROVADO,
     RequestStatus.LANCADO,
@@ -65,21 +64,17 @@ const DashboardFinanceiro: React.FC = () => {
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Controle Delta
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   
-  // Modais e Comentários
   const [viewingCommentData, setViewingCommentData] = useState<{ id: string, graphId: string, comment: string } | null>(null);
   const [editedComment, setEditedComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [toast, setToast] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
 
-  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Modais de Ação
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('Sem método de pagamento');
   const [rejectComment, setRejectComment] = useState('');
@@ -101,7 +96,6 @@ const DashboardFinanceiro: React.FC = () => {
     return authState.user?.role === UserRole.FINANCEIRO_MASTER || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
 
-  // Define availableBranches to fix Reference Error
   const availableBranches = useMemo(() => {
     const branches = requests.map(r => r.branch).filter(branch => branch && branch.trim() !== '');
     return Array.from(new Set(branches)).sort();
@@ -141,7 +135,6 @@ const DashboardFinanceiro: React.FC = () => {
           ]);
           setSpUsers(users);
           
-          // TRAVA DE SEGURANÇA: Filtro na Carga de Dados
           const validData = data.filter(r => 
             FINANCE_VISIBLE_STATUS.includes(r.status) || 
             r.statusManual === 'Compartilhado'
@@ -155,11 +148,9 @@ const DashboardFinanceiro: React.FC = () => {
           if (!silent) setIsLoading(false);
         }
     } else {
-        // Polling Delta
         try {
             const updatedItems = await sharepointService.getRequestsDelta(authState.token, lastUpdate);
             if (updatedItems.length > 0) {
-                // TRAVA DE SEGURANÇA: Filtro no Polling
                 const filteredDelta = updatedItems.filter(item => 
                   FINANCE_VISIBLE_STATUS.includes(item.status) || 
                   item.statusManual === 'Compartilhado'
@@ -169,7 +160,6 @@ const DashboardFinanceiro: React.FC = () => {
                   setRequests(prev => {
                       const map = new Map(prev.map(r => [r.id, r]));
                       filteredDelta.forEach(item => {
-                          // Aplica filtros de visibilidade regional (RLS) se não for Master
                           let shouldInclude = true;
                           if (authState.user?.role === UserRole.FINANCEIRO) {
                               const sharedEmail = stripHtml(item.sharedWithEmail || '').toLowerCase();
@@ -243,7 +233,7 @@ const DashboardFinanceiro: React.FC = () => {
         let logComment = 'Faturamento concluído pelo Master.';
 
         if (authState.user.role === UserRole.FINANCEIRO) {
-            newStatus = RequestStatus.LANCADO; // Regional lança
+            newStatus = RequestStatus.LANCADO;
             statusFinalValue = 'Lançado Regional';
             logComment = 'Lançamento realizado pelo regional. Aguardando finalização Master.';
         } else if (isMaster) {
@@ -255,7 +245,6 @@ const DashboardFinanceiro: React.FC = () => {
         setSelectedId(null);
         setIsProcessingAction(true);
 
-        // Payload limpo para evitar erros de campo protegido
         const payload: any = { 
             status: newStatus,
             statusFinal: statusFinalValue,
@@ -267,7 +256,6 @@ const DashboardFinanceiro: React.FC = () => {
         const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
 
         if (result) {
-            // Se o item não for mais visível após a mudança (ex: virou LANCADO e regional não vê), ele sumirá no próximo sync
             setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: newStatus, statusFinal: statusFinalValue, approverObservation: logComment } : r));
             await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: newStatus, OBSERVACAO: logComment, MSG_OBSERVACAO: logComment, usuario_logado: authState.user.name });
             showToast("Solicitação Processada", 'success');
@@ -324,16 +312,43 @@ const DashboardFinanceiro: React.FC = () => {
 
     const comment = shareCommentText.trim();
     showToast("Compartilhando...", "info");
-    const sharePayload = { statusManual: 'Compartilhado', sharedWithEmail: shareEmail, shareComment: comment, sharedByName: authState.user.name };
+    
+    const sharePayload = { 
+      statusManual: 'Compartilhado', 
+      sharedWithEmail: shareEmail, 
+      shareComment: comment, 
+      sharedByName: authState.user.name 
+    };
 
     setIsShareModalOpen(false);
     setIsProcessingAction(true);
+    
     try {
       const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, sharePayload);
       if (result) {
+        // TAREFA: Atualização Otimista do Estado Local
+        setRequests(prev => prev.map(r => {
+            if (r.id === selectedRequest.id) {
+                return {
+                    ...r,
+                    statusManual: 'Compartilhado',
+                    sharedWithEmail: shareEmail,
+                    shareComment: comment,
+                    sharedByName: authState.user?.name
+                };
+            }
+            return r;
+        }));
+
         showToast("Compartilhado com sucesso!", "success");
-        await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: 'Compartilhado', OBSERVACAO: `Direcionado para ${shareEmail}`, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
+        await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { 
+          ATUALIZACAO: 'Compartilhado', 
+          OBSERVACAO: `Direcionado para ${shareEmail}`, 
+          MSG_OBSERVACAO: comment, 
+          usuario_logado: authState.user.name 
+        });
         setShareCommentText('');
+        // loadData(true) é mantido para garantir integridade total em segundo plano
         loadData(true);
       } else {
         showToast("Erro ao compartilhar.", "error");
@@ -400,7 +415,6 @@ const DashboardFinanceiro: React.FC = () => {
     applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || '').toLowerCase() === 'financeiro.sul@viagroup.com.br')), 
   [requests, sharedStatusFilter]);
 
-  // TRAVA DE SEGURANÇA FINAL: Filtro na Renderização
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || r.id.toString().includes(searchTerm);
@@ -411,7 +425,6 @@ const DashboardFinanceiro: React.FC = () => {
         matchesStatus = statusFilter === 'Pendente' ? (r.status === RequestStatus.APROVADO || currentDisplay === 'Pendente') : (currentDisplay === statusFilter);
       }
       
-      // Bloqueio de qualquer status que não esteja no contrato do financeiro
       const isAllowed = FINANCE_VISIBLE_STATUS.includes(r.status) || r.statusManual === 'Compartilhado';
       
       return matchesSearch && matchesBranch && matchesStatus && isAllowed;
@@ -439,7 +452,6 @@ const DashboardFinanceiro: React.FC = () => {
         </div>
       )}
 
-      {/* Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-64 min-w-[200px]">
@@ -486,7 +498,6 @@ const DashboardFinanceiro: React.FC = () => {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden">
-        {/* Sidebar Lista */}
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
@@ -527,7 +538,6 @@ const DashboardFinanceiro: React.FC = () => {
           </div>
         </div>
 
-        {/* Detalhes */}
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
@@ -617,7 +627,7 @@ const DashboardFinanceiro: React.FC = () => {
       {isShareModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2.5rem w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
             <div className="bg-indigo-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><Share2 size={24} /><h3 className="text-lg font-black uppercase italic tracking-tight">Divisão Regional</h3></div><button onClick={() => setIsShareModalOpen(false)}><X size={20}/></button></div>
             <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
               <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 space-y-4">
