@@ -33,7 +33,7 @@ const FIELD_MAP = {
 
     // Campos com Codificação ou Nomes Diferentes do Display
     invoiceNumber: 'Qualon_x00fa_merodaNF_x003f_',
-    orderNumbers: 'Qualopedido_x0028_s_x0029__x003f',
+    orderNumber: 'Qualopedido_x0028_s_x0029__x003f',
     generalObservation: 'Observa_x00e7__x00e3_o',
     budget: 'Or_x00e7_amento',
     finalizationDate: 'Datafinaliza_x00e7__x00e3_o',
@@ -194,7 +194,8 @@ export const sharepointService = {
                     paymentDate: pDate,
                     
                     invoiceNumber: f.Qualon_x00fa_merodaNF_x003f_ || f.NF || '',
-                    orderNumbers: f.Qualopedido_x0028_s_x0029__x003f_ || f.Pedido || '',
+                    // CORREÇÃO AQUI: Renomeado de orderNumbers para orderNumber
+                    orderNumber: f.Qualopedido_x0028_s_x0029__x003f_ || f.Pedido || '',
                     
                     payee: getVal('payee'),
                     bank: getVal('bank'),
@@ -211,7 +212,7 @@ export const sharepointService = {
                     updatedAt: item.lastModifiedDateTime,
                     
                     statusManual: f.StatusManual || getVal('statusManual'),
-                    statusFinal: getVal('statusFinal'),
+                    statusFinal: f.StatusFinal || getVal('statusFinal'),
                     statusEspelho: getVal('statusEspelho'),
                     sharedWithEmail: stripHtml(f[FIELD_MAP.sharedWithEmail] || f['PESSOA_COMPARTILHADA'] || '').toLowerCase(),
                     sharedByName: getVal('sharedByName'),

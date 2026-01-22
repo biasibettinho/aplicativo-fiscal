@@ -37,7 +37,7 @@ const DashboardSolicitante: React.FC = () => {
   const [formData, setFormData] = useState({
     title: '',
     invoiceNumber: '',
-    orderNumbers: '',
+    orderNumber: '',
     paymentMethod: PAYMENT_METHODS[0],
     paymentDate: '',
     payee: '',
@@ -111,7 +111,7 @@ const DashboardSolicitante: React.FC = () => {
     setFormData({
       title: selectedRequest.title,
       invoiceNumber: selectedRequest.invoiceNumber,
-      orderNumbers: selectedRequest.orderNumbers,
+      orderNumber: selectedRequest.orderNumber,
       paymentMethod: selectedRequest.paymentMethod || PAYMENT_METHODS[0],
       paymentDate: selectedRequest.paymentDate ? selectedRequest.paymentDate.split('T')[0] : '',
       payee: selectedRequest.payee || '',
@@ -134,7 +134,7 @@ const DashboardSolicitante: React.FC = () => {
     setFormData({
       title: '',
       invoiceNumber: '',
-      orderNumbers: '',
+      orderNumber: '',
       paymentMethod: PAYMENT_METHODS[0],
       paymentDate: '',
       payee: '',
@@ -448,7 +448,7 @@ const DashboardSolicitante: React.FC = () => {
                   </div>
                   <div>
                     <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-2 block">Pedido (OC)</label>
-                    <input type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.orderNumbers} onChange={e => setFormData({...formData, orderNumbers: e.target.value})} />
+                    <input type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.orderNumber} onChange={e => setFormData({...formData, orderNumber: e.target.value})} />
                   </div>
                 </div>
 

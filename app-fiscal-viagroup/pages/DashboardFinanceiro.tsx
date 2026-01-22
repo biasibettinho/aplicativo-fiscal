@@ -543,8 +543,8 @@ const DashboardFinanceiro: React.FC = () => {
                     {selectedRequest.invoiceNumber && <CopyButton text={selectedRequest.invoiceNumber} />}
                    </div>
                    <div className="flex items-center">
-                    <p className="text-sm font-black text-indigo-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumbers || '---'}</span></p>
-                    {selectedRequest.orderNumbers && <CopyButton text={selectedRequest.orderNumbers} />}
+                    <p className="text-sm font-black text-indigo-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumber || '---'}</span></p>
+                    {selectedRequest.orderNumber && <CopyButton text={selectedRequest.orderNumber} />}
                    </div>
                 </div>
               </div>

@@ -1,4 +1,3 @@
-
 export enum UserRole {
   SOLICITANTE = 'Solicitante',
   FISCAL_COMUM = 'Fiscal Comum',
@@ -72,7 +71,7 @@ export interface PaymentRequest {
   errorObservation?: string;
   generalObservation?: string; 
   approverObservation?: string; 
-  orderNumbers: string;
+  orderNumber: string;
   invoiceNumber: string;
   payee: string;
   budgetValue?: number; 
