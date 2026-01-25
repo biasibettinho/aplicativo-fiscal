@@ -8,18 +8,22 @@ import {
   Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3, Banknote, Smartphone, Info, Copy
 } from 'lucide-react';
 
+
 const CopyButton = ({ text }: { text: string }) => (
   <button 
     onClick={(e) => {
       e.stopPropagation();
       navigator.clipboard.writeText(text);
     }}
-    className="ml-1.5 p-1 text-gray-300 hover:text-blue-500 hover:bg-blue-50 rounded transition-all"
+    // Mudei de text-gray-300 para text-gray-500 (mais escuro/visível)
+    className="ml-1.5 p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
     title="Copiar"
   >
-    <Copy size={12} />
+    <Copy size={14} /> {/* Aumentei levemente o tamanho de 12 para 14 também */}
   </button>
 );
+
+
 
 const DashboardFiscal: React.FC = () => {
   const { authState } = useAuth();
@@ -40,17 +44,21 @@ const DashboardFiscal: React.FC = () => {
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
+
   // Modal de Reprovação
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('Erro no pedido');
   const [rejectComment, setRejectComment] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
+
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
+
 
   // Função de carga com suporte a busca Delta (Incremental)
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
+
 
     if (!silent || requests.length === 0) {
         if (!silent) setIsLoading(true);
@@ -83,14 +91,18 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
+
   useEffect(() => { loadData(false); }, [authState.user, authState.token]);
+
 
   useEffect(() => {
     const interval = setInterval(() => { loadData(true); }, 15000); 
     return () => clearInterval(interval);
   }, [authState.user, authState.token, lastUpdate, requests.length]);
 
+
   const selectedRequest = requests.find(r => r.id === selectedId);
+
 
   useEffect(() => {
     setIsReworking(false);
@@ -121,14 +133,17 @@ const DashboardFiscal: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
+
   const availableBranches = useMemo(() => {
     const branches = requests.map(r => r.branch).filter(branch => branch && branch.trim() !== '');
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
+
   const isMaster = useMemo(() => {
     return authState.user?.role === UserRole.FISCAL_ADMIN || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
+
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
@@ -150,6 +165,7 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
+
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     const targetStatus = isMaster ? RequestStatus.ERRO_FISCAL : RequestStatus.ANALISE;
@@ -169,6 +185,7 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
+
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -187,7 +204,9 @@ const DashboardFiscal: React.FC = () => {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, dateFilter, branchFilter, statusFilter]);
 
+
   const isFinalized = selectedRequest && [RequestStatus.APROVADO, RequestStatus.ERRO_FISCAL, RequestStatus.FATURADO].includes(selectedRequest.status);
+
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
@@ -244,6 +263,7 @@ const DashboardFiscal: React.FC = () => {
         )}
       </div>
 
+
       <div className="flex flex-1 gap-6 overflow-hidden">
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Solicitações ({filteredRequests.length})</span></div>
@@ -263,6 +283,7 @@ const DashboardFiscal: React.FC = () => {
           </div>
         </div>
 
+
         <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
           {selectedRequest ? (
             <>
@@ -272,17 +293,46 @@ const DashboardFiscal: React.FC = () => {
                   <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{isMaster ? 'Fiscal Master' : 'Fiscal Analista'}</span>
                 </div>
                 <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-4">{selectedRequest.title}</h2>
-                <div className="flex space-x-6">
-                  <div className="flex items-center">
-                    <p className="text-sm font-black text-blue-600 uppercase italic">NF: <span className="text-slate-900">{stripHtml(selectedRequest.invoiceNumber) || '---'}</span></p>
-                    {selectedRequest.invoiceNumber && <CopyButton text={stripHtml(selectedRequest.invoiceNumber)} />}
+                
+                {/* BLOCO NOVO CORRIGIDO: Grid para alinhar NF e Pedidos */}
+                <div className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-4 items-start w-full">
+                  
+                  {/* COLUNA 1: NF (Fixa na esquerda) */}
+                  <div className="flex flex-col items-start gap-1">
+                    <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">
+                      NF:
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-black text-slate-900 leading-none">
+                        {stripHtml(selectedRequest.invoiceNumber) || '---'}
+                      </span>
+                      {selectedRequest.invoiceNumber && <CopyButton text={stripHtml(selectedRequest.invoiceNumber)} />}
+                    </div>
                   </div>
-                  <div className="flex items-center">
-                    <p className="text-sm font-black text-blue-600 uppercase italic">Pedido: <span className="text-slate-900">{selectedRequest.orderNumber || '---'}</span></p>
-                    {selectedRequest.orderNumber && <CopyButton text={selectedRequest.orderNumber} />}
+
+                  {/* COLUNA 2: PEDIDOS (Expande na direita) */}
+                  <div className="flex flex-col items-start gap-1 min-w-0">
+                    <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">
+                      Pedido(s):
+                    </p>
+                    
+                    <div className="flex items-start gap-2 max-w-xl">
+                      <div className="max-h-24 overflow-y-auto bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 w-full shadow-sm">
+                        <p className="text-slate-900 font-bold text-sm leading-relaxed break-all">
+                          {selectedRequest.orderNumber || '---'}
+                        </p>
+                      </div>
+                      {selectedRequest.orderNumber && (
+                        <div className="mt-2">
+                          <CopyButton text={selectedRequest.orderNumber} />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
+
               </div>
+
 
               <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
@@ -346,6 +396,7 @@ const DashboardFiscal: React.FC = () => {
         </div>
       </div>
 
+
       {/* Modal de Reprovação */}
       {isRejectModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
@@ -378,5 +429,6 @@ const DashboardFiscal: React.FC = () => {
     </div>
   );
 };
+
 
 export default DashboardFiscal;
