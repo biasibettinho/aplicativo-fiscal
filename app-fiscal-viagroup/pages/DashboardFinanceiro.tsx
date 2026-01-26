@@ -147,10 +147,24 @@ const DashboardFinanceiro: React.FC = () => {
         ]);
         setSpUsers(users);
 
-        const validData = data.filter(r =>
-          FINANCE_VISIBLE_STATUS.includes(r.status) ||
-          r.statusManual === 'Compartilhado'
-        );
+        const validData = data.filter(r => {
+  const isVisible =
+    FINANCE_VISIBLE_STATUS.includes(r.status) ||
+    r.statusManual === 'Compartilhado';
+
+  if (!isVisible) return false;
+
+  // 🔒 Segurança: Financeiro comum só vê o que foi compartilhado com ele
+  if (authState.user?.role === UserRole.FINANCEIRO) {
+    const sharedEmail = stripHtml(r.sharedWithEmail || "").toLowerCase();
+    const userEmail = (authState.user.email || "").toLowerCase();
+    return sharedEmail === userEmail;
+  }
+
+  // Master/Admin: mantém a regra antiga (vê tudo que está em status permitido)
+  return true;
+});
+
 
         setRequests(validData);
         setLastUpdate(new Date());
