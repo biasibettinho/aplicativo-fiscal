@@ -8,22 +8,18 @@ import {
   Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3, Banknote, Smartphone, Info, Copy
 } from 'lucide-react';
 
-
 const CopyButton = ({ text }: { text: string }) => (
   <button 
     onClick={(e) => {
       e.stopPropagation();
       navigator.clipboard.writeText(text);
     }}
-    // Mudei de text-gray-300 para text-gray-500 (mais escuro/visível)
-    className="ml-1.5 p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all"
+    className="ml-1.5 p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-all flex-shrink-0"
     title="Copiar"
   >
-    <Copy size={14} /> {/* Aumentei levemente o tamanho de 12 para 14 também */}
+    <Copy size={14} />
   </button>
 );
-
-
 
 const DashboardFiscal: React.FC = () => {
   const { authState } = useAuth();
@@ -44,21 +40,17 @@ const DashboardFiscal: React.FC = () => {
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-
   // Modal de Reprovação
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('Erro no pedido');
   const [rejectComment, setRejectComment] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
-
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
-
 
   // Função de carga com suporte a busca Delta (Incremental)
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
-
 
     if (!silent || requests.length === 0) {
         if (!silent) setIsLoading(true);
@@ -91,18 +83,14 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
-
   useEffect(() => { loadData(false); }, [authState.user, authState.token]);
-
 
   useEffect(() => {
     const interval = setInterval(() => { loadData(true); }, 15000); 
     return () => clearInterval(interval);
   }, [authState.user, authState.token, lastUpdate, requests.length]);
 
-
   const selectedRequest = requests.find(r => r.id === selectedId);
-
 
   useEffect(() => {
     setIsReworking(false);
@@ -133,17 +121,14 @@ const DashboardFiscal: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
-
   const availableBranches = useMemo(() => {
     const branches = requests.map(r => r.branch).filter(branch => branch && branch.trim() !== '');
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
-
   const isMaster = useMemo(() => {
     return authState.user?.role === UserRole.FISCAL_ADMIN || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
-
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
@@ -165,7 +150,6 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
-
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     const targetStatus = isMaster ? RequestStatus.ERRO_FISCAL : RequestStatus.ANALISE;
@@ -185,12 +169,11 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
-
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           r.id.toString().includes(searchTerm);
+                            r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            r.id.toString().includes(searchTerm);
       const matchesBranch = branchFilter === '' || r.branch === branchFilter;
       let matchesStatus = true;
       if (statusFilter === 'Pendente') { matchesStatus = r.status === RequestStatus.PENDENTE; } 
@@ -204,34 +187,32 @@ const DashboardFiscal: React.FC = () => {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, dateFilter, branchFilter, statusFilter]);
 
-
   const isFinalized = selectedRequest && [RequestStatus.APROVADO, RequestStatus.ERRO_FISCAL, RequestStatus.FATURADO].includes(selectedRequest.status);
-
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
       {/* Toolbar Superior */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
+      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-6 shrink-0">
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-64 min-w-[200px]">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input type="text" placeholder="Buscar ID ou NF..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
-          <div className="flex items-center gap-5">
-            <div className="flex flex-col">
+          <div className="flex items-center gap-5 overflow-x-auto pb-1 hide-scrollbar">
+            <div className="flex flex-col min-w-[100px]">
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> Criação</label>
               <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-[140px]">
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Filial</label>
-              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
+              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none w-full">
                 <option value="">Todas</option>
                 {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col min-w-[140px]">
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Filter size={10} className="mr-1"/> Status</label>
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none w-full">
                 <option value="">Todas</option>
                 <option value="Pendente">Pendente</option>
                 <option value="Em Análise">Em Análise</option>
@@ -242,7 +223,7 @@ const DashboardFiscal: React.FC = () => {
           </div>
         </div>
         {selectedRequest && (
-          <div className="flex items-center space-x-2 animate-in slide-in-from-right duration-300">
+          <div className="flex items-center space-x-2 animate-in slide-in-from-right duration-300 ml-auto">
             {isFinalized && !isReworking ? (
               <button onClick={() => setIsReworking(true)} className="px-4 py-2 bg-amber-100 text-amber-700 font-black text-[10px] uppercase rounded-xl flex items-center shadow-sm hover:bg-amber-200 transition-all">
                 <Edit3 size={16} className="mr-2" /> Editar Ações
@@ -263,10 +244,12 @@ const DashboardFiscal: React.FC = () => {
         )}
       </div>
 
-
-      <div className="flex flex-1 gap-6 overflow-hidden">
-        <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
-          <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Solicitações ({filteredRequests.length})</span></div>
+      <div className="flex flex-1 gap-6 overflow-hidden flex-col md:flex-row">
+        {/* Lista Lateral - Vira Accordion ou fica em cima em mobile se preferir, aqui mantive lista mas com width responsivo */}
+        <div className={`flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm transition-all duration-300 ${selectedRequest ? 'hidden md:flex md:w-80 lg:w-96' : 'w-full'}`}>
+          <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center shrink-0">
+             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Solicitações ({filteredRequests.length})</span>
+          </div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {isLoading ? ( <div className="flex flex-col items-center justify-center h-40"><Loader2 className="w-6 h-6 text-blue-600 animate-spin mb-2" /></div> ) : (
                 filteredRequests.slice(0, 100).map(r => (
@@ -283,119 +266,117 @@ const DashboardFiscal: React.FC = () => {
           </div>
         </div>
 
-
-        <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative">
-          {selectedRequest ? (
-            <>
-              <div className="p-10 border-b flex flex-col bg-gray-50/20">
-                <div className="flex items-center space-x-3 mb-4">
-                  <Badge status={selectedRequest.status} />
-                  <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase">{isMaster ? 'Fiscal Master' : 'Fiscal Analista'}</span>
-                </div>
-                <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-4">{selectedRequest.title}</h2>
-                
-                {/* BLOCO NOVO CORRIGIDO: Grid para alinhar NF e Pedidos */}
-                <div className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-4 items-start w-full">
-                  
-                  {/* COLUNA 1: NF (Fixa na esquerda) */}
-                  <div className="flex flex-col items-start gap-1">
-                    <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">
-                      NF:
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl font-black text-slate-900 leading-none">
-                        {stripHtml(selectedRequest.invoiceNumber) || '---'}
-                      </span>
-                      {selectedRequest.invoiceNumber && <CopyButton text={stripHtml(selectedRequest.invoiceNumber)} />}
+        {/* Painel Principal */}
+        {selectedRequest && (
+            <div className="flex-1 bg-white border rounded-[3rem] overflow-hidden flex flex-col shadow-2xl relative animate-in fade-in duration-300 w-full min-w-0">
+                <div className="p-6 md:p-10 border-b flex flex-col bg-gray-50/20 shrink-0">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                         <div className="flex items-center space-x-3">
+                            <Badge status={selectedRequest.status} />
+                            <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase whitespace-nowrap">{isMaster ? 'Fiscal Master' : 'Fiscal Analista'}</span>
+                         </div>
+                         <button className="md:hidden text-gray-400" onClick={() => setSelectedId(null)}><X size={20} /></button>
                     </div>
-                  </div>
 
-                  {/* COLUNA 2: PEDIDOS (Expande na direita) */}
-                  <div className="flex flex-col items-start gap-1 min-w-0">
-                    <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">
-                      Pedido(s):
-                    </p>
+                    <h2 className="text-2xl md:text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-6">{selectedRequest.title}</h2>
                     
-                    <div className="flex items-start gap-2 max-w-xl">
-                      <div className="max-h-24 overflow-y-auto bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 w-full shadow-sm">
-                        <p className="text-slate-900 font-bold text-sm leading-relaxed break-all">
-                          {selectedRequest.orderNumber || '---'}
-                        </p>
-                      </div>
-                      {selectedRequest.orderNumber && (
-                        <div className="mt-2">
-                          <CopyButton text={selectedRequest.orderNumber} />
+                    {/* GRID RESPONSIVO: Flex wrap permite quebrar linha se não couber */}
+                    <div className="flex flex-wrap gap-x-12 gap-y-6 items-start w-full">
+                        
+                        {/* Bloco NF */}
+                        <div className="flex flex-col items-start gap-1">
+                            <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">NF:</p>
+                            <div className="flex items-center gap-2">
+                                <span className="text-2xl font-black text-slate-900 leading-none">
+                                    {stripHtml(selectedRequest.invoiceNumber) || '---'}
+                                </span>
+                                {selectedRequest.invoiceNumber && <CopyButton text={stripHtml(selectedRequest.invoiceNumber)} />}
+                            </div>
                         </div>
-                      )}
+
+                        {/* Bloco Pedidos - Com min-width-0 para respeitar o flex container */}
+                        <div className="flex flex-col items-start gap-1 flex-1 min-w-[200px] max-w-full">
+                            <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">Pedido(s):</p>
+                            <div className="flex items-start gap-2 w-full">
+                                <div className="max-h-32 overflow-y-auto bg-gray-50 px-4 py-3 rounded-xl border border-gray-200 w-full shadow-sm custom-scrollbar">
+                                    <p className="text-slate-900 font-bold text-sm leading-relaxed break-all whitespace-pre-wrap">
+                                        {selectedRequest.orderNumber || '---'}
+                                    </p>
+                                </div>
+                                {selectedRequest.orderNumber && (
+                                    <div className="mt-2 shrink-0">
+                                        <CopyButton text={selectedRequest.orderNumber} />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
                     </div>
-                  </div>
                 </div>
 
-              </div>
+                <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-10 custom-scrollbar">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                        {/* Seção Esquerda: Dados Financeiros */}
+                        <section className="bg-blue-50/30 p-6 md:p-8 rounded-[2rem] border border-blue-50 shadow-inner h-fit">
+                           <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência de Dados</h3>
+                           <div className="space-y-6">
+                              <div>
+                                 <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Razão Social</span>
+                                 <div className="flex items-center gap-2">
+                                    <p className="text-lg md:text-xl font-bold text-slate-700 uppercase break-all">{selectedRequest.payee || '---'}</p>
+                                    {selectedRequest.payee && <CopyButton text={selectedRequest.payee} />}
+                                 </div>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                 <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                                 <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método Pagamento</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
+                              </div>
+                              {selectedRequest.paymentMethod === 'PIX' && (
+                                 <div className="pt-2 flex items-center text-blue-600 flex-wrap gap-2">
+                                    <div className="flex items-center shrink-0"><Smartphone size={14} className="mr-2"/> <span className="text-[10px] font-black uppercase tracking-tight">Chave PIX:</span></div>
+                                    <p className="text-sm font-bold break-all">{selectedRequest.pixKey}</p>
+                                    {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
+                                 </div>
+                              )}
+                           </div>
+                        </section>
 
-
-              <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                   <section className="bg-blue-50/30 p-10 rounded-[3rem] border border-blue-50 shadow-inner">
-                      <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-8 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência de Dados</h3>
-                      <div className="space-y-6">
-                        <div>
-                          <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Razão Social</span>
-                          <div className="flex items-center">
-                            <p className="text-xl font-bold text-slate-700 uppercase">{selectedRequest.payee || '---'}</p>
-                            {selectedRequest.payee && <CopyButton text={selectedRequest.payee} />}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                           <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
-                           <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método Pagamento</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
-                        </div>
-                        {selectedRequest.paymentMethod === 'PIX' && (
-                          <div className="pt-2 flex items-center text-blue-600">
-                            <Smartphone size={14} className="mr-2"/>
-                            <p className="text-[10px] font-black uppercase tracking-tight">Chave PIX: {selectedRequest.pixKey}</p>
-                            {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
-                          </div>
-                        )}
-                      </div>
-                   </section>
-                   <section className="space-y-6">
-                      <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
-                        <div>
-                          <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3>
-                          <div className="space-y-2">
-                             {mainAttachments.length > 0 ? mainAttachments.map(att => (
-                               <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                                 <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                                 <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
-                               </div>
-                             )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem NF anexada</p>}
-                          </div>
-                        </div>
-                        <div>
-                          <h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2"><Paperclip size={14} className="mr-2"/> Boletos / Outros</h3>
-                          <div className="space-y-2">
-                             {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
-                               <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
-                                 <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                                 <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14}/></button>
-                               </div>
-                             )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner">
-                        <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação do Solicitante</span>
-                        <p className="text-sm font-medium text-slate-600 italic leading-relaxed">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
-                      </div>
-                   </section>
+                        {/* Seção Direita: Anexos e Obs */}
+                        <section className="space-y-6">
+                            <div className="bg-white p-6 md:p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
+                                <div>
+                                    <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3>
+                                    <div className="space-y-2">
+                                        {mainAttachments.length > 0 ? mainAttachments.map(att => (
+                                            <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100 group hover:border-blue-300 transition-colors">
+                                                <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                                                <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 p-1 rounded-full hover:bg-blue-100 transition-all"><ExternalLink size={14}/></button>
+                                            </div>
+                                        )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem NF anexada</p>}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2"><Paperclip size={14} className="mr-2"/> Boletos / Outros</h3>
+                                    <div className="space-y-2">
+                                        {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
+                                            <div key={att.id} className="flex justify-between items-center p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 group hover:border-indigo-300 transition-colors">
+                                                <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
+                                                <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 p-1 rounded-full hover:bg-blue-100 transition-all"><ExternalLink size={14}/></button>
+                                            </div>
+                                        )) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner">
+                                <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação do Solicitante</span>
+                                <p className="text-sm font-medium text-slate-600 italic leading-relaxed whitespace-pre-wrap">"{selectedRequest.generalObservation || 'Sem observações.'}"</p>
+                            </div>
+                        </section>
+                    </div>
                 </div>
-              </div>
-            </>
-          ) : ( <div className="flex-1 flex flex-col items-center justify-center text-gray-300 opacity-20"><FileSearch size={100} /></div> )}
-        </div>
+            </div>
+        )}
       </div>
-
 
       {/* Modal de Reprovação */}
       {isRejectModalOpen && (
@@ -406,7 +387,7 @@ const DashboardFiscal: React.FC = () => {
             <div className="p-8 space-y-6">
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block tracking-widest">Motivo Principal</label>
-                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-800 outline-none">
+                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-800 outline-none focus:ring-2 focus:ring-red-200">
                   <option value="Erro no pedido">Erro no pedido</option>
                   <option value="Erro no anexo">Erro no anexo</option>
                   <option value="Nota fiscal não localizada">Nota fiscal não localizada</option>
@@ -414,11 +395,11 @@ const DashboardFiscal: React.FC = () => {
               </div>
               <div>
                 <label className="text-[10px] font-black text-gray-400 uppercase mb-2 block tracking-widest">Comentários Adicionais</label>
-                <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-800 outline-none resize-none" />
+                <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-800 outline-none resize-none focus:ring-2 focus:ring-red-200" placeholder="Descreva o motivo..." />
               </div>
               <div className="flex gap-4 pt-4">
-                <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400">Voltar</button>
-                <button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700 flex items-center justify-center">
+                <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-[10px] font-black uppercase text-gray-400 hover:text-gray-600">Voltar</button>
+                <button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700 flex items-center justify-center transition-transform active:scale-95">
                    Confirmar Reprovação
                 </button>
               </div>
@@ -429,6 +410,5 @@ const DashboardFiscal: React.FC = () => {
     </div>
   );
 };
-
 
 export default DashboardFiscal;
