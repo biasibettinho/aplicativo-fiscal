@@ -11,7 +11,6 @@ export const requestService = {
       if (user.role === UserRole.ADMIN_MASTER) return all;
 
       // SOLICITANTE: Filtro Robusto (ID ou Email)
-      // Isso garante que o usuário veja seus itens mesmo se houver divergência de Case no ID
       if (user.role === UserRole.SOLICITANTE) {
           return all.filter(r => {
               const idMatch = r.createdByUserId && user.id && r.createdByUserId.toString().toLowerCase() === user.id.toString().toLowerCase();
@@ -43,13 +42,11 @@ export const requestService = {
     }
   },
 
-  // Função dedicada para a tela "Minhas Solicitações" (DashboardSolicitante usado por Admin/Financeiro)
-  // Garante que o usuário veja seus próprios itens, ignorando filtros de Role
+  // Função dedicada para a tela "Minhas Solicitações"
   getMyRequests: async (user: User, accessToken: string): Promise<PaymentRequest[]> => {
       if (!user || !accessToken) return [];
 
       try {
-          // Busca tudo (pode ser otimizado com filtro OData no futuro, mas por segurança filtramos em memória agora)
           const all = await sharepointService.getRequests(accessToken);
           
           return all.filter(r => {
@@ -65,9 +62,8 @@ export const requestService = {
 
   /**
    * Centraliza o envio para o Power Automate.
-   * Não cria mais o item via Graph antes do envio.
    */
-  processFlowSubmission: async (data: Partial<PaymentRequest>, files: { invoice?: File | null, ticket?: File | null }, itemId: string): Promise<boolean> => {
+   processFlowSubmission: async (data: Partial<PaymentRequest>, files: { invoice?: File | null, ticket?: File | null }, itemId: string): Promise<boolean> => {
     // Arrays de ficheiros para o Power Automate
     const invoiceFiles: { name: string, content: string }[] = [];
     const ticketFiles: { name: string, content: string }[] = [];
@@ -78,7 +74,6 @@ export const requestService = {
       reader.readAsDataURL(file);
       reader.onload = () => {
         const result = reader.result?.toString();
-        // Remove o prefixo "data:application/pdf;base64," ou similar
         if (result && result.includes(',')) {
           resolve(result.split(',')[1]);
         } else {
@@ -103,25 +98,38 @@ export const requestService = {
       });
     }
 
+    // --- LOGS DE DEPURAÇÃO ---
+    console.log("🔍 DADOS RECEBIDOS NO SERVICE:", data);
+    console.log("🔍 ORDER NUMBER (ANTES DO PAYLOAD):", data.orderNumber);
+    // -------------------------
+
     // Constrói o payload final conforme solicitado
     const flowPayload: any = {
       ...data,
-      itemId: itemId, // "0" para novos, ID Real para edições
+      itemId: itemId, 
       invoiceFiles: invoiceFiles,
-      ticketFiles: ticketFiles
+      ticketFiles: ticketFiles,
+      
+      // ✅ CAMPOS OBRIGATÓRIOS DO SHAREPOINT
+      "Qualopedido_x0028_s_x0029__x003f": data.orderNumber || '', // Nome interno exato
+      Qualopedido: data.orderNumber || '', // Fallback
+      NF: data.invoiceNumber || '',
+      Filial: data.branch || ''
     };
 
-    // Dispara o Gatilho e aguarda o status da resposta (200/202)
+    // --- LOG DO PAYLOAD FINAL ---
+    console.log("📦 PAYLOAD FINAL ENVIADO AO FLUXO:", flowPayload);
+    // ----------------------------
+
+    // Dispara o Gatilho
     return await sharepointService.triggerPowerAutomateFlow(flowPayload);
   },
 
   createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<boolean> => {
-    // Para novas solicitações, itemId é sempre "0"
     return await requestService.processFlowSubmission(data, files || {}, "0");
   },
 
   updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string, files?: { invoice?: File | null, ticket?: File | null }): Promise<boolean> => {
-    // Para edições, enviamos o ID real do SharePoint
     return await requestService.processFlowSubmission(data, files || {}, id);
   },
 
