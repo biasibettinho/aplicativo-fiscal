@@ -36,7 +36,10 @@ const DashboardFiscal: React.FC = () => {
   
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  // MODIFICADO: Filtro de data range
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
+  
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -175,17 +178,29 @@ const DashboardFiscal: React.FC = () => {
                             r.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             r.id.toString().includes(searchTerm);
       const matchesBranch = branchFilter === '' || r.branch === branchFilter;
+      
       let matchesStatus = true;
       if (statusFilter === 'Pendente') { matchesStatus = r.status === RequestStatus.PENDENTE; } 
       else if (statusFilter === 'Em Análise') { matchesStatus = r.status === RequestStatus.ANALISE; } 
       else if (statusFilter === 'Erro - Fiscal') { matchesStatus = r.status === RequestStatus.ERRO_FISCAL; } 
       else if (statusFilter === 'Aprovado') { matchesStatus = r.status === RequestStatus.APROVADO; } 
       else if (statusFilter !== '') { matchesStatus = r.status === statusFilter; }
+      
+      // MODIFICADO: Filtro por Range de Data
       let matchesDate = true;
-      if (dateFilter) { matchesDate = new Date(r.createdAt).toISOString().split('T')[0] === dateFilter; }
+      const itemDate = new Date(r.createdAt).toISOString().split('T')[0];
+      
+      if (startDateFilter && endDateFilter) {
+          matchesDate = itemDate >= startDateFilter && itemDate <= endDateFilter;
+      } else if (startDateFilter) {
+          matchesDate = itemDate >= startDateFilter;
+      } else if (endDateFilter) {
+          matchesDate = itemDate <= endDateFilter;
+      }
+
       return matchesSearch && matchesBranch && matchesStatus && matchesDate;
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [requests, searchTerm, dateFilter, branchFilter, statusFilter]);
+  }, [requests, searchTerm, startDateFilter, endDateFilter, branchFilter, statusFilter]);
 
   const isFinalized = selectedRequest && [RequestStatus.APROVADO, RequestStatus.ERRO_FISCAL, RequestStatus.FATURADO].includes(selectedRequest.status);
 
@@ -199,10 +214,17 @@ const DashboardFiscal: React.FC = () => {
             <input type="text" placeholder="Buscar ID ou NF..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div className="flex items-center gap-5 overflow-x-auto pb-1 hide-scrollbar">
+            
+            {/* MODIFICADO: Inputs de Data Inicio e Fim */}
             <div className="flex flex-col min-w-[100px]">
-              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> Criação</label>
-              <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> De</label>
+              <input type="date" value={startDateFilter} onChange={e => setStartDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
             </div>
+            <div className="flex flex-col min-w-[100px]">
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> Até</label>
+              <input type="date" value={endDateFilter} onChange={e => setEndDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
+            </div>
+
             <div className="flex flex-col min-w-[140px]">
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Filial</label>
               <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none w-full">
@@ -245,7 +267,7 @@ const DashboardFiscal: React.FC = () => {
       </div>
 
       <div className="flex flex-1 gap-6 overflow-hidden flex-col md:flex-row">
-        {/* Lista Lateral - Vira Accordion ou fica em cima em mobile se preferir, aqui mantive lista mas com width responsivo */}
+        {/* Lista Lateral */}
         <div className={`flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm transition-all duration-300 ${selectedRequest ? 'hidden md:flex md:w-80 lg:w-96' : 'w-full'}`}>
           <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center shrink-0">
              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Solicitações ({filteredRequests.length})</span>
@@ -280,7 +302,6 @@ const DashboardFiscal: React.FC = () => {
 
                     <h2 className="text-2xl md:text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-6">{selectedRequest.title}</h2>
                     
-                    {/* GRID RESPONSIVO: Flex wrap permite quebrar linha se não couber */}
                     <div className="flex flex-wrap gap-x-12 gap-y-6 items-start w-full">
                         
                         {/* Bloco NF */}
@@ -294,13 +315,18 @@ const DashboardFiscal: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Bloco Pedidos - Com min-width-0 para respeitar o flex container */}
+                        {/* Bloco Pedidos - CORRIGIDO E SEM SCROLL */}
                         <div className="flex flex-col items-start gap-1 flex-1 min-w-[200px] max-w-full">
                             <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">Pedido(s):</p>
                             <div className="flex items-start gap-2 w-full">
-                                <div className="max-h-32 overflow-y-auto bg-gray-50 px-4 py-3 rounded-xl border border-gray-200 w-full shadow-sm custom-scrollbar">
-                                    <p className="text-slate-900 font-bold text-sm leading-relaxed break-all whitespace-pre-wrap">
-                                        {selectedRequest.orderNumber || '---'}
+                                <div className="bg-gray-50 px-4 py-3 rounded-xl border border-gray-200 w-full shadow-sm">
+                                    <p 
+                                        className="text-slate-900 font-bold text-sm leading-relaxed break-all" 
+                                        title={selectedRequest.orderNumber}
+                                    >
+                                        {selectedRequest.orderNumber && selectedRequest.orderNumber.length > 50 
+                                            ? `${selectedRequest.orderNumber.substring(0, 50)}...` 
+                                            : (selectedRequest.orderNumber || '---')}
                                     </p>
                                 </div>
                                 {selectedRequest.orderNumber && (
@@ -320,24 +346,24 @@ const DashboardFiscal: React.FC = () => {
                         <section className="bg-blue-50/30 p-6 md:p-8 rounded-[2rem] border border-blue-50 shadow-inner h-fit">
                            <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência de Dados</h3>
                            <div className="space-y-6">
-                              <div>
-                                 <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Razão Social</span>
-                                 <div className="flex items-center gap-2">
-                                    <p className="text-lg md:text-xl font-bold text-slate-700 uppercase break-all">{selectedRequest.payee || '---'}</p>
-                                    {selectedRequest.payee && <CopyButton text={selectedRequest.payee} />}
-                                 </div>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                 <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
-                                 <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método Pagamento</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
-                              </div>
-                              {selectedRequest.paymentMethod === 'PIX' && (
-                                 <div className="pt-2 flex items-center text-blue-600 flex-wrap gap-2">
-                                    <div className="flex items-center shrink-0"><Smartphone size={14} className="mr-2"/> <span className="text-[10px] font-black uppercase tracking-tight">Chave PIX:</span></div>
-                                    <p className="text-sm font-bold break-all">{selectedRequest.pixKey}</p>
-                                    {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
-                                 </div>
-                              )}
+                             <div>
+                                <span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Favorecido / Razão Social</span>
+                                <div className="flex items-center gap-2">
+                                   <p className="text-lg md:text-xl font-bold text-slate-700 uppercase break-all">{selectedRequest.payee || '---'}</p>
+                                   {selectedRequest.payee && <CopyButton text={selectedRequest.payee} />}
+                                </div>
+                             </div>
+                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-bold text-slate-800">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                                <div><span className="text-[10px] font-black text-blue-300 uppercase block mb-1">Método Pagamento</span><p className="text-sm font-bold text-slate-800">{selectedRequest.paymentMethod}</p></div>
+                             </div>
+                             {selectedRequest.paymentMethod === 'PIX' && (
+                                <div className="pt-2 flex items-center text-blue-600 flex-wrap gap-2">
+                                   <div className="flex items-center shrink-0"><Smartphone size={14} className="mr-2"/> <span className="text-[10px] font-black uppercase tracking-tight">Chave PIX:</span></div>
+                                   <p className="text-sm font-bold break-all">{selectedRequest.pixKey}</p>
+                                   {selectedRequest.pixKey && <CopyButton text={selectedRequest.pixKey} />}
+                                </div>
+                             )}
                            </div>
                         </section>
 
