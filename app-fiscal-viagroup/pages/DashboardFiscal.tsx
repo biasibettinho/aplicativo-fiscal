@@ -5,8 +5,10 @@ import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
 import { 
-  Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3, Banknote, Smartphone, Info, Copy
+  Search, CheckCircle, XCircle, FileSearch, FileText, ExternalLink, Paperclip, MapPin, Loader2, Filter, Calendar, X, AlertTriangle, MessageSquare, Edit3, Banknote, Smartphone, Info, Copy,
+  UserCircle // <--- ADICIONE ISSO AQUI
 } from 'lucide-react';
+
 
 const CopyButton = ({ text }: { text: string }) => (
   <button 
@@ -21,6 +23,7 @@ const CopyButton = ({ text }: { text: string }) => (
   </button>
 );
 
+
 const DashboardFiscal: React.FC = () => {
   const { authState } = useAuth();
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
@@ -31,27 +34,23 @@ const DashboardFiscal: React.FC = () => {
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   
-  // ESTADO PARA DELTA POLLING
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   
-  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
-  // MODIFICADO: Filtro de data range
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
-  
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Modal de Reprovação
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('Erro no pedido');
   const [rejectComment, setRejectComment] = useState('');
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
+
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
-  // Função de carga com suporte a busca Delta (Incremental)
+
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
 
@@ -67,7 +66,6 @@ const DashboardFiscal: React.FC = () => {
           if (!silent) setIsLoading(false);
         }
     } else {
-        // Polling Delta
         try {
             const updatedItems = await sharepointService.getRequestsDelta(authState.token, lastUpdate);
             if (updatedItems.length > 0) {
@@ -86,14 +84,18 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
+
   useEffect(() => { loadData(false); }, [authState.user, authState.token]);
+
 
   useEffect(() => {
     const interval = setInterval(() => { loadData(true); }, 15000); 
     return () => clearInterval(interval);
   }, [authState.user, authState.token, lastUpdate, requests.length]);
 
+
   const selectedRequest = requests.find(r => r.id === selectedId);
+
 
   useEffect(() => {
     setIsReworking(false);
@@ -124,14 +126,17 @@ const DashboardFiscal: React.FC = () => {
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
+
   const availableBranches = useMemo(() => {
     const branches = requests.map(r => r.branch).filter(branch => branch && branch.trim() !== '');
     return Array.from(new Set(branches)).sort();
   }, [requests]);
 
+
   const isMaster = useMemo(() => {
     return authState.user?.role === UserRole.FISCAL_ADMIN || authState.user?.role === UserRole.ADMIN_MASTER;
   }, [authState.user]);
+
 
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
@@ -153,6 +158,7 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
+
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
     const targetStatus = isMaster ? RequestStatus.ERRO_FISCAL : RequestStatus.ANALISE;
@@ -172,6 +178,7 @@ const DashboardFiscal: React.FC = () => {
     }
   };
 
+
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
       const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -186,7 +193,6 @@ const DashboardFiscal: React.FC = () => {
       else if (statusFilter === 'Aprovado') { matchesStatus = r.status === RequestStatus.APROVADO; } 
       else if (statusFilter !== '') { matchesStatus = r.status === statusFilter; }
       
-      // MODIFICADO: Filtro por Range de Data
       let matchesDate = true;
       const itemDate = new Date(r.createdAt).toISOString().split('T')[0];
       
@@ -202,7 +208,9 @@ const DashboardFiscal: React.FC = () => {
     }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [requests, searchTerm, startDateFilter, endDateFilter, branchFilter, statusFilter]);
 
+
   const isFinalized = selectedRequest && [RequestStatus.APROVADO, RequestStatus.ERRO_FISCAL, RequestStatus.FATURADO].includes(selectedRequest.status);
+
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden">
@@ -215,7 +223,6 @@ const DashboardFiscal: React.FC = () => {
           </div>
           <div className="flex items-center gap-5 overflow-x-auto pb-1 hide-scrollbar">
             
-            {/* MODIFICADO: Inputs de Data Inicio e Fim */}
             <div className="flex flex-col min-w-[100px]">
               <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> De</label>
               <input type="date" value={startDateFilter} onChange={e => setStartDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
@@ -295,6 +302,13 @@ const DashboardFiscal: React.FC = () => {
                     <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
                          <div className="flex items-center space-x-3">
                             <Badge status={selectedRequest.status} />
+
+                            {/* ✅ NOVO: NOME DO SOLICITANTE */}
+                            <span className="text-[10px] font-bold text-gray-500 uppercase bg-gray-100 px-2 py-0.5 rounded flex items-center gap-1 border border-gray-200">
+                                <UserCircle size={12} className="text-gray-400" />
+                                {selectedRequest.createdByName || 'Solicitante Desconhecido'}
+                            </span>
+
                             <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase whitespace-nowrap">{isMaster ? 'Fiscal Master' : 'Fiscal Analista'}</span>
                          </div>
                          <button className="md:hidden text-gray-400" onClick={() => setSelectedId(null)}><X size={20} /></button>
@@ -304,7 +318,6 @@ const DashboardFiscal: React.FC = () => {
                     
                     <div className="flex flex-wrap gap-x-12 gap-y-6 items-start w-full">
                         
-                        {/* Bloco NF */}
                         <div className="flex flex-col items-start gap-1">
                             <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">NF:</p>
                             <div className="flex items-center gap-2">
@@ -315,7 +328,6 @@ const DashboardFiscal: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Bloco Pedidos - CORRIGIDO E SEM SCROLL */}
                         <div className="flex flex-col items-start gap-1 flex-1 min-w-[200px] max-w-full">
                             <p className="text-sm font-black text-blue-600 uppercase italic whitespace-nowrap">Pedido(s):</p>
                             <div className="flex items-start gap-2 w-full">
@@ -342,7 +354,6 @@ const DashboardFiscal: React.FC = () => {
 
                 <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-10 custom-scrollbar">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                        {/* Seção Esquerda: Dados Financeiros */}
                         <section className="bg-blue-50/30 p-6 md:p-8 rounded-[2rem] border border-blue-50 shadow-inner h-fit">
                            <h3 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-6 border-b border-blue-100 pb-3 italic flex items-center"><FileSearch size={14} className="mr-2"/> Conferência de Dados</h3>
                            <div className="space-y-6">
@@ -367,7 +378,6 @@ const DashboardFiscal: React.FC = () => {
                            </div>
                         </section>
 
-                        {/* Seção Direita: Anexos e Obs */}
                         <section className="space-y-6">
                             <div className="bg-white p-6 md:p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
                                 <div>
@@ -436,5 +446,6 @@ const DashboardFiscal: React.FC = () => {
     </div>
   );
 };
+
 
 export default DashboardFiscal;

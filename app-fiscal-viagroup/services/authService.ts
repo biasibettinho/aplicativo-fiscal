@@ -31,6 +31,7 @@ export const authService = {
       
       // Consulta obrigatória à lista SharePoint App_Gestao_Usuarios para capturar a Role correta
       const role = await sharepointService.getUserRoleFromSharePoint(email);
+      
 
       const users = db.getUsers();
       let user = users.find(u => u.email.toLowerCase() === email);
