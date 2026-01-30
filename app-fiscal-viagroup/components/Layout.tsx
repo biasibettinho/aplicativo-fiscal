@@ -71,10 +71,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Sidebar */}
       <aside
         className={`
-        fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 flex flex-col shadow-2xl transform transition-all duration-300 ease-in-out
-        lg:relative lg:translate-x-0 lg:shadow-sm
-        ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:translate-x-0 lg:hidden'}
-      `}
+          fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 flex flex-col shadow-2xl transform transition-all duration-300 ease-in-out
+          lg:relative lg:translate-x-0 lg:shadow-sm
+          ${isSidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full lg:hidden'}
+        `}
       >
         <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
           <img
@@ -82,9 +82,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             alt="Via Group"
             className="h-8 object-contain"
           />
+
+          {/* X para fechar (todas as telas) */}
           <button
             onClick={() => setIsSidebarOpen(false)}
-            className="p-1 text-gray-400 hover:text-blue-600 transition-colors lg:hidden"
+            className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+            aria-label="Fechar menu"
+            title="Fechar menu"
           >
             <X size={20} />
           </button>
@@ -120,7 +124,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             to="/stats"
             icon={PieChart}
             label="Estatísticas"
-            roles={[UserRole.ADMIN_MASTER, UserRole.FISCAL_COMUM, UserRole.FISCAL_ADMIN, UserRole.FINANCEIRO_MASTER]}
+            roles={[
+              UserRole.ADMIN_MASTER,
+              UserRole.FISCAL_COMUM,
+              UserRole.FISCAL_ADMIN,
+              UserRole.FINANCEIRO_MASTER,
+            ]}
           />
           <NavItem to="/admin" icon={Settings} label="Configurações" roles={[UserRole.ADMIN_MASTER]} />
         </nav>
@@ -132,7 +141,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-gray-900 truncate uppercase italic">{user?.name}</p>
-              <p className="text-[10px] text-gray-400 font-black uppercase tracking-tighter truncate">{user?.role}</p>
+              <p className="text-[10px] text-gray-400 font-black uppercase tracking-tighter truncate">
+                {user?.role}
+              </p>
             </div>
           </div>
 
@@ -144,6 +155,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <RefreshCw size={18} />
               <span>Trocar Conta</span>
             </button>
+
             <button
               onClick={(e) => {
                 e.preventDefault();
@@ -158,20 +170,26 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       </aside>
 
-      {/* Main Content (sem o header de cima) */}
+      {/* Main Content */}
       <main className="flex-1 relative overflow-hidden w-full">
-        {/* Botão flutuante para abrir o menu no mobile quando estiver fechado */}
+        {/* Botão Menu (fixo) */}
         {!isSidebarOpen && (
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="fixed top-4 left-4 z-30 lg:hidden p-2 text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl shadow-sm transition-colors"
+            className="fixed top-4 left-4 z-30 p-2 text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 rounded-xl shadow-sm transition-colors"
             aria-label="Abrir menu"
+            title="Abrir menu"
           >
             <Menu size={24} />
           </button>
         )}
 
-        <section className="h-full overflow-y-auto p-4 lg:p-10 bg-gray-50/50 custom-scrollbar">
+        {/* ✅ Reserva espaço à esquerda quando o menu estiver fechado (evita sobrepor a toolbar) */}
+        <section
+          className={`h-full overflow-y-auto bg-gray-50/50 custom-scrollbar p-4 lg:p-10 ${
+            !isSidebarOpen ? 'pl-16 lg:pl-20' : ''
+          }`}
+        >
           {children}
         </section>
       </main>
