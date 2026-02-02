@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { RequestStatus, PaymentRequest, User } from '../types';
 import { STATUS_COLORS } from '../constants';
@@ -12,12 +11,23 @@ interface BadgeProps {
 
 const Badge: React.FC<BadgeProps> = ({ status, request, currentUser, className }) => {
   let displayStatus = status;
-  let colorClass = STATUS_COLORS[status as RequestStatus] || 'bg-gray-100 text-gray-600 border-gray-200';
+
+  // ✅ Se vier string "Em Análise", usa a cor do enum ANALISE (amarelo)
+  const normalizedStatus =
+    displayStatus === 'Em Análise' || displayStatus === 'Análise'
+      ? RequestStatus.ANALISE
+      : (displayStatus as RequestStatus);
+
+  let colorClass =
+    STATUS_COLORS[normalizedStatus] || 'bg-gray-100 text-gray-600 border-gray-200';
 
   if (request && currentUser) {
     const isRecipient = currentUser.id === request.sharedWithUserId;
-    const isFinanceViewer = currentUser.role === 'Financeiro' || currentUser.role === 'Financeiro Master';
-    const isSpecificAnalyst = currentUser.email === 'financeiro.norte@viagroup.com.br' || currentUser.email === 'financeiro.sul@viagroup.com.br';
+    const isFinanceViewer =
+      currentUser.role === 'Financeiro' || currentUser.role === 'Financeiro Master';
+    const isSpecificAnalyst =
+      currentUser.email === 'financeiro.norte@viagroup.com.br' ||
+      currentUser.email === 'financeiro.sul@viagroup.com.br';
 
     // Se a solicitação foi compartilhada manualmente
     if (request.statusManual === 'Compartilhado' && isFinanceViewer) {
@@ -32,9 +42,9 @@ const Badge: React.FC<BadgeProps> = ({ status, request, currentUser, className }
       }
     }
   }
-  
+
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${colorClass} ${className}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${colorClass} ${className || ''}`}>
       {displayStatus}
     </span>
   );
