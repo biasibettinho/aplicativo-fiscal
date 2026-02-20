@@ -340,20 +340,44 @@ export const sharepointService = {
     getSecondaryAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
         if (!itemId) return [];
         try {
-          const filter = `ID_SOL eq ${parseInt(itemId, 10)}`;
+          // Limpa qualquer formatação (espaços, pontos) que possa vir e converte para número
+          const cleanItemId = parseInt(String(itemId).replace(/[^\d]/g, ''), 10);
+
+          console.log(`[DEBUG_ANEXOS] Iniciando busca secundária para itemId original: "${itemId}" -> limpo: ${cleanItemId}`);
+
+          // Passo A: Filtro na lista secundária (SEM ASPAS pois é Number)
+          const filter = `ID_SOL eq ${cleanItemId}`;
           const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id,Attachments`;
+
+          console.log(`[DEBUG_ANEXOS] URL de busca gerada:`, findItemUrl);
+
           const findResponse = await spRestFetch(findItemUrl);
-          if (!findResponse.ok) return [];
+
+          if (!findResponse.ok) {
+            const errText = await findResponse.text();
+            console.error(`[DEBUG_ANEXOS] Erro na busca secundária. Status: ${findResponse.status}`, errText);
+            return [];
+          }
+
           const findData = await findResponse.json();
           const secondaryItems = findData.d?.results || [];
+
+          console.log(`[DEBUG_ANEXOS] Itens secundários encontrados: ${secondaryItems.length}`, secondaryItems);
+
           const allSecondaryAttachments: Attachment[] = [];
 
+          // Passo C: Loop pelos itens encontrados (removido o guard item.Attachments)
           for (const item of secondaryItems) {
+            console.log(`[DEBUG_ANEXOS] Buscando arquivos para o item secundário Id: ${item.Id}`);
+
             const attUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})/AttachmentFiles`;
             const attResponse = await spRestFetch(attUrl);
+
             if (attResponse.ok) {
               const attData = await attResponse.json();
               const files = attData.d?.results || [];
+              console.log(`[DEBUG_ANEXOS] Arquivos encontrados no item ${item.Id}: ${files.length}`, files);
+
               files.forEach((file: any) => {
                 allSecondaryAttachments.push({
                   id: `${item.Id}_${file.FileName}`,
@@ -366,11 +390,17 @@ export const sharepointService = {
                   createdAt: new Date().toISOString()
                 });
               });
+            } else {
+               console.error(`[DEBUG_ANEXOS] Falha ao buscar anexos do item secundário ${item.Id}. Status: ${attResponse.status}`);
             }
           }
 
+          console.log(`[DEBUG_ANEXOS] Total de anexos secundários processados:`, allSecondaryAttachments.length);
           return allSecondaryAttachments;
-        } catch (e) { return []; }
+        } catch (e) {
+          console.error("[DEBUG_ANEXOS] Erro fatal em getSecondaryAttachments (Boletos):", e);
+          return []; 
+        }
     },
 
     deleteAttachment: async (listGuid: string, itemId: string, fileName: string): Promise<boolean> => {
