@@ -63,7 +63,7 @@ export const requestService = {
   /**
    * Centraliza o envio para o Power Automate.
    */
-   processFlowSubmission: async (data: Partial<PaymentRequest>, files: { invoice?: File | null, ticket?: File | null }, itemId: string): Promise<boolean> => {
+   processFlowSubmission: async (data: Partial<PaymentRequest>, files: { invoice?: File | File[] | null, ticket?: File | File[] | null }, itemId: string): Promise<boolean> => {
     // Arrays de ficheiros para o Power Automate
     const invoiceFiles: { name: string, content: string }[] = [];
     const ticketFiles: { name: string, content: string }[] = [];
@@ -82,22 +82,25 @@ export const requestService = {
       };
       reader.onerror = error => reject(error);
     });
+    // Processa anexos (suporta múltiplos arquivos)
+    const normalizeFiles = (f?: File | File[] | null): File[] => {
+      if (!f) return [];
+      return Array.isArray(f) ? f : [f];
+    };
 
-    // Processa anexos
-    if (files.invoice) {
+    for (const file of normalizeFiles(files.invoice)) {
       invoiceFiles.push({
-        name: files.invoice.name,
-        content: await toBase64(files.invoice)
+        name: file.name,
+        content: await toBase64(file)
       });
     }
 
-    if (files.ticket) {
+    for (const file of normalizeFiles(files.ticket)) {
       ticketFiles.push({
-        name: files.ticket.name,
-        content: await toBase64(files.ticket)
+        name: file.name,
+        content: await toBase64(file)
       });
     }
-
     // --- LOGS DE DEPURAÇÃO ---
     console.log("🔍 DADOS RECEBIDOS NO SERVICE:", data);
     console.log("🔍 ORDER NUMBER (ANTES DO PAYLOAD):", data.orderNumber);
@@ -109,12 +112,16 @@ export const requestService = {
       itemId: itemId, 
       invoiceFiles: invoiceFiles,
       ticketFiles: ticketFiles,
+
+      // Novo campo (texto) - enviado também como propriedade simples para facilitar o Parse JSON no Power Automate
+      budget: (data as any).budget || '',
       
       // ✅ CAMPOS OBRIGATÓRIOS DO SHAREPOINT
       "Qualopedido_x0028_s_x0029__x003f": data.orderNumber || '', // Nome interno exato
       Qualopedido: data.orderNumber || '', // Fallback
       NF: data.invoiceNumber || '',
-      Filial: data.branch || ''
+      Filial: data.branch || '',
+      Or_x00e7_amento: (data as any).budget || ''
     };
 
     // --- LOG DO PAYLOAD FINAL ---
@@ -125,11 +132,11 @@ export const requestService = {
     return await sharepointService.triggerPowerAutomateFlow(flowPayload);
   },
 
-  createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | null, ticket?: File | null }): Promise<boolean> => {
+  createRequest: async (accessToken: string, data: Partial<PaymentRequest>, files?: { invoice?: File | File[] | null, ticket?: File | File[] | null }): Promise<boolean> => {
     return await requestService.processFlowSubmission(data, files || {}, "0");
   },
 
-  updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string, files?: { invoice?: File | null, ticket?: File | null }): Promise<boolean> => {
+  updateRequest: async (id: string, data: Partial<PaymentRequest>, accessToken: string, files?: { invoice?: File | File[] | null, ticket?: File | File[] | null }): Promise<boolean> => {
     return await requestService.processFlowSubmission(data, files || {}, id);
   },
 
