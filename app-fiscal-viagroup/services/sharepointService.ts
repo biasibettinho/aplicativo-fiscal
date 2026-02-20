@@ -14,6 +14,11 @@ const USER_LIST_ID = 'aab3f85b-2541-4974-ab1a-e0a0ee688b4e';
 const HISTORY_LIST_ID = '4b5c196a-26bf-419a-8bab-c59f8f64e612';
 const POWER_AUTOMATE_URL = 'https://default7d9754b3dcdb4efe8bb7c0e5587b86.ed.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/279b9f46c29b485fa069720fb0f2a329/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=sH0mJTwun6v7umv0k3OKpYP7nXVUckH2TnaRMXHfIj8';
 
+// Cache (em memória) do nome interno correto do campo de vínculo da lista auxiliar
+// (ex.: ID_SOL, ID_x005f_SOL, etc.).
+let SECONDARY_ID_SOL_INTERNAL: string | null = null;
+let SECONDARY_ID_SOL_INTERNAL_FETCHED = false;
+
 /**
  * Mapeamento corrigido baseado no XML oficial da Lista (InternalNames)
  */
@@ -32,6 +37,8 @@ const FIELD_MAP = {
     orderNumber: 'Qualopedido_x0028_s_x0029__x003f',
     generalObservation: 'Observa_x00e7__x00e3_o',
     budget: 'Or_x00e7_amento',
+  approverFiscal: 'AprovadorFiscal',
+  approverFinanceiro: 'AprovadorFinanceiro',
     finalizationDate: 'Datafinaliza_x00e7__x00e3_o',
     paymentMethod: 'MET_PAGAMENTO',
     pixKey: 'CAMPO_PIX',
@@ -98,6 +105,107 @@ const stripHtml = (html: any) => {
   return text.replace(/<[^>]*>?/gm, '').trim();
 };
 
+const normalizeInternalName = (name: string) => {
+  if (!name) return '';
+  // decodificação parcial de padrões comuns do SharePoint
+  return name
+    .toString()
+    .replace(/_x005f_/gi, '_')
+    .toLowerCase();
+};
+
+const normalizeLoose = (s: string) => {
+  if (!s) return '';
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+};
+
+async function getSecondaryIdSolInternalName(): Promise<string> {
+  if (SECONDARY_ID_SOL_INTERNAL_FETCHED && SECONDARY_ID_SOL_INTERNAL) return SECONDARY_ID_SOL_INTERNAL;
+  if (SECONDARY_ID_SOL_INTERNAL_FETCHED && !SECONDARY_ID_SOL_INTERNAL) return 'ID_SOL';
+
+  SECONDARY_ID_SOL_INTERNAL_FETCHED = true;
+  try {
+    const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/fields?$select=InternalName,Title`;
+    const res = await spRestFetch(url);
+    if (!res.ok) {
+      SECONDARY_ID_SOL_INTERNAL = 'ID_SOL';
+      return SECONDARY_ID_SOL_INTERNAL;
+    }
+    const data = await res.json();
+    const fields = data?.d?.results || [];
+    if (!Array.isArray(fields) || fields.length === 0) {
+      SECONDARY_ID_SOL_INTERNAL = 'ID_SOL';
+      return SECONDARY_ID_SOL_INTERNAL;
+    }
+
+    let best: { internal: string; score: number } | null = null;
+    for (const f of fields) {
+      const internal = f?.InternalName?.toString?.() || '';
+      const title = f?.Title?.toString?.() || '';
+      const internalNorm = normalizeInternalName(internal);
+      const internalLoose = normalizeLoose(internalNorm);
+      const titleLoose = normalizeLoose(title);
+
+      let score = 0;
+      if (internalNorm === 'id_sol') score = 100;
+      else if (titleLoose === 'idsol' || titleLoose === 'idsolicitacao' || titleLoose === 'idsolicitação') score = 90;
+      else if (internalLoose === 'idsol') score = 85;
+      else if (internalLoose.includes('id') && internalLoose.includes('sol')) score = 60;
+      else if (titleLoose.includes('id') && titleLoose.includes('sol')) score = 50;
+
+      if (score > 0 && (!best || score > best.score)) {
+        best = { internal, score };
+      }
+    }
+
+    SECONDARY_ID_SOL_INTERNAL = best?.internal || 'ID_SOL';
+    return SECONDARY_ID_SOL_INTERNAL;
+  } catch {
+    SECONDARY_ID_SOL_INTERNAL = 'ID_SOL';
+    return SECONDARY_ID_SOL_INTERNAL;
+  }
+}
+
+async function fetchSecondaryItemsByRequestId(requestId: string, select: string = 'Id,Attachments'): Promise<any[]> {
+  const fieldName = await getSecondaryIdSolInternalName();
+  const parsedNum = Number(requestId);
+  const filters: string[] = [];
+
+  // tenta primeiro como número (se fizer sentido) para compatibilidade com colunas numéricas
+  if (!Number.isNaN(parsedNum) && Number.isFinite(parsedNum)) {
+    filters.push(`${fieldName} eq ${parsedNum}`);
+  }
+  // fallback como texto
+  filters.push(`${fieldName} eq '${requestId}'`);
+
+  for (const filter of filters) {
+    const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=${encodeURIComponent(select)}`;
+    const res = await spRestFetch(url);
+    if (!res.ok) continue;
+    const data = await res.json();
+    const items = data?.d?.results || [];
+    if (Array.isArray(items)) return items;
+  }
+
+  // Fallback: alguns itens antigos podem ter sido criados sem o campo de vínculo preenchido.
+  // Nesses casos, tenta localizar por Title (padrão: "Boleto - Sol <ID>").
+  try {
+    const fallbackFilter = `substringof('${requestId}',Title)`;
+    const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(fallbackFilter)}&$select=${encodeURIComponent(select + ',Title')}&$top=500`;
+    const res = await spRestFetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const items = data?.d?.results || [];
+      if (Array.isArray(items)) {
+        return items.filter((it: any) => (it?.Title || '').toString().includes(requestId));
+      }
+    }
+  } catch {
+    // ignora
+  }
+  return [];
+}
+
 /**
  * Função privada de mapeamento para centralizar a conversão entre SharePoint/Graph e PaymentRequest
  */
@@ -139,6 +247,9 @@ const mapSharePointItem = (item: any): PaymentRequest => {
         pixKey: getVal('pixKey'),
         totalValue: 0, 
         generalObservation: stripHtml(getVal('generalObservation')),
+        budget: stripHtml(getVal('budget')),
+        approverFiscal: stripHtml(getVal('approverFiscal')),
+        approverFinanceiro: stripHtml(getVal('approverFinanceiro')),
         approverObservation: stripHtml(getVal('approverObservation')),
         createdAt: item.createdDateTime,
         updatedAt: item.lastModifiedDateTime,
@@ -339,12 +450,7 @@ export const sharepointService = {
     getSecondaryAttachments: async (unusedToken: string, itemId: string): Promise<Attachment[]> => {
         if (!itemId) return [];
         try {
-          const filter = `ID_SOL eq '${itemId}'`;
-          const findItemUrl = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id,Attachments`;
-          const findResponse = await spRestFetch(findItemUrl);
-          if (!findResponse.ok) return [];
-          const findData = await findResponse.json();
-          const secondaryItems = findData.d?.results || [];
+          const secondaryItems = await fetchSecondaryItemsByRequestId(itemId, 'Id,Attachments');
           const allSecondaryAttachments: Attachment[] = [];
           for (const item of secondaryItems) {
             if (item.Attachments) {
@@ -381,29 +487,42 @@ export const sharepointService = {
 
     deleteSecondaryItemsByRequestId: async (requestId: string): Promise<void> => {
         try {
-          const filter = `ID_SOL eq '${requestId}'`;
-          const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items?$filter=${encodeURIComponent(filter)}&$select=Id`;
-          const res = await spRestFetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            const items = data.d?.results || [];
-            for (const item of items) { await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, { method: 'POST', headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } }); }
+          const items = await fetchSecondaryItemsByRequestId(requestId, 'Id');
+          for (const item of items) {
+            await spRestFetch(`${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items(${item.Id})`, { method: 'POST', headers: { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' } });
           }
         } catch (e) { }
     },
 
-    createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
+    createSecondaryItemWithAttachments: async (requestId: string, files: File[]): Promise<boolean> => {
         try {
+          if (!requestId) return false;
+          const validFiles = (files || []).filter(Boolean);
+          if (validFiles.length === 0) return true;
+
+          const fieldName = await getSecondaryIdSolInternalName();
+          const parsedNum = Number(requestId);
+          const idValue: any = (!Number.isNaN(parsedNum) && Number.isFinite(parsedNum)) ? parsedNum : requestId;
+
           const url = `${SITE_URL}/_api/web/lists(guid'${SECONDARY_LIST_ID}')/items`;
-          const body = JSON.stringify({ 'ID_SOL': requestId, 'Title': `Boleto - Sol ${requestId}` });
+          const body = JSON.stringify({ [fieldName]: idValue, 'Title': `Boleto - Sol ${requestId}` });
           const res = await spRestFetch(url, { method: 'POST', body: body, headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } });
-          if (res.ok) {
-            const data = await res.json();
-            const newItemId = data.Id || data.d?.Id;
-            return await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId.toString(), file);
+          if (!res.ok) return false;
+
+          const data = await res.json();
+          const newItemId = (data?.Id ?? data?.d?.Id)?.toString?.();
+          if (!newItemId) return false;
+
+          for (const file of validFiles) {
+            const ok = await sharepointService.uploadAttachment(SECONDARY_LIST_ID, newItemId, file);
+            if (!ok) return false;
           }
-          return false;
+          return true;
         } catch (e) { return false; }
+    },
+
+    createSecondaryItemWithAttachment: async (requestId: string, file: File): Promise<boolean> => {
+        return await sharepointService.createSecondaryItemWithAttachments(requestId, [file]);
     },
 
     addHistoryLog: async (accessToken: string, requestId: number, logData: any): Promise<boolean> => {
