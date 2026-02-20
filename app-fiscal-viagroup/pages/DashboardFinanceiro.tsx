@@ -2,20 +2,17 @@ import { PaymentRequest, RequestStatus, Attachment, UserRole } from '../types';
 import { requestService } from '../services/requestService';
 import { sharepointService } from '../services/sharepointService';
 import Badge from '../components/Badge';
-import {
-  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle,
-  AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip,
-  Smartphone, Info, Eye, Clock, History, Copy, FileSearch, PlayCircle, ArrowDown, Save,
-  Trash2 as TrashIcon
+import { 
+  DollarSign, Search, CheckCircle, MapPin, Filter, Landmark, Loader2, Calendar, XCircle, AlertTriangle, MessageSquare, Share2, X, Edit3, Globe, FileText, ExternalLink, Paperclip, Smartphone, Info, Eye, Clock, History, Copy, FileSearch, PlayCircle, ArrowDown, Save, Trash2 as TrashIcon
 } from 'lucide-react';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../App';
 
 // TRAVA DE SEGURANÇA: Status permitidos para visibilidade no Financeiro
 const FINANCE_VISIBLE_STATUS = [
-  RequestStatus.APROVADO,
-  RequestStatus.LANCADO,
-  RequestStatus.FATURADO,
+  RequestStatus.APROVADO, 
+  RequestStatus.LANCADO, 
+  RequestStatus.FATURADO, 
   RequestStatus.ERRO_FINANCEIRO,
   RequestStatus.COMPARTILHADO
 ];
@@ -36,11 +33,10 @@ const STATUS_CONFIG: Record<string, { icon: any, color: string, bgColor: string 
   'Rejeitado - Fiscal': { icon: XCircle, color: 'text-red-700', bgColor: 'bg-red-200' },
 };
 
-const getStatusConfig = (status: string) =>
-  STATUS_CONFIG[status] || { icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-50' };
+const getStatusConfig = (status: string) => STATUS_CONFIG[status] || { icon: Clock, color: 'text-gray-500', bgColor: 'bg-gray-50' };
 
 const CopyButton = ({ text }: { text: string }) => (
-  <button
+  <button 
     onClick={(e) => {
       e.stopPropagation();
       navigator.clipboard.writeText(text);
@@ -54,24 +50,19 @@ const CopyButton = ({ text }: { text: string }) => (
 
 const DashboardFinanceiro: React.FC = () => {
   const { authState } = useAuth();
-
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [spUsers, setSpUsers] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
   const [mainAttachments, setMainAttachments] = useState<Attachment[]>([]);
   const [secondaryAttachments, setSecondaryAttachments] = useState<Attachment[]>([]);
   const [historyLogs, setHistoryLogs] = useState<any[]>([]);
-
+  
   const [isFetchingAttachments, setIsFetchingAttachments] = useState(false);
   const [isFetchingHistory, setIsFetchingHistory] = useState(false);
-
   const [isReworking, setIsReworking] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  const pollingBusyRef = useRef(false);
-
   const [viewingCommentData, setViewingCommentData] = useState<{ id: string, graphId: string, comment: string } | null>(null);
   const [editedComment, setEditedComment] = useState('');
   const [isSavingComment, setIsSavingComment] = useState(false);
@@ -79,8 +70,10 @@ const DashboardFinanceiro: React.FC = () => {
 
   // FILTROS
   const [searchTerm, setSearchTerm] = useState('');
+  // MODIFICADO: Filtros de Data (De / Até)
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
+
   const [branchFilter, setBranchFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -88,11 +81,11 @@ const DashboardFinanceiro: React.FC = () => {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('Sem método de pagamento');
   const [rejectComment, setRejectComment] = useState('');
-
+  
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareEmail, setShareEmail] = useState('financeiro.norte@viagroup.com.br');
   const [shareCommentText, setShareCommentText] = useState('');
-
+  
   const [isProcessingAction, setIsProcessingAction] = useState(false);
 
   // Filtro interno para tab "Compartilhados"
@@ -107,7 +100,9 @@ const DashboardFinanceiro: React.FC = () => {
 
   const stripHtml = (html: string) => (html || '').replace(/<[^>]*>?/gm, '').trim();
 
-  // ✅ Campos de limpeza de compartilhamento
+  // ✅ Campos de limpeza de compartilhamento SharePoint UI Requisito
+  // Quando aprovar/reprovar, enviar "CompartilhadoComId": null e "StatusCompartilhamento": ""
+  // Aqui também limpamos os campos usados na UI (statusManual/sharedWithEmail/shareComment/sharedByName).
   const CLEAR_SHARE_FIELDS: any = {
     CompartilhadoComId: null,
     StatusCompartilhamento: "",
@@ -127,146 +122,119 @@ const DashboardFinanceiro: React.FC = () => {
   }, [requests]);
 
   const isUrgent = (req: PaymentRequest) => {
-    if (req.status === RequestStatus.FATURADO || req.statusFinal === 'Faturado') return false;
+    if (req.status === RequestStatus.FATURADO || req.statusFinal === 'Faturado') return false; // Já pago
     if (!req.paymentDate) return false;
-
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const deadline = new Date(today);
     deadline.setDate(today.getDate() + 3);
     const paymentDate = new Date(req.paymentDate);
 
-    return paymentDate <= deadline;
+    return paymentDate <= deadline; 
   };
 
-  // ✅ CORRIGIDO: APROVADO -> comum vê "Aprovado" / master vê "Em Análise"
   const resolveDisplayStatus = (r: PaymentRequest): string => {
     if (r.status === RequestStatus.ERRO_FINANCEIRO) return RequestStatus.ERRO_FINANCEIRO;
     if (r.status === RequestStatus.FATURADO) return RequestStatus.FATURADO;
 
-    // statusFinal tem prioridade
-    if (r.statusFinal && r.statusFinal.trim() !== '') return r.statusFinal;
+    if (!isMaster && r.status === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
 
-    // statusManual tem prioridade (exceto finais)
-    if (
-      r.statusManual &&
-      r.statusManual.trim() !== '' &&
-      ![RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(r.status as RequestStatus)
-    ) {
+    if (r.statusFinal && r.statusFinal.trim() !== '') return r.statusFinal;
+    
+    if (r.statusManual && r.statusManual.trim() !== '' && ![RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(r.status as RequestStatus)) {
       return r.statusManual;
     }
 
-    // REGRA principal
-    if (r.status === RequestStatus.APROVADO) {
-      return isMaster ? 'Em Análise' : 'Aprovado';
-    }
-
-    // fallback
     let fallback = r.statusEspelho && r.statusEspelho.trim() !== '' ? r.statusEspelho : r.status;
+    if (fallback === RequestStatus.APROVADO) return RequestStatus.PENDENTE;
+
     return fallback;
   };
 
-  // ✅ ATUALIZAÇÃO "DO ANEXO": polling em tempo real recarregando tudo (invisível) + merge sem piscar
+  // Carregamento de dados com Delta
   const loadData = async (silent = false) => {
     if (!authState.user || !authState.token) return;
 
-    if (!silent && requests.length === 0) setIsLoading(true);
+    if (!silent || requests.length === 0) {
+        if (!silent) setIsLoading(true);
+        try {
+          const [data, users] = await Promise.all([
+            requestService.getRequestsFiltered(authState.user, authState.token),
+            sharepointService.getAllSharePointUsers()
+          ]);
+          setSpUsers(users);
 
-    try {
-      const [dataRaw, users] = await Promise.all([
-        requestService.getRequestsFiltered(authState.user, authState.token),
-        sharepointService.getAllSharePointUsers()
-      ]);
+          // CORREÇÃO: Aplica filtro de segurança no load inicial também
+          const validData = data.filter(r => {
+             const isVisible = FINANCE_VISIBLE_STATUS.includes(r.status) || r.statusManual === 'Compartilhado';
+             if (!isVisible) return false;
 
-      setSpUsers(users);
+             if (authState.user?.role === UserRole.FINANCEIRO) {
+                const sharedEmail = stripHtml(r.sharedWithEmail || "").toLowerCase();
+                const userEmail = (authState.user.email || "").toLowerCase();
+                return sharedEmail === userEmail;
+             }
+             return true;
+          });
 
-      const data = dataRaw as PaymentRequest[];
-
-      // REGRAS DE VISIBILIDADE (iguais ao seu código base)
-      const validData: PaymentRequest[] = data.filter(r => {
-        const isVisible = FINANCE_VISIBLE_STATUS.includes(r.status) || r.statusManual === 'Compartilhado';
-        if (!isVisible) return false;
-
-        if (authState.user?.role === UserRole.FINANCEIRO) {
-          const sharedEmail = stripHtml(r.sharedWithEmail || "").toLowerCase();
-          const userEmail = (authState.user.email || "").toLowerCase();
-          return sharedEmail === userEmail;
+          setRequests(validData);
+          setLastUpdate(new Date());
+        } catch (e) {
+          console.error(e);
+        } finally {
+          if (!silent) setIsLoading(false);
         }
+    } else {
+        try {
+            const updatedItems = await sharepointService.getRequestsDelta(authState.token, lastUpdate);
+            if (updatedItems.length > 0) {
+                 const filteredDelta = updatedItems.filter(item => 
+                   FINANCE_VISIBLE_STATUS.includes(item.status) || item.statusManual === 'Compartilhado'
+                 );
 
-        return true;
-      });
+                 if (filteredDelta.length > 0) {
+                   setRequests(prev => {
+                      const map = new Map(prev.map(r => [r.id, r]));
+                      
+                      filteredDelta.forEach(item => {
+                         let shouldInclude = true;
+                         // Segurança Financeiro Comum no Delta
+                         if (authState.user?.role === UserRole.FINANCEIRO) {
+                             const sharedEmail = stripHtml(item.sharedWithEmail || "").toLowerCase();
+                             shouldInclude = sharedEmail === authState.user.email.toLowerCase();
+                         }
 
-      // Merge inteligente TIPADO (evita piscar / mantém seleção / preserva ordem)
-      setRequests((prev) => {
-        const prevMap = new Map<string, PaymentRequest>(
-          prev.map((r) => [String(r.id), r] as const)
-        );
-
-        const nextMap = new Map<string, PaymentRequest>();
-
-        for (const item of validData) {
-          const key = String(item.id);
-          const existing = prevMap.get(key);
-
-          if (existing && JSON.stringify(existing) === JSON.stringify(item)) {
-            nextMap.set(key, existing);
-          } else {
-            nextMap.set(key, item);
-          }
+                         if (shouldInclude) {
+                            map.set(item.id, item);
+                         } else {
+                            map.delete(item.id); // Remove se deixou de ser visível
+                         }
+                      });
+                      
+                      return Array.from(map.values());
+                   });
+                   setLastUpdate(new Date());
+                 }
+            }
+        } catch (e) {
+            console.warn("Delta polling falhou no Financeiro", e);
         }
-
-        const ordered: PaymentRequest[] = [];
-        for (const oldItem of prev) {
-          const kept = nextMap.get(String(oldItem.id));
-          if (kept) {
-            ordered.push(kept);
-            nextMap.delete(String(oldItem.id));
-          }
-        }
-
-        for (const [, v] of nextMap) ordered.push(v);
-
-        return ordered;
-      });
-
-      setLastUpdate(new Date());
-    } catch (e) {
-      console.error(e);
-    } finally {
-      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => { loadData(false); }, [authState.user, authState.token]);
 
-  // ✅ Polling 2s (invisível)
   useEffect(() => {
-    if (!authState.user || !authState.token) return;
-
-    const interval = setInterval(async () => {
-      if (pollingBusyRef.current) return;
-      pollingBusyRef.current = true;
-
-      try {
-        await loadData(true);
-      } finally {
-        pollingBusyRef.current = false;
-      }
-    }, 2000);
-
+    const interval = setInterval(() => { loadData(true); }, 15000); 
     return () => clearInterval(interval);
-  }, [authState.user, authState.token]);
+  }, [authState.user, authState.token, lastUpdate, requests.length]);
 
   const selectedRequest = requests.find(r => r.id === selectedId);
-
-  // ✅ NOVO: comum NÃO pode editar quando FATURADO
-  const isFaturado = selectedRequest?.status === RequestStatus.FATURADO;
-  const canEditWhenFinalized = isMaster || !isFaturado;
 
   useEffect(() => {
     setIsReworking(false);
     let isMounted = true;
-
     const fetchDetails = async () => {
       if (selectedRequest && authState.token) {
         setIsFetchingAttachments(true);
@@ -275,100 +243,86 @@ const DashboardFinanceiro: React.FC = () => {
             sharepointService.getItemAttachments(authState.token, selectedRequest.id),
             sharepointService.getSecondaryAttachments(authState.token, selectedRequest.id)
           ]);
-
           if (isMounted) {
             setMainAttachments(main || []);
             setSecondaryAttachments(secondary || []);
           }
-        } catch (e) {
+        } catch (e) { 
           console.error(e);
-        } finally {
-          if (isMounted) setIsFetchingAttachments(false);
+        } finally { 
+          if (isMounted) setIsFetchingAttachments(false); 
         }
       } else {
         setMainAttachments([]);
         setSecondaryAttachments([]);
       }
     };
-
     fetchDetails();
     return () => { isMounted = false; };
   }, [selectedId, authState.token]);
 
   const handleOpenHistory = async () => {
-    if (!selectedRequest || !authState.token) return;
-    setIsHistoryModalOpen(true);
-    setIsFetchingHistory(true);
-    try {
-      const logs = await sharepointService.getHistoryLogs(authState.token, selectedRequest.id);
-      setHistoryLogs(logs);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsFetchingHistory(false);
-    }
+     if (!selectedRequest || !authState.token) return;
+     setIsHistoryModalOpen(true);
+     setIsFetchingHistory(true);
+     try {
+       const logs = await sharepointService.getHistoryLogs(authState.token, selectedRequest.id);
+       setHistoryLogs(logs);
+     } catch (e) {
+       console.error(e);
+     } finally {
+       setIsFetchingHistory(false);
+     }
   };
 
-  // ✅ CORRIGIDO: comum -> APROVADO / master -> FATURADO
   const handleApprove = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
-
-    // ✅ trava: comum não altera se já estiver FATURADO
-    if (selectedRequest.status === RequestStatus.FATURADO && !isMaster) {
-      showToast('Solicitação faturada: somente o Master pode alterar.', 'error');
-      return;
-    }
-
     try {
-      let newStatus: RequestStatus = RequestStatus.FATURADO;
+      let newStatus = RequestStatus.FATURADO;
       let statusFinalValue = 'Finalizado';
       let logComment = 'Faturamento concluído pelo Master.';
 
-      // Financeiro comum aprova -> APROVADO (master verá "Em Análise" pela regra de display)
-      if (authState.user.role === UserRole.FINANCEIRO && !isMaster) {
-        newStatus = RequestStatus.APROVADO;
-        statusFinalValue = '';
-        logComment = 'Aprovado pelo Financeiro (regional). Aguardando análise do Master.';
-      }
-
-      // Master aprova -> FATURADO
-      if (isMaster) {
-        newStatus = RequestStatus.FATURADO;
-        statusFinalValue = 'Finalizado';
-        logComment = 'Faturamento concluído pelo Master.';
+      if (authState.user.role === UserRole.FINANCEIRO) {
+         newStatus = RequestStatus.LANCADO;
+         statusFinalValue = 'Lançado Regional';
+         logComment = 'Lançamento realizado pelo regional. Aguardando finalização Master.';
+      } else if (isMaster) {
+         newStatus = RequestStatus.FATURADO;
+         statusFinalValue = 'Finalizado';
+         logComment = 'Faturamento concluído pelo Master.';
       }
 
       setSelectedId(null);
       setIsProcessingAction(true);
 
+      // Requisito: limpar campos de compartilhamento ao aprovar
       const payload: any = {
         status: newStatus,
         statusFinal: statusFinalValue,
         approverObservation: logComment,
+        approverFinanceiro: authState.user.name,
         errorObservation: '',
         ...CLEAR_SHARE_FIELDS,
         ...(newStatus === RequestStatus.FATURADO ? { finalizedAt: new Date().toISOString() } : {})
       };
 
       const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
-
+      
       if (result) {
-        setRequests(prev => prev.map(r => r.id === selectedRequest.id ? {
-          ...r,
-          status: newStatus,
-          statusFinal: statusFinalValue,
-          approverObservation: logComment,
+        setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
+          ...r, 
+          status: newStatus, 
+          statusFinal: statusFinalValue, 
+          approverObservation: logComment, 
+          approverFinanceiro: authState.user.name,
           errorObservation: '',
-          ...CLEAR_SHARE_FIELDS,
-          ...(newStatus === RequestStatus.FATURADO ? { finalizedAt: new Date().toISOString() } : {})
+          ...CLEAR_SHARE_FIELDS 
         } : r));
-
         await sharepointService.addHistoryLog(
-          authState.token,
-          parseInt(selectedRequest.id),
+          authState.token, 
+          parseInt(selectedRequest.id), 
           { ATUALIZACAO: newStatus, OBSERVACAO: logComment, MSG_OBSERVACAO: logComment, usuario_logado: authState.user.name }
         );
-
         showToast('Solicitação Processada', 'success');
         loadData(true);
       } else {
@@ -386,21 +340,17 @@ const DashboardFinanceiro: React.FC = () => {
   const handleConfirmReject = async () => {
     if (!selectedRequest || !authState.token || !authState.user) return;
 
-    // ✅ trava: comum não altera se já estiver FATURADO
-    if (selectedRequest.status === RequestStatus.FATURADO && !isMaster) {
-      showToast('Solicitação faturada: somente o Master pode alterar.', 'error');
-      return;
-    }
-
     const targetStatus = RequestStatus.ERRO_FINANCEIRO;
     const logObs = `Reprovado Financeiro: ${rejectReason}`;
 
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? {
-      ...r,
-      status: targetStatus,
-      errorObservation: rejectReason,
-      approverObservation: rejectComment,
-      ...CLEAR_SHARE_FIELDS
+    // Requisito: limpar campos de compartilhamento ao reprovar
+    // otimista no estado
+    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { 
+        ...r, 
+        status: targetStatus, 
+        errorObservation: rejectReason, 
+        approverObservation: rejectComment,
+        ...CLEAR_SHARE_FIELDS
     } : r));
 
     setIsRejectModalOpen(false);
@@ -408,9 +358,10 @@ const DashboardFinanceiro: React.FC = () => {
     setIsProcessingAction(true);
 
     try {
-      const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, {
-        status: targetStatus,
-        errorObservation: rejectReason,
+      // Requisito: enviar os campos de limpeza ao SharePoint também
+      const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, { 
+        status: targetStatus, 
+        errorObservation: rejectReason, 
         approverObservation: rejectComment,
         ...CLEAR_SHARE_FIELDS
       });
@@ -418,9 +369,9 @@ const DashboardFinanceiro: React.FC = () => {
       if (result) {
         showToast('Solicitação devolvida!', 'success');
         await sharepointService.addHistoryLog(
-          authState.token,
-          parseInt(selectedRequest.id),
-          { ATUALIZACAO: targetStatus, OBSERVACAO: logObs, MSG_OBSERVACAO: rejectComment, usuario_logado: authState.user.name }
+            authState.token, 
+            parseInt(selectedRequest.id), 
+            { ATUALIZACAO: targetStatus, OBSERVACAO: logObs, MSG_OBSERVACAO: rejectComment, usuario_logado: authState.user.name }
         );
         loadData(true);
       } else {
@@ -445,8 +396,8 @@ const DashboardFinanceiro: React.FC = () => {
 
     const userExists = spUsers.find(u => u.EmailUsuario.toLowerCase() === shareEmail.toLowerCase());
     if (!userExists) {
-      alert("Erro: Usuário/Canal não encontrado na base autorizada.");
-      return;
+        alert("Erro: Usuário/Canal não encontrado na base autorizada.");
+        return;
     }
 
     const comment = shareCommentText.trim();
@@ -464,32 +415,31 @@ const DashboardFinanceiro: React.FC = () => {
 
     try {
       const result = await sharepointService.updateRequest(authState.token, selectedRequest.graphId, sharePayload);
-
+      
       if (result) {
+        // TAREFA: Atualização Otimista do Estado Local
         setRequests(prev => prev.map(r => {
           if (r.id === selectedRequest.id) {
-            return {
-              ...r,
-              statusManual: 'Compartilhado',
-              sharedWithEmail: shareEmail,
-              shareComment: comment,
-              sharedByName: authState.user?.name
-            };
+             return { ...r, ...{
+                statusManual: 'Compartilhado',
+                sharedWithEmail: shareEmail,
+                shareComment: comment,
+                sharedByName: authState.user?.name
+             }};
           }
           return r;
         }));
 
         showToast('Compartilhado com sucesso!', 'success');
-
         await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), {
-          ATUALIZACAO: 'Compartilhado',
-          OBSERVACAO: `Direcionado para ${shareEmail}`,
-          MSG_OBSERVACAO: comment,
-          usuario_logado: authState.user.name
+           ATUALIZACAO: 'Compartilhado', 
+           OBSERVACAO: `Direcionado para ${shareEmail}`, 
+           MSG_OBSERVACAO: comment, 
+           usuario_logado: authState.user.name 
         });
-
+        
         setShareCommentText('');
-        loadData(true);
+        loadData(true); // mantido para garantir integridade total em segundo plano
         loadData(true);
       } else {
         showToast('Erro ao compartilhar.', 'error');
@@ -528,8 +478,8 @@ const DashboardFinanceiro: React.FC = () => {
     if (!viewingCommentData || !authState.token) return;
     if (!window.confirm("Apagar observação?")) return;
     setIsSavingComment(true);
-
     try {
+      // ...
       const result = await sharepointService.updateRequest(authState.token, viewingCommentData.graphId, { shareComment: "" });
       if (result) {
         showToast('Removido!', 'success');
@@ -544,84 +494,73 @@ const DashboardFinanceiro: React.FC = () => {
   };
 
   const applySharedFilter = (reqs: PaymentRequest[]) => {
-    if (sharedStatusFilter === 'TODOS') {
-      return reqs.filter(r => FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) && r.statusManual === 'Compartilhado');
-    }
-    return reqs.filter(r =>
-      FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) &&
-      r.statusManual === 'Compartilhado' &&
-      r.status === RequestStatus.APROVADO &&
-      resolveDisplayStatus(r) === 'Pendente'
-    );
+     if (sharedStatusFilter === 'TODOS') {
+        return reqs.filter(r => FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) && r.statusManual === 'Compartilhado');
+     }
+     return reqs.filter(r => 
+        FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) && 
+        r.statusManual === 'Compartilhado' && 
+        r.status === RequestStatus.APROVADO &&
+        resolveDisplayStatus(r) === 'Pendente' // Exibe apenas os que ainda não foram assumidos
+     );
   };
 
-  const northShared = useMemo(
-    () => applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || "").toLowerCase() === 'financeiro.norte@viagroup.com.br')),
-    [requests, sharedStatusFilter]
-  );
-
-  const southShared = useMemo(
-    () => applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || "").toLowerCase() === 'financeiro.sul@viagroup.com.br')),
-    [requests, sharedStatusFilter]
-  );
+  const northShared = useMemo(() => applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || "").toLowerCase() === 'financeiro.norte@viagroup.com.br')), [requests, sharedStatusFilter]);
+  const southShared = useMemo(() => applySharedFilter(requests.filter(r => stripHtml(r.sharedWithEmail || "").toLowerCase() === 'financeiro.sul@viagroup.com.br')), [requests, sharedStatusFilter]);
 
   const filteredRequests = useMemo(() => {
     return requests.filter(r => {
-      const matchesSearch =
-        r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.id.toString().includes(searchTerm);
-
+      const matchesSearch = r.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            r.id.toString().includes(searchTerm);
       const matchesBranch = branchFilter === '' || r.branch === branchFilter;
-
+      
       let matchesStatus = true;
       if (statusFilter !== '') {
-        const currentDisplay = resolveDisplayStatus(r);
-        if (statusFilter === 'Pendente') {
-          matchesStatus = (currentDisplay === 'Pendente');
-        } else {
-          matchesStatus = currentDisplay === statusFilter;
-        }
+         const currentDisplay = resolveDisplayStatus(r);
+         if (matchesStatus) {
+            if (statusFilter === 'Pendente') matchesStatus = (r.status === RequestStatus.APROVADO || currentDisplay === 'Pendente');
+            else matchesStatus = currentDisplay === statusFilter;
+         }
       }
 
       const isAllowed = FINANCE_VISIBLE_STATUS.includes(r.status as RequestStatus) || r.statusManual === 'Compartilhado';
-
+      
+      // MODIFICADO: Filtro por Range de Data
       let matchesDate = true;
       const itemDate = new Date(r.createdAt).toISOString().split('T')[0];
 
       if (startDateFilter && endDateFilter) {
-        matchesDate = itemDate >= startDateFilter && itemDate <= endDateFilter;
+          matchesDate = itemDate >= startDateFilter && itemDate <= endDateFilter;
       } else if (startDateFilter) {
-        matchesDate = itemDate >= startDateFilter;
+          matchesDate = itemDate >= startDateFilter;
       } else if (endDateFilter) {
-        matchesDate = itemDate <= endDateFilter;
+          matchesDate = itemDate <= endDateFilter;
       }
 
       return matchesSearch && matchesBranch && matchesStatus && isAllowed && matchesDate;
     }).sort((a, b) => {
-      const urgentA = isUrgent(a);
-      const urgentB = isUrgent(b);
-      if (urgentA && !urgentB) return -1;
-      if (!urgentA && urgentB) return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        const urgentA = isUrgent(a);
+        const urgentB = isUrgent(b);
+        if (urgentA && !urgentB) return -1;
+        if (!urgentA && urgentB) return 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [requests, searchTerm, branchFilter, statusFilter, startDateFilter, endDateFilter, isMaster]);
+  }, [requests, searchTerm, branchFilter, statusFilter, isMaster, startDateFilter, endDateFilter]);
 
-  const isFinalized =
-    selectedRequest &&
-    [RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(selectedRequest.status);
+  const isFinalized = selectedRequest && [RequestStatus.FATURADO, RequestStatus.ERRO_FINANCEIRO].includes(selectedRequest.status);
 
   return (
     <div className="flex flex-col h-full gap-4 overflow-hidden relative">
       {toast && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[300] animate-in slide-in-from-top duration-300">
-          <div className={`flex items-center space-x-3 px-8 py-4 rounded-[2rem] shadow-2xl border ${
-            toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' :
-            toast.type === 'error' ? 'bg-red-600 border-red-500 text-white' :
-            'bg-slate-800 border-slate-700 text-white'
-          }`}>
-            {toast.type === 'success' ? <CheckCircle size={20}/> : toast.type === 'error' ? <XCircle size={20}/> : <Info size={20}/>}
-            <span className="font-black uppercase italic tracking-tight text-sm">{toast.msg}</span>
-          </div>
+           <div className={`flex items-center space-x-3 px-8 py-4 rounded-[2rem] shadow-2xl border ${
+              toast.type === 'success' ? 'bg-green-600 border-green-500 text-white' : 
+              toast.type === 'error' ? 'bg-red-600 border-red-500 text-white' : 
+              'bg-slate-800 border-slate-700 text-white'
+           }`}>
+              {toast.type === 'success' ? <CheckCircle size={20}/> : toast.type === 'error' ? <XCircle size={20}/> : <Info size={20}/>}
+              <span className="font-black uppercase italic tracking-tight text-sm">{toast.msg}</span>
+           </div>
         </div>
       )}
 
@@ -630,67 +569,33 @@ const DashboardFinanceiro: React.FC = () => {
         <div className="flex flex-wrap items-center gap-6">
           <div className="relative w-64 min-w-[200px]">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Buscar..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+            <input type="text" placeholder="Buscar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500" />
           </div>
-
+          
           <div className="flex items-center gap-5">
+            {/* MODIFICADO: Inputs de Data Inicio e Fim */}
             <div className="flex flex-col">
-              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center">
-                <Calendar size={10} className="mr-1"/> De
-              </label>
-              <input
-                type="date"
-                value={startDateFilter}
-                onChange={e => setStartDateFilter(e.target.value)}
-                className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none"
-              />
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> De</label>
+              <input type="date" value={startDateFilter} onChange={e => setStartDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
+            </div>
+            <div className="flex flex-col">
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Calendar size={10} className="mr-1"/> Até</label>
+              <input type="date" value={endDateFilter} onChange={e => setEndDateFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none" />
             </div>
 
             <div className="flex flex-col">
-              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center">
-                <Calendar size={10} className="mr-1"/> Até
-              </label>
-              <input
-                type="date"
-                value={endDateFilter}
-                onChange={e => setEndDateFilter(e.target.value)}
-                className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center">
-                <MapPin size={10} className="mr-1"/> Filial
-              </label>
-              <select
-                value={branchFilter}
-                onChange={e => setBranchFilter(e.target.value)}
-                className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]"
-              >
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><MapPin size={10} className="mr-1"/> Filial</label>
+              <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
                 <option value="">Todas</option>
                 {availableBranches.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
-
             <div className="flex flex-col">
-              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center">
-                <Filter size={10} className="mr-1"/> Status
-              </label>
-              <select
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]"
-              >
+              <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center"><Filter size={10} className="mr-1"/> Status</label>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-3 py-1.5 bg-gray-50 border border-gray-100 rounded-lg text-[10px] font-bold outline-none min-w-[140px]">
                 <option value="">Todos</option>
                 <option value="Pendente">Pendente</option>
-                <option value="Em Análise">Em Análise</option>
-                <option value="Aprovado">Aprovado</option>
+                <option value="Análise">Em Análise</option>
                 <option value="Faturado">Faturado</option>
                 <option value="Erro - Financeiro">Erro - Financeiro</option>
                 <option value="Compartilhado">Compartilhado</option>
@@ -701,121 +606,63 @@ const DashboardFinanceiro: React.FC = () => {
 
         {selectedRequest && (
           <div className="flex items-center space-x-2 animate-in slide-in-from-right duration-300">
-            <button
-              onClick={handleOpenHistory}
-              className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200"
-              title="Histórico"
-            >
-              <History size={18} />
-            </button>
+            <button onClick={handleOpenHistory} className="p-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all border border-gray-200" title="Histórico"><History size={18}/></button>
 
             {isMaster && (
-              <button
-                onClick={() => setIsShareModalOpen(true)}
-                className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[10px] uppercase border border-indigo-100 flex items-center hover:bg-indigo-100 transition-all shadow-sm"
-              >
-                <Share2 size={16} className="mr-2" /> Divisão Interna
-              </button>
+                <button onClick={() => setIsShareModalOpen(true)} className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-[10px] uppercase border border-indigo-100 flex items-center hover:bg-indigo-100 transition-all shadow-sm"><Share2 size={16} className="mr-2" /> Divisão Regional</button>
             )}
 
             {isFinalized && !isReworking ? (
-              <button
-                onClick={() => setIsReworking(true)}
-                disabled={!canEditWhenFinalized}
-                className={`px-4 py-2 bg-amber-50 text-amber-700 font-black text-[10px] uppercase rounded-xl flex items-center border border-amber-100 shadow-sm transition-all ${
-                  !canEditWhenFinalized ? 'opacity-40 cursor-not-allowed' : 'hover:bg-amber-100'
-                }`}
-                title={!canEditWhenFinalized ? 'Somente o Financeiro Master pode alterar uma solicitação Faturada.' : 'Editar Ações'}
-              >
-                <Edit3 size={16} className="mr-2" /> Editar Ações
-              </button>
+              <button onClick={() => setIsReworking(true)} className="px-4 py-2 bg-amber-50 text-amber-700 font-black text-[10px] uppercase rounded-xl flex items-center border border-amber-100 shadow-sm hover:bg-amber-100 transition-all"><Edit3 size={16} className="mr-2" /> Editar Ações</button>
             ) : (
               <>
-                <button
-                  onClick={() => setIsRejectModalOpen(true)}
-                  className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center"
-                >
-                  <XCircle size={16} className="mr-2" /> Reprovar
-                </button>
-
-                <button
-                  onClick={handleApprove}
-                  className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95"
-                >
-                  {isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />}
-                  {isMaster ? 'Concluir Faturamento' : 'Aprovar'}
-                </button>
-
-                {isReworking && (
-                  <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600">
-                    <X size={18} />
-                  </button>
-                )}
+                 <button onClick={() => setIsRejectModalOpen(true)} className="px-4 py-2 text-red-600 font-black text-[10px] uppercase border border-red-100 rounded-xl hover:bg-red-50 flex items-center"><XCircle size={16} className="mr-2" /> Reprovar</button>
+                 <button onClick={handleApprove} className="px-6 py-2 bg-green-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-green-700 flex items-center transition-all active:scale-95">{isProcessingAction ? <Loader2 size={16} className="animate-spin mr-2" /> : <CheckCircle size={16} className="mr-2" />} {isMaster ? 'Concluir Faturamento' : 'Validar Liquidação'}</button>
+                 {isReworking && <button onClick={() => setIsReworking(false)} className="p-2 text-gray-400 hover:text-gray-600"><X size={18}/></button>}
               </>
             )}
           </div>
         )}
       </div>
 
-      {/* ======= RESTANTE DO SEU JSX (LISTA + PAINEL + MODAIS) =======
-          Mantém EXATAMENTE igual ao seu arquivo atual.
-          As únicas mudanças necessárias para a regra pedida já foram aplicadas acima.
-      */}
       <div className="flex flex-1 gap-6 overflow-hidden">
         {/* Lista Lateral */}
         <div className="w-96 flex flex-col bg-white border rounded-[2rem] overflow-hidden shadow-sm">
-          <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center">
-            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">
-              Fluxo Financeiro ({filteredRequests.length})
-            </span>
-          </div>
-
+          <div className="p-4 border-b bg-gray-50/50 flex justify-between items-center"><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest tracking-tighter">Fluxo Financeiro ({filteredRequests.length})</span></div>
           <div className="flex-1 overflow-y-auto divide-y divide-gray-50 custom-scrollbar">
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center h-40">
-                <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mb-2" />
-                <span className="text-[10px] text-gray-400 font-black uppercase tracking-tighter italic">Sincronizando...</span>
-              </div>
+               <div className="flex flex-col items-center justify-center h-40">
+                  <Loader2 className="w-6 h-6 text-indigo-600 animate-spin mb-2" />
+                  <span className="text-[10px] text-gray-400 font-black uppercase tracking-tighter italic">Sincronizando...</span>
+               </div>
             ) : (
-              filteredRequests.slice(0, 100).map(r => {
-                const dStatus = resolveDisplayStatus(r);
-                const urgent = isUrgent(r);
-                const hasComment = r.shareComment && r.shareComment.trim() !== '';
-                const isSharedRequest =
-                  dStatus === 'Compartilhado' ||
-                  r.status === RequestStatus.COMPARTILHADO ||
-                  r.statusManual === 'Compartilhado' ||
-                  (stripHtml(r.sharedWithEmail || "").trim() !== "");
+               filteredRequests.slice(0, 100).map(r => {
+                 const dStatus = resolveDisplayStatus(r);
+                 const urgent = isUrgent(r);
+                 const hasComment = r.shareComment && r.shareComment.trim() !== '';
+                 const isSharedRequest = dStatus === 'Compartilhado' || r.status === RequestStatus.COMPARTILHADO || r.statusManual === 'Compartilhado' || (stripHtml(r.sharedWithEmail || "").trim() !== "");
 
-                return (
-                  <div
-                    key={r.id}
-                    onClick={() => setSelectedId(r.id)}
-                    className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}
-                  >
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
-                      <div className="flex items-center space-x-2">
-                        {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
-                        {isSharedRequest && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setViewingCommentData({ id: r.id, graphId: r.graphId, comment: r.shareComment || '' });
-                              setEditedComment(r.shareComment || '');
-                            }}
-                            className={`p-1.5 rounded-lg transition-all hover:scale-110 flex items-center ${hasComment ? 'text-purple-600 bg-purple-50 shadow-sm' : 'text-gray-300 hover:text-indigo-400'}`}
-                          >
-                            <MessageSquare size={14} strokeWidth={hasComment ? 2.5 : 2} />
-                          </button>
-                        )}
-                        <Badge status={dStatus} className="scale-90 origin-right" />
-                      </div>
-                    </div>
-                    <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
-                  </div>
-                );
-              })
+                 return (
+                   <div key={r.id} onClick={() => setSelectedId(r.id)} className={`p-4 cursor-pointer transition-all ${selectedId === r.id ? 'bg-indigo-50 border-l-8 border-indigo-600 shadow-inner' : 'hover:bg-gray-50'} ${urgent ? 'border-r-4 border-red-500' : ''}`}>
+                     <div className="flex justify-between items-center mb-2">
+                        <span className="text-[10px] font-black text-gray-400">#{r.id}</span>
+                        <div className="flex items-center space-x-2">
+                           {urgent && <AlertTriangle size={14} className="text-red-500 animate-pulse" />}
+                           {isSharedRequest && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setViewingCommentData({ id: r.id, graphId: r.graphId, comment: r.shareComment || '' }); setEditedComment(r.shareComment || ''); }}
+                                className={`p-1.5 rounded-lg transition-all hover:scale-110 flex items-center ${hasComment ? 'text-purple-600 bg-purple-50 shadow-sm' : 'text-gray-300 hover:text-indigo-400'}`}
+                              >
+                                <MessageSquare size={14} strokeWidth={hasComment ? 2.5 : 2} />
+                              </button>
+                           )}
+                           <Badge status={dStatus} className="scale-90 origin-right" />
+                        </div>
+                     </div>
+                     <p className="font-black text-gray-900 text-sm uppercase truncate leading-tight">{r.title}</p>
+                   </div>
+                 );
+               })
             )}
           </div>
         </div>
@@ -828,133 +675,64 @@ const DashboardFinanceiro: React.FC = () => {
                 <div className="flex items-center space-x-3 mb-4"><Badge status={resolveDisplayStatus(selectedRequest)} /></div>
                 <h2 className="text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-4">{selectedRequest.title}</h2>
 
+                {(selectedRequest.approverFiscal || selectedRequest.approverFinanceiro) && (
+                  <div className="mt-2 mb-4 flex flex-wrap gap-x-6 gap-y-1">
+                    {selectedRequest.approverFiscal && (
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Aprovador Fiscal: <span className="text-gray-900">{selectedRequest.approverFiscal}</span></p>
+                    )}
+                    {selectedRequest.approverFinanceiro && (
+                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Aprovador Financeiro: <span className="text-gray-900">{selectedRequest.approverFinanceiro}</span></p>
+                    )}
+                  </div>
+                )}
                 <div className="flex space-x-6">
-                  <div className="flex items-center">
-                    <p className="text-sm font-black text-indigo-600 uppercase italic">NF: <span className="text-slate-900">{selectedRequest.invoiceNumber}</span></p>
-                    <CopyButton text={selectedRequest.invoiceNumber} />
-                  </div>
-
-                  <div className="flex items-center flex-1 min-w-0">
-                    <p className="text-sm font-black text-indigo-600 uppercase italic whitespace-nowrap mr-2">Pedido:</p>
-                    <div className="flex items-center min-w-0">
-                      <span className="text-slate-900 font-bold truncate" title={selectedRequest.orderNumber}>
-                        {selectedRequest.orderNumber && selectedRequest.orderNumber.length > 50
-                          ? `${selectedRequest.orderNumber.substring(0, 50)}...`
-                          : (selectedRequest.orderNumber || '---')}
-                      </span>
-                      {selectedRequest.orderNumber && <CopyButton text={selectedRequest.orderNumber} />}
-                    </div>
-                  </div>
+                   <div className="flex items-center"><p className="text-sm font-black text-indigo-600 uppercase italic">NF: <span className="text-slate-900">{selectedRequest.invoiceNumber}</span></p><CopyButton text={selectedRequest.invoiceNumber} /></div>
+                   {/* MODIFICADO: Bloco Pedidos - Sem scroll, com limite e reticências */}
+                   <div className="flex items-center flex-1 min-w-0">
+                      <p className="text-sm font-black text-indigo-600 uppercase italic whitespace-nowrap mr-2">Pedido:</p>
+                      <div className="flex items-center min-w-0">
+                         <span className="text-slate-900 font-bold truncate" title={selectedRequest.orderNumber}>
+                             {selectedRequest.orderNumber && selectedRequest.orderNumber.length > 50 
+                                ? `${selectedRequest.orderNumber.substring(0, 50)}...` 
+                                : (selectedRequest.orderNumber || '---')}
+                         </span>
+                         {selectedRequest.orderNumber && <CopyButton text={selectedRequest.orderNumber} />}
+                      </div>
+                   </div>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                   <section className="bg-indigo-50/30 p-10 rounded-[3rem] border border-indigo-50 shadow-inner">
-                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center">
-                      <Landmark size={14} className="mr-2"/> Detalhes de Pagamento
-                    </h3>
-
+                    <h3 className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-8 border-b border-indigo-100 pb-3 italic flex items-center"><Landmark size={14} className="mr-2"/> Detalhes de Pagamento</h3>
                     <div className="space-y-6">
-                      <div>
-                        <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span>
-                        <div className="flex items-center">
-                          <p className="text-xl font-black text-slate-900 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p>
-                          <CopyButton text={selectedRequest.payee || ''} />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Vencimento</span>
-                          <p className="text-sm font-black text-indigo-700 uppercase italic">
-                            {selectedRequest.paymentDate ? new Date(selectedRequest.paymentDate).toLocaleDateString() : '-'}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span>
-                          <p className="text-sm font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p>
-                        </div>
-                      </div>
-
-                      {selectedRequest.paymentMethod === 'PIX' && (
-                        <div className="pt-2">
-                          <span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span>
-                          <div className="flex items-center">
-                            <p className="text-xs font-bold text-slate-800 flex items-center">
-                              <Smartphone size={14} className="mr-1 text-indigo-400" /> {selectedRequest.pixKey}
-                            </p>
-                            <CopyButton text={selectedRequest.pixKey || ''} />
-                          </div>
-                        </div>
-                      )}
-
-                      {['TED', 'DEPOSITO'].includes(selectedRequest.paymentMethod) && (
-                        <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-indigo-100/50">
-                          <div className="flex items-center mb-1">
-                            <p>BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p>
-                            <CopyButton text={selectedRequest.bank || ''} />
-                          </div>
-                          <div className="flex items-center">
-                            <p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p>
-                            <CopyButton text={`${selectedRequest.agency} ${selectedRequest.account}`} />
-                          </div>
-                        </div>
-                      )}
+                       <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Favorecido / Razão Social</span><div className="flex items-center"><p className="text-xl font-black text-slate-900 break-words leading-tight uppercase">{selectedRequest.payee || '---'}</p><CopyButton text={selectedRequest.payee || ''} /></div></div>
+                       <div className="grid grid-cols-2 gap-4">
+                          <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Vencimento</span><p className="text-sm font-black text-indigo-700 uppercase italic">{new Date(selectedRequest.paymentDate).toLocaleDateString()}</p></div>
+                          <div><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Método</span><p className="text-sm font-black text-indigo-700 uppercase italic">{selectedRequest.paymentMethod}</p></div>
+                       </div>
+                       {selectedRequest.paymentMethod === 'PIX' && (
+                         <div className="pt-2"><span className="text-[10px] font-black text-indigo-300 uppercase block mb-1">Chave PIX</span><div className="flex items-center"><p className="text-xs font-bold text-slate-800 flex items-center"><Smartphone size={14} className="mr-1 text-indigo-400" /> {selectedRequest.pixKey}</p><CopyButton text={selectedRequest.pixKey || ''} /></div></div>
+                       )}
+                       {['TED', 'DEPOSITO'].includes(selectedRequest.paymentMethod) && (
+                         <div className="pt-2 text-[10px] font-bold text-slate-600 bg-white/50 p-4 rounded-2xl border border-indigo-100/50"><div className="flex items-center mb-1"><p>BANCO: <span className="text-indigo-600">{selectedRequest.bank}</span></p><CopyButton text={selectedRequest.bank || ''} /></div><div className="flex items-center"><p>AGÊNCIA/CONTA: <span className="text-indigo-600">{selectedRequest.agency} / {selectedRequest.account}</span></p><CopyButton text={`${selectedRequest.agency} ${selectedRequest.account}`} /></div></div>
+                       )}
                     </div>
                   </section>
 
                   <section className="space-y-6">
                     <div className="bg-white p-8 rounded-[2.5rem] border-2 border-blue-50 shadow-sm space-y-6">
-                      <div>
-                        <h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2">
-                          <FileText size={14} className="mr-2"/> Nota Fiscal (NF)
-                        </h3>
-                        <div className="space-y-2">
-                          {mainAttachments.map(att => (
-                            <div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100">
-                              <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                              <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform">
-                                <ExternalLink size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2">
-                          <Paperclip size={14} className="mr-2"/> Boletos / Outros
-                        </h3>
-                        <div className="space-y-2">
-                          {secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (
-                            <div key={att.id} className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between transition-all hover:bg-indigo-100/50 min-w-0">
-                              <span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span>
-                              <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform">
-                                <ExternalLink size={14} />
-                              </button>
-                            </div>
-                          )) : (
-                            <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>
-                          )}
-                        </div>
-                      </div>
+                       <div><h3 className="text-[10px] font-black text-blue-600 uppercase italic mb-3 flex items-center border-b border-blue-50 pb-2"><FileText size={14} className="mr-2"/> Nota Fiscal (NF)</h3><div className="space-y-2">{mainAttachments.map(att => (<div key={att.id} className="flex justify-between items-center p-3 bg-blue-50/50 rounded-xl border border-blue-100"><span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span><button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14} /></button></div>))}</div></div>
+                       <div><h3 className="text-[10px] font-black text-indigo-600 uppercase italic mb-3 flex items-center border-b border-indigo-50 pb-2"><Paperclip size={14} className="mr-2"/> Boletos / Outros</h3><div className="space-y-2">{secondaryAttachments.length > 0 ? secondaryAttachments.map(att => (<div key={att.id} className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex items-center justify-between transition-all hover:bg-indigo-100/50 min-w-0"><span className="text-[10px] font-bold text-slate-700 truncate mr-2">{att.fileName}</span> <button onClick={() => window.open(att.storageUrl, '_blank')} className="text-blue-600 hover:scale-110 transition-transform"><ExternalLink size={14} /></button></div>)) : <p className="text-[9px] text-gray-400 font-bold uppercase italic text-center py-2">Sem boletos auxiliares</p>}</div></div>
                     </div>
-
-                    <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner">
-                      <span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center">
-                        <MessageSquare size={12} className="mr-2"/> Observação Solicitante
-                      </span>
-                      <p className="text-sm font-medium text-slate-600 italic">{selectedRequest.generalObservation || 'Sem obs.'}</p>
-                    </div>
+                    <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 shadow-inner"><span className="text-[9px] font-black text-gray-400 uppercase block mb-2 italic flex items-center"><MessageSquare size={12} className="mr-2"/> Observação Solicitante</span><p className="text-sm font-medium text-slate-600 italic">{selectedRequest.generalObservation || 'Sem obs.'}</p></div>
                   </section>
                 </div>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center opacity-10">
-              <DollarSign size={100} />
-            </div>
+             <div className="flex-1 flex flex-col items-center justify-center opacity-10"><DollarSign size={100} /></div>
           )}
         </div>
       </div>
@@ -962,191 +740,110 @@ const DashboardFinanceiro: React.FC = () => {
       {/* Modal de Reprovação */}
       {isRejectModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
-            <div className="bg-red-600 p-6 text-white flex justify-between items-center">
-              <h3 className="text-lg font-black uppercase italic tracking-tight">Reprovar Financeiro</h3>
-              <button onClick={() => setIsRejectModalOpen(false)}><X size={20}/></button>
-            </div>
-            <div className="p-8 space-y-6">
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Motivo</label>
-                <select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-slate-800 outline-none">
-                  <option value="Sem método de pagamento">Sem método de pagamento</option>
-                  <option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option>
-                  <option value="Outros">Outros</option>
-                </select>
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsRejectModalOpen(false)}></div>
+           <div className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
+              <div className="bg-red-600 p-6 text-white flex justify-between items-center"><h3 className="text-lg font-black uppercase italic tracking-tight">Reprovar Financeiro</h3><button onClick={() => setIsRejectModalOpen(false)}><X size={20}/></button></div>
+              <div className="p-8 space-y-6">
+                 <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Motivo</label><select value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-slate-800 outline-none"><option value="Sem método de pagamento">Sem método de pagamento</option><option value="Nota fiscal não localizada para faturamento">Nota fiscal não localizada para faturamento</option><option value="Outros">Outros</option></select></div>
+                 <div><label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Comentários</label><textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-slate-800 outline-none resize-none" /></div>
+                 <div className="flex gap-4 pt-4"><button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-gray-400 font-bold hover:bg-gray-100 rounded-xl">Cancelar</button><button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700">Confirmar Reprovação</button></div>
               </div>
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Comentários</label>
-                <textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} className="w-full h-32 p-4 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-slate-800 outline-none resize-none" />
-              </div>
-              <div className="flex gap-4 pt-4">
-                <button onClick={() => setIsRejectModalOpen(false)} className="flex-1 py-4 text-gray-400 font-bold hover:bg-gray-100 rounded-xl">Cancelar</button>
-                <button onClick={handleConfirmReject} className="flex-[2] py-4 bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase shadow-xl hover:bg-red-700">Confirmar Reprovação</button>
-              </div>
-            </div>
-          </div>
+           </div>
         </div>
       )}
 
       {/* Modal de Compartilhamento Regional */}
       {isShareModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            <div className="bg-indigo-600 p-6 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center space-x-3 text-white">
-                <Share2 size={24}/> <h3 className="text-lg font-black uppercase italic tracking-tight">Divisão Interna</h3>
-              </div>
-              <button onClick={() => setIsShareModalOpen(false)}><X size={20}/></button>
-            </div>
-
-            <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
-              <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 space-y-4">
-                <label className="text-[10px] font-black text-indigo-400 uppercase block text-center tracking-widest">Configurações de Compartilhamento</label>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Regional de Destino</label>
-                    <select value={shareEmail} onChange={e => setShareEmail(e.target.value)} className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500">
-                      <option value="financeiro.sul@viagroup.com.br">financeiro.sul@viagroup.com.br</option>
-                      <option value="financeiro.norte@viagroup.com.br">financeiro.norte@viagroup.com.br</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Observação / Comentário</label>
-                    <textarea value={shareCommentText} onChange={e => setShareCommentText(e.target.value)} placeholder="Ex: Instruções para processamento regional..." className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 h-[52px] resize-none" />
-                  </div>
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
+           <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
+             <div className="bg-indigo-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><Share2 size={24}/> <h3 className="text-lg font-black uppercase italic tracking-tight">Divisão Regional</h3></div><button onClick={() => setIsShareModalOpen(false)}><X size={20}/></button></div>
+             <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
+                
+                <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100 space-y-4">
+                   <label className="text-[10px] font-black text-indigo-400 uppercase block text-center tracking-widest">Configurações de Compartilhamento</label>
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div><label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Regional de Destino</label><select value={shareEmail} onChange={e => setShareEmail(e.target.value)} className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500"><option value="financeiro.sul@viagroup.com.br">financeiro.sul@viagroup.com.br</option><option value="financeiro.norte@viagroup.com.br">financeiro.norte@viagroup.com.br</option></select></div>
+                      <div><label className="text-[9px] font-black text-indigo-300 uppercase block mb-1">Observação / Comentário</label><textarea value={shareCommentText} onChange={e => setShareCommentText(e.target.value)} placeholder="Ex: Instruções para processamento regional..." className="w-full p-4 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 h-[52px] resize-none" /></div>
+                   </div>
+                   <div className="flex justify-center pt-2"><button onClick={handleShare} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center transition-all active:scale-95"><Globe size={16} className="mr-2" /> Confirmar Compartilhamento</button></div>
                 </div>
 
-                <div className="flex justify-center pt-2">
-                  <button onClick={handleShare} className="px-10 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase shadow-lg hover:bg-indigo-700 flex items-center transition-all active:scale-95">
-                    <Globe size={16} className="mr-2" /> Confirmar Compartilhamento
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-8">
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b pb-2 italic flex items-center">
-                    <Globe size={14} className="mr-2" /> Regional Norte
-                  </h4>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    {northShared.length > 0 ? northShared.map(h => (
-                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
-                        <div className="truncate flex-1">
-                          <span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span>
-                          <p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p>
-                        </div>
-                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
+                <div className="grid grid-cols-2 gap-8">
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest border-b pb-2 italic flex items-center"><Globe size={14} className="mr-2" /> Regional Norte</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                         {northShared.length > 0 ? northShared.map(h => (
+                           <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate"><div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div><Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" /></div>
+                         )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                       </div>
-                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest border-b pb-2 italic flex items-center">
-                    <Globe size={14} className="mr-2" /> Regional Sul
-                  </h4>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                    {southShared.length > 0 ? southShared.map(h => (
-                      <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate">
-                        <div className="truncate flex-1">
-                          <span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span>
-                          <p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p>
-                        </div>
-                        <Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" />
+                   </div>
+                   <div className="space-y-4">
+                      <h4 className="text-[10px] font-black text-emerald-600 uppercase tracking-widest border-b pb-2 italic flex items-center"><Globe size={14} className="mr-2" /> Regional Sul</h4>
+                      <div className="space-y-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                         {southShared.length > 0 ? southShared.map(h => (
+                           <div key={h.id} className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between truncate"><div className="truncate flex-1"><span className="text-[10px] font-black text-indigo-600 block mb-1 leading-none">#{h.id}</span><p className="text-[11px] font-bold text-gray-700 truncate">{h.title}</p></div><Badge status={resolveDisplayStatus(h)} className="scale-75 origin-right" /></div>
+                         )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
                       </div>
-                    )) : <p className="text-center py-6 text-gray-300 font-bold italic text-[9px] uppercase">Vazio</p>}
-                  </div>
+                   </div>
                 </div>
-              </div>
 
-            </div>
-          </div>
+             </div>
+           </div>
         </div>
       )}
 
       {/* Modal de Comentário */}
       {viewingCommentData && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
-            <header className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white flex justify-between items-center">
-              <div className="flex items-center space-x-3"><MessageSquare size={20}/> <h3 className="text-lg font-black uppercase italic tracking-tight">Observação</h3></div>
-              <button onClick={() => setViewingCommentData(null)}><X size={20}/></button>
-            </header>
-            <div className="p-8">
-              {isMaster ? (
-                <div className="space-y-6">
-                  <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100">
-                    <textarea value={editedComment} onChange={e => setEditedComment(e.target.value)} className="w-full h-40 bg-transparent border-none outline-none text-sm font-bold text-slate-800 italic resize-none" />
-                  </div>
-                  <div className="flex gap-4">
-                    <button onClick={handleClearComment} className="flex-1 py-4 text-red-500 font-black text-[10px] uppercase">Limpar</button>
-                    <button disabled={isSavingComment} onClick={handleSaveComment} className="flex-[2] py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase">
-                      {isSavingComment ? 'Salvando...' : 'Salvar'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-purple-50 p-8 rounded-3xl text-center">
-                  <p className="text-sm italic">{viewingCommentData.comment || 'Sem observação.'}</p>
-                </div>
-              )}
-            </div>
-          </div>
+           <div className="bg-white rounded-[2.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative border border-gray-100 animate-in zoom-in duration-200">
+             <header className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white flex justify-between items-center">
+                <div className="flex items-center space-x-3"><MessageSquare size={20}/> <h3 className="text-lg font-black uppercase italic tracking-tight">Observação</h3></div>
+                <button onClick={() => setViewingCommentData(null)}><X size={20}/></button>
+             </header>
+             <div className="p-8">
+               {isMaster ? (
+                 <div className="space-y-6">
+                    <div className="bg-purple-50 p-6 rounded-3xl border border-purple-100"><textarea value={editedComment} onChange={e => setEditedComment(e.target.value)} className="w-full h-40 bg-transparent border-none outline-none text-sm font-bold text-slate-800 italic resize-none" /></div>
+                    <div className="flex gap-4"><button onClick={handleClearComment} className="flex-1 py-4 text-red-500 font-black text-[10px] uppercase">Limpar</button><button disabled={isSavingComment} onClick={handleSaveComment} className="flex-[2] py-4 bg-purple-600 text-white rounded-xl font-black text-[10px] uppercase">{isSavingComment ? 'Salvando...' : 'Salvar'}</button></div>
+                 </div>
+               ) : (
+                 <div className="bg-purple-50 p-8 rounded-3xl text-center"><p className="text-sm italic">{viewingCommentData.comment || 'Sem observação.'}</p></div>
+               )}
+             </div>
+           </div>
         </div>
       )}
 
       {/* Modal de Histórico */}
       {isHistoryModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsHistoryModalOpen(false)}></div>
-          <div className="bg-white rounded-[2.5rem] w-full max-w-3xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center space-x-3 text-white"><History size={24}/> <h3 className="text-lg font-black uppercase italic tracking-tight">Histórico de Alterações</h3></div>
-              <button onClick={() => setIsHistoryModalOpen(false)}><X size={20}/></button>
-            </div>
-            <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
-              {isFetchingHistory ? (
-                <div className="flex justify-center items-center py-20"><Loader2 className="animate-spin text-indigo-600" size={40}/></div>
-              ) : (
-                historyLogs.length > 0 ? (
-                  <div className="relative">
-                    <div className="absolute left-[20px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-indigo-300 via-purple-300 to-gray-200"></div>
-                    <div className="space-y-8 relative">
-                      {historyLogs.map((log: any) => {
-                        const config = getStatusConfig(log.status);
-                        const IconComponent = config.icon;
-                        return (
-                          <div key={log.id} className="relative pl-16 animate-in fade-in slide-in-from-left duration-300">
-                            <div className={`absolute left-0 w-[40px] h-[40px] rounded-full ${config.bgColor} ${config.color} flex items-center justify-center shadow-md border-4 border-white z-10`}>
-                              <IconComponent size={18} strokeWidth={2.5} />
-                            </div>
-                            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
-                              <div className="flex justify-between items-start mb-4">
-                                <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide ${config.bgColor} ${config.color}`}>{log.status}</span>
-                                <span className="text-[10px] font-black text-gray-400">{new Date(log.createdAt).toLocaleString('pt-BR')}</span>
-                              </div>
-                              <p className="text-sm font-bold text-slate-800 mb-3">{log.obs}</p>
-                              {log.msg && <p className="text-xs font-medium text-slate-600 italic bg-white p-3 rounded-xl border border-gray-100">{log.msg}</p>}
-                              <div className="flex items-center pt-3 border-t border-gray-200">
-                                <span className="text-[10px] font-black text-indigo-600 uppercase">{log.user}</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-10 opacity-30 italic uppercase font-black">Nenhum registro localizado.</div>
-                )
-              )}
-            </div>
-          </div>
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsHistoryModalOpen(false)}></div>
+           <div className="bg-white rounded-[2.5rem] w-full max-w-3xl overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh] animate-in zoom-in duration-200">
+             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white flex justify-between items-center shrink-0"><div className="flex items-center space-x-3 text-white"><History size={24}/> <h3 className="text-lg font-black uppercase italic tracking-tight">Histórico de Alterações</h3></div><button onClick={() => setIsHistoryModalOpen(false)}><X size={20}/></button></div>
+             <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
+               {isFetchingHistory ? (
+                  <div className="flex justify-center items-center py-20"><Loader2 className="animate-spin text-indigo-600" size={40}/></div>
+               ) : (
+                 historyLogs.length > 0 ? (
+                   <div className="relative">
+                      <div className="absolute left-[20px] top-0 bottom-0 w-[2px] bg-gradient-to-b from-indigo-300 via-purple-300 to-gray-200"></div>
+                      <div className="space-y-8 relative">
+                         {historyLogs.map((log: any, idx: number) => {
+                           const config = getStatusConfig(log.status);
+                           const IconComponent = config.icon;
+                           return (
+                             <div key={log.id} className="relative pl-16 animate-in fade-in slide-in-from-left duration-300"><div className={`absolute left-0 w-[40px] h-[40px] rounded-full ${config.bgColor} ${config.color} flex items-center justify-center shadow-md border-4 border-white z-10`}><IconComponent size={18} strokeWidth={2.5} /></div><div className="bg-gray-50 border border-gray-200 rounded-2xl p-6"><div className="flex justify-between items-start mb-4"><span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wide ${config.bgColor} ${config.color}`}>{log.status}</span><span className="text-[10px] font-black text-gray-400">{new Date(log.createdAt).toLocaleString('pt-BR')}</span></div><p className="text-sm font-bold text-slate-800 mb-3">{log.obs}</p>{log.msg && <p className="text-xs font-medium text-slate-600 italic bg-white p-3 rounded-xl border border-gray-100">{log.msg}</p>}<div className="flex items-center pt-3 border-t border-gray-200"><span className="text-[10px] font-black text-indigo-600 uppercase">{log.user}</span></div></div></div>
+                           );
+                         })}
+                      </div>
+                   </div>
+                 ) : (
+                   <div className="text-center py-10 opacity-30 italic uppercase font-black">Nenhum registro localizado.</div>
+                 )
+               )}
+             </div>
+           </div>
         </div>
       )}
     </div>
