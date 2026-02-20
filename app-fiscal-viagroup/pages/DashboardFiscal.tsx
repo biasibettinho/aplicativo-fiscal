@@ -89,7 +89,7 @@ const DashboardFiscal: React.FC = () => {
 
 
   useEffect(() => {
-    const interval = setInterval(() => { loadData(true); }, 15000); 
+    const interval = setInterval(() => { loadData(true); }, 2000); 
     return () => clearInterval(interval);
   }, [authState.user, authState.token, lastUpdate, requests.length]);
 
@@ -144,11 +144,11 @@ const DashboardFiscal: React.FC = () => {
     const targetStatus = isMaster ? RequestStatus.APROVADO : RequestStatus.ANALISE;
     const comment = isMaster ? 'Aprovação Final realizada pelo Fiscal Master.' : 'Conferência inicial realizada pelo Fiscal Comum. Aguardando Master.';
     
-    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment } : r));
+    setRequests(prev => prev.map(r => r.id === selectedRequest.id ? { ...r, status: targetStatus, approverObservation: comment, approverFiscal: authState.user.name } : r));
     setSelectedId(null);
     setIsProcessingAction(true);
     try {
-      const payload: any = { status: targetStatus, approverObservation: comment, errorObservation: '', Dataenvio_fiscal: new Date().toISOString(), Dataenvio_financeiro: new Date().toISOString() };
+      const payload: any = { status: targetStatus, approverObservation: comment, approverFiscal: authState.user.name, errorObservation: '', Dataenvio_fiscal: new Date().toISOString(), Dataenvio_financeiro: new Date().toISOString() };
       await sharepointService.updateRequest(authState.token, selectedRequest.graphId, payload);
       await sharepointService.addHistoryLog(authState.token, parseInt(selectedRequest.id), { ATUALIZACAO: targetStatus, OBSERVACAO: comment, MSG_OBSERVACAO: comment, usuario_logado: authState.user.name });
     } catch (e) {
@@ -315,6 +315,17 @@ const DashboardFiscal: React.FC = () => {
                     </div>
 
                     <h2 className="text-2xl md:text-4xl font-black text-gray-900 italic uppercase leading-tight truncate mb-6">{selectedRequest.title}</h2>
+
+                    {(selectedRequest.approverFiscal || selectedRequest.approverFinanceiro) && (
+                      <div className="-mt-4 mb-6 flex flex-wrap gap-x-6 gap-y-1">
+                        {selectedRequest.approverFiscal && (
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Aprovador Fiscal: <span className="text-gray-900">{selectedRequest.approverFiscal}</span></p>
+                        )}
+                        {selectedRequest.approverFinanceiro && (
+                          <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Aprovador Financeiro: <span className="text-gray-900">{selectedRequest.approverFinanceiro}</span></p>
+                        )}
+                      </div>
+                    )}
                     
                     <div className="flex flex-wrap gap-x-12 gap-y-6 items-start w-full">
                         
