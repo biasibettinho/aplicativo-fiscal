@@ -72,6 +72,14 @@ export interface PaymentRequest {
   errorType?: string;
   errorObservation?: string;
   generalObservation?: string; 
+
+  // Novo campo (SharePoint): Orçamento (texto)
+  budget?: string;
+
+  // Aprovadores (SharePoint)
+  approverFiscal?: string;
+  approverFinanceiro?: string;
+
   approverObservation?: string; 
   orderNumber: string;
   invoiceNumber: string;
