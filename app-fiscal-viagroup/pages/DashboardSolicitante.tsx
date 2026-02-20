@@ -33,8 +33,8 @@ const DashboardSolicitante: React.FC = () => {
   const [endDate, setEndDate] = useState('');
 
   // Estados para Upload de Arquivos
-  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
-  const [ticketFile, setTicketFile] = useState<File | null>(null);
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
+  const [ticketFiles, setTicketFiles] = useState<File[]>([]);
 
   // Estados do Formulário
   const [formData, setFormData] = useState({
@@ -49,7 +49,8 @@ const DashboardSolicitante: React.FC = () => {
     agency: '',
     account: '',
     accountType: 'Corrente',
-    generalObservation: ''
+    generalObservation: '',
+    budget: ''
   });
 
   const selectedRequest = requests.find(r => r.id === selectedId);
@@ -151,10 +152,11 @@ const DashboardSolicitante: React.FC = () => {
       agency: selectedRequest.agency || '',
       account: selectedRequest.account || '',
       accountType: selectedRequest.accountType || 'Corrente',
-      generalObservation: selectedRequest.generalObservation || ''
+      generalObservation: selectedRequest.generalObservation || '',
+      budget: (selectedRequest as any).budget || ''
     });
-    setInvoiceFile(null);
-    setTicketFile(null);
+    setInvoiceFiles([]);
+    setTicketFiles([]);
     setIsEditing(true);
     setIsCreating(true);
   };
@@ -174,17 +176,18 @@ const DashboardSolicitante: React.FC = () => {
       agency: '',
       account: '',
       accountType: 'Corrente',
-      generalObservation: ''
+      generalObservation: '',
+      budget: ''
     });
-    setInvoiceFile(null);
-    setTicketFile(null);
+    setInvoiceFiles([]);
+    setTicketFiles([]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authState.token || !authState.user) return;
     
-    if (!invoiceFile && !isEditing) {
+    if (invoiceFiles.length === 0 && !isEditing) {
       alert("A Nota Fiscal é obrigatória para prosseguir.");
       return;
     }
@@ -224,19 +227,21 @@ const DashboardSolicitante: React.FC = () => {
         setSubmissionStep('Atualizando dados da solicitação...');
         await sharepointService.updateRequest(authState.token, selectedRequest.graphId, updatePayload);
 
-        if (invoiceFile) {
+        if (invoiceFiles.length > 0) {
           setSubmissionStep('Substituindo Nota Fiscal...');
           const currentMainAtts = await sharepointService.getItemAttachments(authState.token, selectedRequest.id);
           for (const att of currentMainAtts) {
             await sharepointService.deleteAttachment(MAIN_LIST_ID, selectedRequest.id, att.fileName);
           }
-          await sharepointService.uploadAttachment(MAIN_LIST_ID, selectedRequest.id, invoiceFile);
+          for (const f of invoiceFiles) {
+            await sharepointService.uploadAttachment(MAIN_LIST_ID, selectedRequest.id, f);
+          }
         }
 
-        if (ticketFile) {
+        if (ticketFiles.length > 0) {
           setSubmissionStep('Substituindo Boletos auxiliares...');
           await sharepointService.deleteSecondaryItemsByRequestId(selectedRequest.id);
-          await sharepointService.createSecondaryItemWithAttachment(selectedRequest.id, ticketFile);
+          await sharepointService.createSecondaryItemWithAttachments(selectedRequest.id, ticketFiles);
         }
 
         const updatedRequest = { ...selectedRequest, ...updatePayload };
@@ -258,8 +263,8 @@ const DashboardSolicitante: React.FC = () => {
         };
 
         const success = await requestService.createRequest(authState.token, submissionData, { 
-          invoice: invoiceFile, 
-          ticket: ticketFile 
+          invoice: invoiceFiles, 
+          ticket: ticketFiles 
         });
 
         if (success) {
@@ -471,6 +476,10 @@ const DashboardSolicitante: React.FC = () => {
                     <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-2 block">Pedido (OC)</label>
                     <input type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.orderNumber} onChange={e => setFormData({...formData, orderNumber: e.target.value})} />
                   </div>
+                  <div>
+                    <label className="text-xs font-black text-white/50 uppercase tracking-widest mb-2 block">Orçamento</label>
+                    <input type="text" className="w-full p-4 bg-white/10 border border-white/10 rounded-xl text-white font-bold" value={formData.budget} onChange={e => setFormData({...formData, budget: e.target.value})} />
+                  </div>
                 </div>
 
                 <div className="bg-white/5 p-8 rounded-[2.5rem] border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -525,18 +534,18 @@ const DashboardSolicitante: React.FC = () => {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                   <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${invoiceFile ? 'bg-blue-600/20 border-blue-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                      <input id="invoice-upload" type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => setInvoiceFile(e.target.files?.[0] || null)} />
+                   <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${invoiceFiles.length > 0 ? 'bg-blue-600/20 border-blue-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                      <input id="invoice-upload" type="file" className="hidden" accept=".pdf,image/*" multiple onChange={(e) => setInvoiceFiles(Array.from(e.target.files || []))} />
                       <label htmlFor="invoice-upload" className="flex flex-col items-center text-center cursor-pointer">
-                         <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${invoiceFile ? 'bg-blue-500' : 'bg-blue-600'}`}><FileText size={20} /></div>
-                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{invoiceFile ? invoiceFile.name : (isEditing ? 'Substituir Nota Fiscal' : 'Nota Fiscal (Obrigatório)')}</p>
+                         <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${invoiceFiles.length > 0 ? 'bg-blue-500' : 'bg-blue-600'}`}><FileText size={20} /></div>
+                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2"><span title={invoiceFiles.map(f => f.name).join(', ')}>{invoiceFiles.length > 0 ? (invoiceFiles.length === 1 ? invoiceFiles[0].name : `${invoiceFiles.length} arquivos selecionados`) : (isEditing ? 'Substituir Nota Fiscal' : 'Nota Fiscal (Obrigatório)')}</span></p>
                       </label>
                    </div>
-                   <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${ticketFile ? 'bg-indigo-600/20 border-indigo-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
-                      <input id="ticket-upload" type="file" className="hidden" accept=".pdf,image/*" onChange={(e) => setTicketFile(e.target.files?.[0] || null)} />
+                   <div className={`p-6 rounded-[2rem] border border-dashed transition-all relative group ${ticketFiles.length > 0 ? 'bg-indigo-600/20 border-indigo-400' : 'bg-white/5 border-white/5 hover:bg-white/10'}`}>
+                      <input id="ticket-upload" type="file" className="hidden" accept=".pdf,image/*" multiple onChange={(e) => setTicketFiles(Array.from(e.target.files || []))} />
                       <label htmlFor="ticket-upload" className="flex flex-col items-center text-center cursor-pointer">
-                         <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${ticketFile ? 'bg-indigo-500' : 'bg-indigo-600'}`}><Paperclip size={20} /></div>
-                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2">{ticketFile ? ticketFile.name : (isEditing ? 'Substituir Boleto' : 'Boleto / Comprovante')}</p>
+                         <div className={`p-3 rounded-xl text-white mb-3 shadow-lg ${ticketFiles.length > 0 ? 'bg-indigo-500' : 'bg-indigo-600'}`}><Paperclip size={20} /></div>
+                         <p className="text-xs font-black text-white uppercase italic truncate max-w-full px-2"><span title={ticketFiles.map(f => f.name).join(', ')}>{ticketFiles.length > 0 ? (ticketFiles.length === 1 ? ticketFiles[0].name : `${ticketFiles.length} arquivos selecionados`) : (isEditing ? 'Substituir Boleto' : 'Boleto / Comprovante')}</span></p>
                       </label>
                    </div>
                 </div>
@@ -579,6 +588,16 @@ const DashboardSolicitante: React.FC = () => {
                     <Badge status={selectedRequest.status} className="scale-90" />
                   </div>
                   <h2 className="text-xl lg:text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-tight truncate max-w-full">{selectedRequest.title}</h2>
+                  {(selectedRequest.approverFiscal || selectedRequest.approverFinanceiro) && (
+                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1">
+                      {selectedRequest.approverFiscal && (
+                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Aprovador Fiscal: <span className="text-slate-800">{selectedRequest.approverFiscal}</span></p>
+                      )}
+                      {selectedRequest.approverFinanceiro && (
+                        <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Aprovador Financeiro: <span className="text-slate-800">{selectedRequest.approverFinanceiro}</span></p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               {canEdit && (
